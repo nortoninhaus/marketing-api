@@ -1,0 +1,105 @@
+"""
+Response models optimized for both human dashboards and agentic consumption.
+
+Every response includes request_id, timestamp, and structured metadata
+so agents can reason about data freshness, errors, and pagination.
+"""
+
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Literal, Optional
+from uuid import uuid4
+
+from pydantic import BaseModel, Field
+
+from app.models.requests import Platform
+
+
+class CampaignData(BaseModel):
+    """Single campaign/content data point with normalized metrics."""
+
+    campaign_name: str = Field(..., description="Campaign or content name")
+    date: str = Field(..., description="Date for this data point (YYYY-MM-DD)")
+    metrics: Dict[str, Any] = Field(default_factory=dict, description="Key-value metric data")
+
+
+class PaginationInfo(BaseModel):
+    """Pagination metadata for large result sets."""
+
+    page: int = 1
+    page_size: int = 100
+    total_count: Optional[int] = None
+    has_next: bool = False
+
+
+class ErrorDetail(BaseModel):
+    """Structured error for agentic error handling."""
+
+    code: str = Field(..., description="Machine-readable error code")
+    message: str = Field(..., description="Human-readable error message")
+    platform: Optional[str] = None
+    retryable: bool = False
+
+
+class DataResponse(BaseModel):
+    """
+    Agent-ready response with full metadata.
+
+    Agents use `request_id` for dedup, `status` for branching logic,
+    `errors` for structured retry decisions, and `metadata` for
+    data-quality reasoning.
+    """
+
+    status: Literal["success", "partial", "error"] = "success"
+    request_id: str = Field(default_factory=lambda: str(uuid4()))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    platform: Platform
+    date_range: Dict[str, str] = Field(default_factory=dict)
+    data: List[CampaignData] = Field(default_factory=list)
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Platform API version, data freshness, quota remaining, etc.",
+    )
+    errors: List[ErrorDetail] = Field(default_factory=list)
+    pagination: Optional[PaginationInfo] = None
+
+
+class BatchDataResponse(BaseModel):
+    """Aggregated response for multi-platform batch queries."""
+
+    status: Literal["success", "partial", "error"] = "success"
+    request_id: str = Field(default_factory=lambda: str(uuid4()))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    results: List[DataResponse] = Field(default_factory=list)
+    total_platforms: int = 0
+    successful_platforms: int = 0
+    failed_platforms: int = 0
+
+
+class PlatformInfo(BaseModel):
+    """Platform metadata for the discovery endpoint."""
+
+    platform: Platform
+    display_name: str
+    type: Literal["ads", "organic", "analytics", "app_store"]
+    configured: bool = False
+    available_metrics: List[str] = Field(default_factory=list)
+    description: str = ""
+
+
+class HealthResponse(BaseModel):
+    """Deep health check response."""
+
+    status: str
+    version: str
+    platforms_configured: int
+    platforms_total: int = 14
+    details: Dict[str, str] = Field(default_factory=dict)
+
+
+class SchemaResponse(BaseModel):
+    """Platform schema discovery response."""
+
+    platform: Platform
+    metrics: List[Any] = Field(..., description="Available metrics (strings or dicts with name/description)")
+    dimensions: List[Any] = Field(..., description="Available dimensions (strings or dicts with name/description)")
+    metadata: Dict[str, Any] = Field(default_factory=dict)
