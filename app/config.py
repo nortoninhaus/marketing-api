@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     google_ads_client_secret: str = ""
     google_ads_refresh_token: str = ""
 
+    # --- Google OAuth Shared ---
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_oauth_redirect_uri: str = ""
+
     # --- Google Analytics 4 ---
 
 
@@ -55,8 +60,12 @@ class Settings(BaseSettings):
     # --- YouTube ---
     youtube_api_key: str = ""
 
+    # --- Threads ---
+    threads_access_token: str = ""
+
     # --- Google Play ---
     google_play_service_account_json: str = ""
+    google_play_gcs_bucket: str = ""
 
     # --- Apple App Store Connect ---
     apple_key_id: str = ""
@@ -89,6 +98,7 @@ class Settings(BaseSettings):
             "google_play": ["google_play_service_account_json"],
             "apple_app_store": ["apple_key_id", "apple_issuer_id"],
             "apple_ads": ["apple_ads_access_token"],
+            "threads": ["threads_access_token"],
         }
         fields = platform_fields.get(platform, [])
         return all(getattr(self, f, "") for f in fields)

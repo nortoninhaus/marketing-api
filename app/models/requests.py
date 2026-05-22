@@ -30,6 +30,7 @@ class Platform(str, Enum):
     GOOGLE_PLAY = "google_play"
     APPLE_APP_STORE = "apple_app_store"
     APPLE_ADS = "apple_ads"
+    THREADS = "threads"
 
     @classmethod
     def ads_platforms(cls) -> list["Platform"]:
@@ -37,7 +38,7 @@ class Platform(str, Enum):
 
     @classmethod
     def organic_platforms(cls) -> list["Platform"]:
-        return [cls.META_ORGANIC, cls.TIKTOK_ORGANIC, cls.LINKEDIN_ORGANIC, cls.X_ORGANIC, cls.YOUTUBE]
+        return [cls.META_ORGANIC, cls.TIKTOK_ORGANIC, cls.LINKEDIN_ORGANIC, cls.X_ORGANIC, cls.YOUTUBE, cls.THREADS]
 
     @classmethod
     def app_store_platforms(cls) -> list["Platform"]:
@@ -64,6 +65,7 @@ class DataRequest(BaseModel):
     post_id: Optional[str] = Field(None, description="Specific post/content ID (organic platforms)")
     video_id: Optional[str] = Field(None, description="Specific video ID (TikTok/YouTube)")
     app_id: Optional[str] = Field(None, description="App package name or ID (app store platforms)")
+    dimensions: Optional[List[str]] = Field(None, description="List of dimensions to group by")
 
     @model_validator(mode="after")
     def validate_date_range(self) -> "DataRequest":
@@ -76,3 +78,13 @@ class BatchDataRequest(BaseModel):
     """Multi-platform batch request — agents send one call, get all platforms."""
 
     requests: List[DataRequest] = Field(..., min_length=1, max_length=14, description="List of platform requests")
+
+
+class CommentsRequest(BaseModel):
+    """Request payload for fetching comments."""
+    platform: Platform = Field(..., description="Target platform (meta_ads, meta_organic, threads)")
+    post_id: str = Field(..., description="Native post/media ID to fetch comments for")
+    client_id: str = Field("client_1", description="ID of the client/agency")
+    user_id: str = Field("user_1", description="ID of the user making the request")
+    account_id: str = Field("", description="Platform-specific account identifier (optional)")
+

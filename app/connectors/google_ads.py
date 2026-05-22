@@ -1,8 +1,11 @@
 """
 Google Ads connector.
+Supports dynamic GAQL query construction based on requested dimensions,
+search_stream for improved performance, and dynamic client/OAuth credentials.
 """
 
 from typing import List, Dict, Any, Optional
+import logging
 from google.ads.googleads.client import GoogleAdsClient
 
 from app.connectors.base import BaseConnector
@@ -10,16 +13,19 @@ from app.models.requests import DataRequest
 from app.models.responses import CampaignData
 from app.config import settings
 
+logger = logging.getLogger(__name__)
+
+
 class GoogleAdsConnector(BaseConnector):
     platform_name = "google_ads"
 
     def get_credentials(self, request: Optional[DataRequest] = None) -> Dict[str, Any]:
         creds = super().get_credentials(request)
         
-        developer_token = creds.get("developer_token", settings.google_ads_developer_token)
-        client_id = creds.get("client_id", settings.google_ads_client_id)
-        client_secret = creds.get("client_secret", settings.google_ads_client_secret)
-        refresh_token = creds.get("refresh_token", settings.google_ads_refresh_token)
+        developer_token = creds.get("developer_token") or settings.google_ads_developer_token
+        client_id = creds.get("client_id") or settings.google_client_id or settings.google_ads_client_id
+        client_secret = creds.get("client_secret") or settings.google_client_secret or settings.google_ads_client_secret
+        refresh_token = creds.get("refresh_token") or settings.google_ads_refresh_token
         
         # Use account_id as the primary target for google ads queries
         customer_id = request.account_id if request and request.account_id else creds.get("customer_id")
@@ -52,25 +58,68 @@ class GoogleAdsConnector(BaseConnector):
         ga_service = client.get_service("GoogleAdsService")
         start_str = request.start_date.strftime("%Y-%m-%d")
         end_str = request.end_date.strftime("%Y-%m-%d")
+
+        # Determine target query table and select dimensions based on requested dimensions
+        resource = "campaign"
+        select_dims = ["campaign.name", "segments.date"]
+        
+        if request.dimensions:
+            if any("ad_group.name" in d or "ad_group" in d for d in request.dimensions):
+                resource = "ad_group"
+                select_dims.append("ad_group.name")
+            elif any("keyword" in d or "ad_group_criterion" in d for d in request.dimensions):
+                resource = "keyword_view"
+                select_dims.append("ad_group.name")
+                select_dims.append("ad_group_criterion.keyword.text")
+
+        # Build metrics select list
+        metric_fields = [f"metrics.{m}" for m in request.metrics]
+        query_fields = select_dims + metric_fields
+        
         query = f"""
-            SELECT campaign.name, segments.date, {', '.join([f'metrics.{m}' for m in request.metrics])} 
-            FROM campaign WHERE segments.date BETWEEN '{start_str}' AND '{end_str}'
+            SELECT {', '.join(query_fields)} 
+            FROM {resource} 
+            WHERE segments.date BETWEEN '{start_str}' AND '{end_str}'
         """
-        response = ga_service.search(customer_id=creds["customer_id"], query=query)
+        
+        # Use search_stream to fetch records in dynamic chunks
+        response_stream = ga_service.search_stream(customer_id=creds["customer_id"], query=query)
         results = []
-        for row in response:
-            metrics_dict = {m: getattr(row.metrics, m, 0) for m in request.metrics}
-            results.append(CampaignData(
-                campaign_name=row.campaign.name,
-                date=str(row.segments.date),
-                metrics=metrics_dict
-            ))
+        
+        for batch in response_stream:
+            for row in batch.results:
+                metrics_dict = {}
+                for m in request.metrics:
+                    try:
+                        metrics_dict[m] = getattr(row.metrics, m, 0)
+                    except Exception:
+                        metrics_dict[m] = 0
+
+                # Reconstruct descriptive campaign_name based on level
+                name = row.campaign.name
+                if resource == "ad_group" and hasattr(row, "ad_group") and hasattr(row.ad_group, "name"):
+                    name = f"{name} | {row.ad_group.name}"
+                elif resource == "keyword_view":
+                    kw_part = ""
+                    if hasattr(row, "ad_group_criterion") and hasattr(row.ad_group_criterion, "keyword") and hasattr(row.ad_group_criterion.keyword, "text"):
+                        kw_part = f" | KW: {row.ad_group_criterion.keyword.text}"
+                    ag_part = f" | {row.ad_group.name}" if hasattr(row, "ad_group") and hasattr(row.ad_group, "name") else ""
+                    name = f"{name}{ag_part}{kw_part}"
+
+                date_val = str(row.segments.date) if hasattr(row.segments, "date") else start_str
+                
+                results.append(CampaignData(
+                    campaign_name=name,
+                    date=date_val,
+                    metrics=metrics_dict
+                ))
+                
         return results
 
     def get_schema(self) -> Dict[str, Any]:
         return {
             "metrics": ["impressions", "clicks", "cost_micros", "conversions", "all_conversions"],
-            "dimensions": ["campaign.name", "segments.date", "ad_group.name"]
+            "dimensions": ["campaign.name", "segments.date", "ad_group.name", "ad_group_criterion.keyword.text"]
         }
 
     def ping(self) -> bool:

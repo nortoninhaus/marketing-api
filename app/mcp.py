@@ -51,7 +51,7 @@ VALID_PLATFORMS = [
     "meta_ads", "meta_organic", "google_ads", "ga4",
     "tiktok_ads", "tiktok_organic", "linkedin_ads", "linkedin_organic",
     "x_ads", "x_organic", "youtube", "google_play",
-    "apple_app_store", "apple_ads",
+    "apple_app_store", "apple_ads", "threads",
 ]
 
 
@@ -466,6 +466,44 @@ async def summarize_performance(
         "aggregated_metrics": totals,
         "status": result.get("status", "unknown"),
     }
+
+
+# ===================================================================
+# TOOL 9 — Get Comments
+# ===================================================================
+@mcp.tool()
+async def get_comments(
+    platform: str,
+    post_id: str,
+    client_id: str,
+    user_id: str,
+    account_id: str = "",
+) -> dict:
+    """
+    Fetch comments/replies for a specific post.
+    Works for platforms that support comments: meta_ads, meta_organic, threads.
+
+    Args:
+        platform:  Platform enum value (must be meta_ads, meta_organic, or threads).
+        post_id:   The platform-native identifier of the post/media.
+        client_id: Client/tenant identifier.
+        user_id:   Requesting user ID.
+        account_id: Platform-specific account identifier (optional).
+
+    Returns:
+        A dict with: status, platform, post_id, total_comments, comments (list), errors.
+    """
+    if platform not in ("meta_ads", "meta_organic", "threads"):
+        return {"error": f"Comments are not supported for platform '{platform}'. Supported: meta_ads, meta_organic, threads"}
+
+    payload = {
+        "platform": platform,
+        "post_id": post_id,
+        "client_id": client_id,
+        "user_id": user_id,
+        "account_id": account_id,
+    }
+    return await _post("/api/v1/comments", payload)
 
 
 # ---------------------------------------------------------------------------

@@ -42,6 +42,7 @@ See [llms.md](llms.md) for detailed technical context on the credential resoluti
 | Google Play | App Store | ✅ |
 | Apple App Store | App Store | ✅ |
 | Apple Search Ads | Ads | ✅ |
+| Threads | Organic | ✅ |
 
 ## Quick Start
 
@@ -67,10 +68,11 @@ See [llms.md](llms.md) for detailed technical context on the credential resoluti
 - `GET /api/v1/platforms`: List available platforms.
 - `POST /api/v1/campaign-data`: Fetch data for a single platform (requires `client_id`, `user_id`, `account_id`).
 - `POST /api/v1/batch`: Fetch data for multiple platforms concurrently.
+- `POST /api/v1/comments`: Fetch comments for a specific post (Meta Ads, Meta Organic, or Threads).
 
 ## MCP Server (Agent Tool Calling)
 
-The API exposes a **Model Context Protocol (MCP)** server so AI agents can interact with all 14 marketing platforms via structured tool calls over stdio transport.
+The API exposes a **Model Context Protocol (MCP)** server so AI agents can interact with all 15 marketing platforms via structured tool calls over stdio transport.
 
 ### Setup
 
@@ -94,10 +96,11 @@ The server is also registered in `mcp_config.json` for automatic discovery by ID
 | Tool | Description |
 |---|---|
 | `check_api_health` | Check API status and per-platform connectivity |
-| `list_platforms` | Discover all 14 platforms, their types, and available metrics |
+| `list_platforms` | Discover all 15 platforms, their types, and available metrics |
 | `get_platform_schema` | Get the full metric/dimension schema for a platform |
 | `get_marketing_data` | Fetch campaign data from a single platform |
 | `get_batch_marketing_data` | Fetch data from multiple platforms concurrently |
 | `compare_platforms` | Cross-platform metric comparison with aggregated totals |
 | `list_available_metrics` | Quick list of valid metric names for a platform |
 | `summarize_performance` | High-level performance summary with auto-selected metrics |
+| `get_comments` | Fetch comments/replies for a specific post (Meta Ads, Meta Organic, or Threads) |

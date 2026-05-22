@@ -1,6 +1,6 @@
 # Production Refactoring Walkthrough: Inhaus Marketing Data API v5.0
 
-This walkthrough documents the comprehensive production-grade upgrade of the Inhaus Marketing Data API. The codebase has been modernized to support true multi-tenancy, dynamic credential resolution, async non-blocking database queries, and robust agentic tool-calling patterns.
+This walkthrough documents the comprehensive production-grade upgrade of the Inhaus Marketing Data API. The codebase has been modernized to support true multi-tenancy, dynamic credential resolution, async non-blocking database queries, robust agentic tool-calling patterns, and full Meta platform upgrades (including Threads integration and comment fetching).
 
 ---
 
@@ -40,6 +40,7 @@ The Model Context Protocol (MCP) definitions in `app/mcp.py` have been upgraded 
     *   `user_id` (String)
     *   `account_id` (String)
     *   `post_id` / `video_id` / `app_id` (Optional strings for organic content & app platforms)
+*   A new tool `get_comments` has been added to retrieve comment collections and nested replies across Meta Ads, Meta Organic, and Threads.
 
 ---
 
@@ -106,6 +107,7 @@ While per-tenant credentials should be dynamically resolved via Firestore, the f
 - **Google Play**: `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`
 - **Apple App Store Connect**: `APPLE_KEY_ID`, `APPLE_ISSUER_ID`, `APPLE_PRIVATE_KEY_PATH`
 - **Apple Search Ads**: `APPLE_ADS_ACCESS_TOKEN`
+- **Threads**: `THREADS_ACCESS_TOKEN`
 
 ---
 

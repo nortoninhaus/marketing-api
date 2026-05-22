@@ -25,7 +25,7 @@ async def lifespan(app: FastAPI):
     # Shutdown (cleanup if needed)
 
 from app.config import settings
-from app.models.requests import DataRequest, Platform, BatchDataRequest
+from app.models.requests import DataRequest, Platform, BatchDataRequest, CommentsRequest
 from app.models.responses import DataResponse, BatchDataResponse, HealthResponse, ErrorDetail, PlatformInfo, SchemaResponse
 from app.middleware.auth import verify_api_key
 from app.services.dispatcher import dispatcher
@@ -41,6 +41,7 @@ from app.connectors.x_twitter import XAdsConnector, XOrganicConnector
 from app.connectors.youtube import YouTubeConnector
 from app.connectors.google_play import GooglePlayConnector
 from app.connectors.apple import AppleAppStoreConnector, AppleAdsConnector
+from app.connectors.threads import ThreadsConnector
 
 # Configure root logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -61,6 +62,7 @@ dispatcher.register(Platform.YOUTUBE, YouTubeConnector())
 dispatcher.register(Platform.GOOGLE_PLAY, GooglePlayConnector())
 dispatcher.register(Platform.APPLE_APP_STORE, AppleAppStoreConnector())
 dispatcher.register(Platform.APPLE_ADS, AppleAdsConnector())
+dispatcher.register(Platform.THREADS, ThreadsConnector())
 # Future connectors to register here...
 
 app = FastAPI(
@@ -81,6 +83,9 @@ app.add_middleware(
 # Register OAuth router
 from app.routers.oauth import router as oauth_router
 app.include_router(oauth_router)
+
+# Import comment models
+from app.models.responses import CommentsResponse, CommentData
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check(deep: bool = False):
@@ -230,6 +235,73 @@ async def get_campaign_data(
             platform=request.platform,
             date_range={"start": str(request.start_date), "end": str(request.end_date)},
             errors=[err_detail]
+        )
+
+
+@app.post("/api/v1/comments", response_model=CommentsResponse)
+async def get_comments(
+    request: CommentsRequest,
+    api_key: str = Depends(verify_api_key)
+):
+    """Fetch comments on a specific post for Meta Ads, Meta Organic (FB Pages + Instagram), or Threads."""
+    logger.info(f"Comment request for platform: {request.platform.value}, post: {request.post_id}")
+
+    # Resolve credentials
+    creds = await credential_store.resolve_credentials(request.client_id, request.platform.value, request.account_id)
+    if not creds:
+        creds = {}
+    access_token = creds.get("access_token") or settings.meta_access_token
+    is_instagram = creds.get("is_instagram", False)
+
+    try:
+        if request.platform == Platform.THREADS:
+            from app.connectors.threads import ThreadsConnector
+            connector = ThreadsConnector()
+            comments = await asyncio.to_thread(
+                connector.fetch_comments, request.post_id, access_token
+            )
+        elif request.platform == Platform.META_ADS:
+            from app.connectors.meta import MetaAdsConnector
+            connector = MetaAdsConnector()
+            comments = await asyncio.to_thread(
+                connector.fetch_comments, request.post_id, access_token
+            )
+        elif request.platform == Platform.META_ORGANIC:
+            from app.connectors.meta import MetaOrganicConnector
+            connector = MetaOrganicConnector()
+            comments = await asyncio.to_thread(
+                connector.fetch_comments, request.post_id, access_token, is_instagram
+            )
+        else:
+            return CommentsResponse(
+                status="error",
+                platform=request.platform,
+                post_id=request.post_id,
+                errors=[ErrorDetail(
+                    code="UNSUPPORTED",
+                    message=f"Comments not supported for platform {request.platform.value}",
+                    retryable=False
+                )]
+            )
+
+        return CommentsResponse(
+            status="success",
+            platform=request.platform,
+            post_id=request.post_id,
+            total_comments=len(comments),
+            comments=comments,
+        )
+    except Exception as e:
+        logger.error(f"Error fetching comments: {e}")
+        return CommentsResponse(
+            status="error",
+            platform=request.platform,
+            post_id=request.post_id,
+            errors=[ErrorDetail(
+                code="COMMENT_FETCH_ERROR",
+                message=str(e),
+                retryable=True
+            )]
         )
 
 @app.post("/api/v1/batch", response_model=BatchDataResponse)
