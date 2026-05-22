@@ -153,7 +153,14 @@ class MetaOrganicConnector(BaseConnector):
 
     def get_schema(self) -> Dict[str, Any]:
         return {
-            "metrics": ["page_impressions", "page_engagements", "page_post_engagements"],
+            "metrics": [
+                "page_media_view",
+                "page_post_engagements",
+                "page_views_total",
+                "page_daily_follows",
+                "post_media_view",
+                "post_clicks"
+            ],
             "dimensions": ["post_id", "date_start"]
         }
 

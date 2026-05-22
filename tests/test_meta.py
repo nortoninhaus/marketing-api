@@ -56,8 +56,8 @@ def test_meta_organic_fetch_data(mock_page, mock_api, mock_session):
     mock_page.return_value = mock_instance
     # Page Insights API returns one object per metric with name + values
     mock_instance.get_insights.return_value = [
-        {"name": "page_impressions", "period": "day", "values": [{"value": 1000, "end_time": "2026-05-02T07:00:00+0000"}]},
-        {"name": "page_engagements", "period": "day", "values": [{"value": 200, "end_time": "2026-05-02T07:00:00+0000"}]}
+        {"name": "page_media_view", "period": "day", "values": [{"value": 1000, "end_time": "2026-05-02T07:00:00+0000"}]},
+        {"name": "page_post_engagements", "period": "day", "values": [{"value": 200, "end_time": "2026-05-02T07:00:00+0000"}]}
     ]
     
     connector = MetaOrganicConnector()
@@ -71,7 +71,7 @@ def test_meta_organic_fetch_data(mock_page, mock_api, mock_session):
             platform="meta_organic",
             start_date=date(2026, 5, 1),
             end_date=date(2026, 5, 7),
-            metrics=["page_impressions", "page_engagements"],
+            metrics=["page_media_view", "page_post_engagements"],
             client_id="test_client",
             user_id="test_user",
             account_id="1033741419822859"
@@ -81,8 +81,8 @@ def test_meta_organic_fetch_data(mock_page, mock_api, mock_session):
         assert len(results) == 1
         assert results[0].campaign_name == "Page_Insights"
         assert results[0].date == "2026-05-02"
-        assert results[0].metrics["page_impressions"] == 1000
-        assert results[0].metrics["page_engagements"] == 200
+        assert results[0].metrics["page_media_view"] == 1000
+        assert results[0].metrics["page_post_engagements"] == 200
         
         # Verify Session / API setup
         mock_session.assert_called_once()
