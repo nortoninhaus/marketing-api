@@ -4,6 +4,7 @@ Meta (Facebook/Instagram) connectors — Ads and Organic.
 
 from typing import List, Dict, Any, Optional
 
+from facebook_business.session import FacebookSession
 from facebook_business.api import FacebookAdsApi
 from facebook_business.adobjects.adaccount import AdAccount
 from facebook_business.adobjects.page import Page
@@ -32,7 +33,12 @@ class MetaAdsConnector(BaseConnector):
 
     def fetch_data(self, request: DataRequest) -> List[CampaignData]:
         creds = self.get_credentials(request)
-        api = FacebookAdsApi(access_token=creds["access_token"])
+        session = FacebookSession(
+            app_id=settings.meta_app_id,
+            app_secret=settings.meta_app_secret,
+            access_token=creds["access_token"]
+        )
+        api = FacebookAdsApi(session)
         account = AdAccount(creds["ad_account_id"], api=api)
         
         insights = account.get_insights(
@@ -62,7 +68,12 @@ class MetaAdsConnector(BaseConnector):
     def ping(self) -> bool:
         try:
             creds = self.get_credentials()
-            api = FacebookAdsApi(access_token=creds["access_token"])
+            session = FacebookSession(
+                app_id=settings.meta_app_id,
+                app_secret=settings.meta_app_secret,
+                access_token=creds["access_token"]
+            )
+            api = FacebookAdsApi(session)
             account = AdAccount(creds["ad_account_id"], api=api)
             account.get_insights(params={"limit": 1})
             return True
@@ -88,7 +99,12 @@ class MetaOrganicConnector(BaseConnector):
 
     def fetch_data(self, request: DataRequest) -> List[CampaignData]:
         creds = self.get_credentials(request)
-        api = FacebookAdsApi(access_token=creds["access_token"])
+        session = FacebookSession(
+            app_id=settings.meta_app_id,
+            app_secret=settings.meta_app_secret,
+            access_token=creds["access_token"]
+        )
+        api = FacebookAdsApi(session)
         page = Page(creds["page_id"], api=api)
         
         since_str = request.start_date.strftime("%Y-%m-%d")
@@ -96,18 +112,43 @@ class MetaOrganicConnector(BaseConnector):
 
         if request.post_id:
             post = page.get_posts(params={"ids": request.post_id})[0]
-            insights = post.get_insights(fields=request.metrics, params={"since": since_str, "until": until_str})
+            insights = post.get_insights(params={
+                "metric": ",".join(request.metrics),
+                "since": since_str,
+                "until": until_str
+            })
             campaign_name = f"Post_{request.post_id}"
         else:
-            insights = page.get_insights(fields=request.metrics, params={"since": since_str, "until": until_str})
+            insights = page.get_insights(params={
+                "metric": ",".join(request.metrics),
+                "since": since_str,
+                "until": until_str
+            })
             campaign_name = "Page_Insights"
+        # Page Insights returns one object per metric, each with `name` and `values`
+        # e.g. {"name": "page_impressions", "period": "day", "values": [{"value": 100, "end_time": "..."}]}
+        # We aggregate all metrics into daily CampaignData rows
+        daily_data: Dict[str, Dict[str, Any]] = {}
+        
+        for insight in insights:
+            metric_name = insight.get("name", "unknown")
+            values_list = insight.get("values", [])
+            for val_entry in values_list:
+                end_time = val_entry.get("end_time", since_str)
+                day = end_time[:10] if end_time else since_str
+                if day not in daily_data:
+                    daily_data[day] = {}
+                daily_data[day][metric_name] = val_entry.get("value", 0)
+        
+        if not daily_data:
+            return []
         
         return [
             CampaignData(
                 campaign_name=campaign_name,
-                date=since_str,
-                metrics={m: i.get(m) for m in request.metrics}
-            ) for i in insights
+                date=day,
+                metrics=metrics_dict
+            ) for day, metrics_dict in sorted(daily_data.items())
         ]
 
     def get_schema(self) -> Dict[str, Any]:
@@ -119,7 +160,12 @@ class MetaOrganicConnector(BaseConnector):
     def ping(self) -> bool:
         try:
             creds = self.get_credentials()
-            api = FacebookAdsApi(access_token=creds["access_token"])
+            session = FacebookSession(
+                app_id=settings.meta_app_id,
+                app_secret=settings.meta_app_secret,
+                access_token=creds["access_token"]
+            )
+            api = FacebookAdsApi(session)
             page = Page(creds["page_id"], api=api)
             page.api_get(fields=["name"])
             return True

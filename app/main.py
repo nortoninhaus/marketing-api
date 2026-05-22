@@ -78,6 +78,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Register OAuth router
+from app.routers.oauth import router as oauth_router
+app.include_router(oauth_router)
+
 @app.get("/health", response_model=HealthResponse)
 async def health_check(deep: bool = False):
     """Exposes platform readiness and optional deep connectivity tests."""
@@ -180,10 +184,12 @@ async def get_campaign_data(
     """Fetch data for a single platform with multi-tenant support."""
     logger.info(f"Request for platform: {request.platform.value}, client: {request.client_id}")
     
-    # Resolve credentials if not provided
+    # Resolve credentials: first check OAuth connections, then fall back to manual
     if not request.credentials:
         logger.info(f"Resolving credentials for {request.platform.value} from Firestore...")
-        request.credentials = await credential_store.get_credentials(request.client_id, request.platform.value)
+        request.credentials = await credential_store.resolve_credentials(
+            request.client_id, request.platform.value, request.account_id or ""
+        )
     
     try:
         connector = dispatcher.get_connector(request.platform)

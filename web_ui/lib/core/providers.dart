@@ -7,6 +7,7 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   return ApiClient(
     baseUrl: config?.baseUrl,
     apiKey: config?.apiKey,
+    useMockOAuth: false,
     onUnauthorized: () {
       // Clear credentials reactively on 401
       ref.read(configProvider.notifier).clearCredentials();

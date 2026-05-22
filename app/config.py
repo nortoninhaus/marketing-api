@@ -24,6 +24,9 @@ class Settings(BaseSettings):
 
     # --- Meta (Facebook / Instagram) ---
     meta_access_token: str = ""
+    meta_app_id: str = ""
+    meta_app_secret: str = ""
+    meta_oauth_redirect_uri: str = ""
 
     # --- Google Ads ---
     google_ads_developer_token: str = ""

@@ -856,14 +856,14 @@ class _QueryScreenState extends ConsumerState<QueryScreen> {
   }
 
   Widget _buildConnectedAccountsSection() {
-    final oauthPlatforms = _selectedPlatforms.where((p) => p == 'meta_ads' || p == 'google_ads').toList();
+    final oauthPlatforms = _selectedPlatforms.where((p) => p == 'meta_ads' || p == 'meta_organic' || p == 'google_ads').toList();
     if (oauthPlatforms.isEmpty) return const SizedBox.shrink();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 12),
-        Text('Connected Ad Accounts', style: Theme.of(context).textTheme.titleSmall?.copyWith(color: AppTheme.primaryColor)),
+        Text('Connected Accounts', style: Theme.of(context).textTheme.titleSmall?.copyWith(color: AppTheme.primaryColor)),
         const SizedBox(height: 8),
         ...oauthPlatforms.map((platform) {
           final connectionsAsync = ref.watch(oauthConnectionsProvider(platform));
@@ -878,7 +878,7 @@ class _QueryScreenState extends ConsumerState<QueryScreen> {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
-                      platform == 'meta_ads' ? 'Meta:' : 'Google:',
+                      platform == 'meta_ads' ? 'Meta Ads:' : (platform == 'meta_organic' ? 'Meta Pages:' : 'Google:'),
                       style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.mutedTextColor),
                     ),
                     ...connections.map((conn) {

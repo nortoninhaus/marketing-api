@@ -430,6 +430,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 24),
             _buildOAuthPlatformCard(context, ref, 'meta_ads', 'Meta Ads', Icons.facebook, Colors.blue),
             const SizedBox(height: 16),
+            _buildOAuthPlatformCard(context, ref, 'meta_organic', 'Meta Pages & Organic', Icons.pages, Colors.teal),
+            const SizedBox(height: 16),
             _buildOAuthPlatformCard(context, ref, 'google_ads', 'Google Ads', Icons.search, Colors.red),
           ],
         ),
