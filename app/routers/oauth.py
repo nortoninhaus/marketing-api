@@ -99,8 +99,8 @@ async def get_authorize_url(
                 detail="Meta App ID is not configured on the backend. Please set META_APP_ID."
             )
         backend_redirect_uri = _build_meta_redirect_uri(request)
-        # Added instagram_manage_comments, pages_read_user_content, and pages_messaging for comments
-        scopes = "ads_read,pages_show_list,pages_read_engagement,pages_read_user_content,instagram_basic,instagram_manage_insights,instagram_manage_comments"
+        # Use configurable scopes from settings
+        scopes = settings.meta_oauth_scopes
         auth_url = (
             f"https://www.facebook.com/v25.0/dialog/oauth"
             f"?client_id={settings.meta_app_id}"
@@ -132,10 +132,11 @@ async def get_authorize_url(
 
     # ─── Google Platforms ──────────────────────────────────────────
     if platform in ("google_ads", "ga4", "youtube"):
-        if not settings.google_client_id:
+        google_client_id = settings.google_client_id or settings.google_ads_client_id
+        if not google_client_id:
             raise HTTPException(
                 status_code=400,
-                detail="Google Client ID is not configured on the backend. Please set GOOGLE_CLIENT_ID."
+                detail="Google Client ID is not configured on the backend. Please set GOOGLE_CLIENT_ID or GOOGLE_ADS_CLIENT_ID."
             )
         backend_redirect_uri = _build_google_redirect_uri(request)
         # Request all Google scopes in one consent for broad access
@@ -143,7 +144,7 @@ async def get_authorize_url(
         auth_url = (
             f"https://accounts.google.com/o/oauth2/v2/auth?"
             + urlencode({
-                "client_id": settings.google_client_id,
+                "client_id": google_client_id,
                 "redirect_uri": backend_redirect_uri,
                 "scope": scope,
                 "state": state,
@@ -398,13 +399,15 @@ async def google_oauth_callback(
     backend_redirect_uri = _build_google_redirect_uri(request)
 
     # 1. Exchange authorization code for access + refresh tokens
+    google_client_id = settings.google_client_id or settings.google_ads_client_id
+    google_client_secret = settings.google_client_secret or settings.google_ads_client_secret
     async with httpx.AsyncClient() as client:
         token_res = await client.post(
             "https://oauth2.googleapis.com/token",
             data={
                 "code": code,
-                "client_id": settings.google_client_id,
-                "client_secret": settings.google_client_secret,
+                "client_id": google_client_id,
+                "client_secret": google_client_secret,
                 "redirect_uri": backend_redirect_uri,
                 "grant_type": "authorization_code",
             },
