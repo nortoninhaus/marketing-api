@@ -110,12 +110,118 @@ class CredentialStore:
         except (ValueError, TypeError):
             return True
 
+    def _is_token_close_to_expiry(self, data: Dict[str, Any], days_buffer: int = 15) -> bool:
+        """Check if the stored access_token is close to expiring (within buffer days)."""
+        expires_at_str = data.get("token_expires_at")
+        if not expires_at_str:
+            # No expiry tracked — assume close to expiry to be safe
+            return True
+        try:
+            expires_at = datetime.fromisoformat(expires_at_str)
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            return datetime.now(timezone.utc) >= (expires_at - timedelta(days=days_buffer))
+        except (ValueError, TypeError):
+            return True
+
+    async def _refresh_meta_token(self, data: Dict[str, Any], doc_ref) -> Dict[str, Any]:
+        """
+        Refreshes a Meta long-lived access token using the active token.
+        Updates the Firestore document with the new access_token and expiry.
+        """
+        access_token = data.get("access_token")
+        if not access_token:
+            logger.warning("No access_token available for Meta token refresh")
+            return data
+
+        if not settings.meta_app_id or not settings.meta_app_secret:
+            logger.warning("Meta App ID/Secret not configured for token refresh")
+            return data
+
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    "https://graph.facebook.com/v25.0/oauth/access_token",
+                    params={
+                        "grant_type": "fb_exchange_token",
+                        "client_id": settings.meta_app_id,
+                        "client_secret": settings.meta_app_secret,
+                        "fb_exchange_token": access_token,
+                    },
+                )
+                if resp.status_code == 200:
+                    token_data = resp.json()
+                    new_access_token = token_data["access_token"]
+                    expires_in = token_data.get("expires_in", 5184000)  # Default 60 days
+                    new_expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+
+                    # Update Firestore document
+                    await doc_ref.update({
+                        "access_token": new_access_token,
+                        "token_expires_at": new_expiry.isoformat(),
+                    })
+                    data["access_token"] = new_access_token
+                    data["token_expires_at"] = new_expiry.isoformat()
+                    logger.info("Successfully refreshed Meta access token")
+                else:
+                    logger.error(f"Meta token refresh failed: {resp.status_code} - {resp.text}")
+        except Exception as e:
+            logger.error(f"Error refreshing Meta token: {e}")
+
+        return data
+
+    async def _refresh_threads_token(self, data: Dict[str, Any], doc_ref) -> Dict[str, Any]:
+        """
+        Refreshes a Threads long-lived access token using the active token.
+        Updates the Firestore document with the new access_token and expiry.
+        """
+        access_token = data.get("access_token")
+        if not access_token:
+            logger.warning("No access_token available for Threads token refresh")
+            return data
+
+        if not settings.meta_app_secret:
+            logger.warning("Meta App Secret not configured for Threads token refresh")
+            return data
+
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    "https://graph.threads.net/access_token",
+                    params={
+                        "grant_type": "th_exchange_token",
+                        "client_secret": settings.meta_app_secret,
+                        "access_token": access_token,
+                    },
+                )
+                if resp.status_code == 200:
+                    token_data = resp.json()
+                    new_access_token = token_data["access_token"]
+                    expires_in = token_data.get("expires_in", 5184000)  # Default 60 days
+                    new_expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+
+                    # Update Firestore document
+                    await doc_ref.update({
+                        "access_token": new_access_token,
+                        "token_expires_at": new_expiry.isoformat(),
+                    })
+                    data["access_token"] = new_access_token
+                    data["token_expires_at"] = new_expiry.isoformat()
+                    logger.info("Successfully refreshed Threads access token")
+                else:
+                    logger.error(f"Threads token refresh failed: {resp.status_code} - {resp.text}")
+        except Exception as e:
+            logger.error(f"Error refreshing Threads token: {e}")
+
+        return data
+
     async def resolve_credentials(self, client_id: str, platform: str, account_id: str) -> Optional[Dict[str, Any]]:
         """
         Resolves credentials for a specific request.
         1. First checks in clients/{client_id}/oauth_connections/{platform}_{account_id}
         2. Falls back to the general/manual credentials document clients/{client_id}/credentials/{platform}
         3. For Google platforms, refreshes access_token if expired.
+        4. For Meta and Threads platforms, refreshes access_token if close to expiry.
         """
         if not self.db:
             return None
@@ -132,6 +238,16 @@ class CredentialStore:
                 if platform in GOOGLE_OAUTH_PLATFORMS and self._is_token_expired(data):
                     logger.info(f"Access token expired for {platform}/{account_id}, refreshing...")
                     data = await self._refresh_google_token(data, doc_ref)
+
+                # Refresh Meta tokens if close to expiring (only if token_expires_at is set, to skip permanent page tokens)
+                elif platform in {"meta_ads", "meta_organic"} and data.get("token_expires_at") and self._is_token_close_to_expiry(data):
+                    logger.info(f"Access token close to expiry for {platform}/{account_id}, refreshing...")
+                    data = await self._refresh_meta_token(data, doc_ref)
+
+                # Refresh Threads tokens if close to expiring
+                elif platform == "threads" and self._is_token_close_to_expiry(data):
+                    logger.info(f"Access token close to expiry for Threads {account_id}, refreshing...")
+                    data = await self._refresh_threads_token(data, doc_ref)
 
                 return data  # Returns full dict including access_token, refresh_token, etc.
         except Exception as e:

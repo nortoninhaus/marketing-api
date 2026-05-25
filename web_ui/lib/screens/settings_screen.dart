@@ -49,7 +49,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       html.window.history.replaceState(null, 'Settings', uri.path);
       
       // Refresh the connections provider for this platform
-      if (platform == 'meta_ads' || platform == 'google_ads') {
+      const oauthPlatforms = {'meta_ads', 'meta_organic', 'google_ads', 'ga4', 'youtube', 'threads'};
+      if (oauthPlatforms.contains(platform)) {
          ref.invalidate(oauthConnectionsProvider(platform));
       }
 
@@ -433,6 +434,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             _buildOAuthPlatformCard(context, ref, 'meta_organic', 'Meta Pages & Organic', Icons.pages, Colors.teal),
             const SizedBox(height: 16),
             _buildOAuthPlatformCard(context, ref, 'google_ads', 'Google Ads', Icons.search, Colors.red),
+            const SizedBox(height: 16),
+            _buildOAuthPlatformCard(context, ref, 'ga4', 'Google Analytics (GA4)', Icons.analytics, AppTheme.analyticsColor),
+            const SizedBox(height: 16),
+            _buildOAuthPlatformCard(context, ref, 'youtube', 'YouTube Channels', Icons.play_circle_fill, Colors.redAccent),
+            const SizedBox(height: 16),
+            _buildOAuthPlatformCard(context, ref, 'threads', 'Threads Profiles', Icons.alternate_email, AppTheme.textPrimaryColor),
           ],
         ),
       ),

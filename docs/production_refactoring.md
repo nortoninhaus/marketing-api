@@ -136,3 +136,20 @@ All data retrieval requests submitted to the single-platform endpoint (`/api/v1/
 2. **Metrics Validation**: The list of metrics must be non-empty (`min_length=1`).
 3. **Strict Enums**: The `platform` field must match one of the predefined values in the `Platform` enum.
 
+---
+
+## 8. Modernization Phase 1 & Phase 2 Upgrades
+
+The codebase has been further modernized and hardened under the `feature/fix-api-connection` branch:
+
+### Phase 1: High-Impact UI State & Integration Synchronization
+*   **Settings Connection Panels**: Added dedicated connection interface cards and active accounts lists for **GA4 properties**, **YouTube channels**, and **Threads user profiles** on the Settings screen.
+*   **State-Synchronization Callback Invalidation**: Fixed the OAuth success redirect callback hook in `settings_screen.dart` to invalidate caches and trigger active account refreshes for all 6 OAuth platforms (`meta_ads`, `meta_organic`, `google_ads`, `ga4`, `youtube`, and `threads`).
+*   **Query Screen Chip Selectors**: Exposes dynamic selection pills on the Query screen for GA4, YouTube, and Threads, allowing one-click Property/Channel ID injection.
+*   **Intelligent Account Pre-selection**: Implemented a post-frame callback in `query_screen.dart` to replace the default mock placeholder `'account_1'` with the user's first active connected account ID dynamically upon connections load.
+
+### Phase 2: High-Concurrency Backend Hardening
+*   **Proactive long-lived Token Refresh**: Programmed the `CredentialStore` in `app/services/credential_store.py` to identify when a long-lived Meta or Threads token is within 15 days of expiring (`_is_token_close_to_expiry()`) and auto-refresh it on request resolution using exchange endpoints.
+*   **Indefinite Page Token Preservation**: Programmed the credentials resolution pipeline to preserve indefinite Facebook Page connection tokens, safely bypassing refresh attempts for permanent organic credentials.
+*   **Comprehensive Testing Suite**: Added a brand new testing file `tests/test_refresh.py` with full mock setups to verify the reactive refresh buffer logic, Meta Ads/Organic tokens, and Threads user tokens.
+
