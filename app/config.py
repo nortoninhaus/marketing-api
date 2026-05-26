@@ -53,6 +53,8 @@ class Settings(BaseSettings):
 
     # --- TikTok Organic ---
     tiktok_access_token: str = ""
+    tiktok_client_key: str = ""
+    tiktok_client_secret: str = ""
 
     # --- LinkedIn ---
     linkedin_access_token: str = ""

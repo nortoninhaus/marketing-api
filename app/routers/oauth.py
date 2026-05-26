@@ -156,18 +156,39 @@ async def get_authorize_url(
         return {"url": auth_url, "authorization_url": auth_url}
 
     # ─── TikTok Platforms ──────────────────────────────────────────
-    if platform in ("tiktok_ads", "tiktok_organic"):
-        tiktok_client_id = settings.tiktok_ads_app_id
+    if platform == "tiktok_ads":
+        tiktok_client_id = settings.tiktok_ads_sandbox_app_id if settings.use_tiktok_sandbox else settings.tiktok_ads_app_id
         if not tiktok_client_id:
             raise HTTPException(
                 status_code=400,
-                detail="TikTok Client ID (App ID) is not configured on the backend. Please set TIKTOK_ADS_APP_ID."
+                detail="TikTok Client ID (App ID) is not configured on the backend. Please set TIKTOK_ADS_APP_ID or TIKTOK_ADS_SANDBOX_APP_ID."
             )
         backend_redirect_uri = _build_meta_redirect_uri(request)
         auth_url = (
             f"https://business-api.tiktok.com/portal/auth?"
             + urlencode({
                 "app_id": tiktok_client_id,
+                "state": state,
+                "redirect_uri": backend_redirect_uri,
+            })
+        )
+        return {"url": auth_url, "authorization_url": auth_url}
+
+    if platform == "tiktok_organic":
+        tiktok_client_id = settings.tiktok_ads_sandbox_app_id if settings.use_tiktok_sandbox else settings.tiktok_client_key
+        if not tiktok_client_id:
+            raise HTTPException(
+                status_code=400,
+                detail="TikTok Client Key is not configured on the backend. Please set TIKTOK_CLIENT_KEY."
+            )
+        backend_redirect_uri = _build_meta_redirect_uri(request)
+        base_url = "https://open-sandbox.tiktokapis.com/v2/auth/authorize/" if settings.use_tiktok_sandbox else "https://www.tiktok.com/v2/auth/authorize/"
+        auth_url = (
+            f"{base_url}?"
+            + urlencode({
+                "client_key": tiktok_client_id,
+                "scope": "user.info.basic,video.list",
+                "response_type": "code",
                 "state": state,
                 "redirect_uri": backend_redirect_uri,
             })
@@ -377,6 +398,121 @@ async def oauth_callback(
             else:
                 logger.error(f"Threads profile query failed: {me_res.text}")
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Threads profile query failed.")
+
+        return RedirectResponse(url=f"{redirect_url}?oauth=success&platform={platform}")
+
+    elif platform == "tiktok_ads":
+        app_id = settings.tiktok_ads_sandbox_app_id if settings.use_tiktok_sandbox else settings.tiktok_ads_app_id
+        secret = settings.tiktok_ads_sandbox_secret if settings.use_tiktok_sandbox else settings.tiktok_ads_secret
+        if not app_id or not secret:
+            raise HTTPException(status_code=500, detail="TikTok Ads configuration missing on server.")
+
+        async with httpx.AsyncClient() as client:
+            token_url = "https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/"
+            token_payload = {
+                "app_id": app_id,
+                "secret": secret,
+                "auth_code": code
+            }
+            token_res = await client.post(token_url, json=token_payload)
+            if token_res.status_code != 200:
+                logger.error(f"TikTok Ads token exchange failed: {token_res.text}")
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TikTok Ads token exchange failed.")
+
+            token_data = token_res.json()
+            if token_data.get("code") != 0:
+                logger.error(f"TikTok Ads token response error: {token_data}")
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"TikTok Ads token exchange error: {token_data.get('message')}")
+
+            access_token = token_data.get("data", {}).get("access_token")
+            advertiser_ids = token_data.get("data", {}).get("advertiser_ids", [])
+            
+            if advertiser_ids:
+                info_url = "https://business-api.tiktok.com/open_api/v1.3/advertiser/info/"
+                info_res = await client.get(
+                    info_url,
+                    params={"advertiser_ids": json.dumps(advertiser_ids)},
+                    headers={"Access-Token": access_token}
+                )
+                if info_res.status_code == 200:
+                    info_data = info_res.json()
+                    advertisers = info_data.get("data", {}).get("list", [])
+                    for adv in advertisers:
+                        await credential_store.save_oauth_connection(
+                            client_id=client_id,
+                            platform="tiktok_ads",
+                            account_id=str(adv.get("advertiser_id")),
+                            account_name=adv.get("advertiser_name", f"TikTok Ads {adv.get('advertiser_id')}"),
+                            access_token=access_token
+                        )
+                else:
+                    for adv_id in advertiser_ids:
+                        await credential_store.save_oauth_connection(
+                            client_id=client_id,
+                            platform="tiktok_ads",
+                            account_id=str(adv_id),
+                            account_name=f"TikTok Ads {adv_id}",
+                            access_token=access_token
+                        )
+            else:
+                await credential_store.save_oauth_connection(
+                    client_id=client_id,
+                    platform="tiktok_ads",
+                    account_id="default",
+                    account_name="TikTok Ads Connected",
+                    access_token=access_token
+                )
+
+        return RedirectResponse(url=f"{redirect_url}?oauth=success&platform={platform}")
+
+    elif platform == "tiktok_organic":
+        client_key = settings.tiktok_ads_sandbox_app_id if settings.use_tiktok_sandbox else settings.tiktok_client_key
+        client_secret = settings.tiktok_ads_sandbox_secret if settings.use_tiktok_sandbox else settings.tiktok_client_secret
+        if not client_key or not client_secret:
+            raise HTTPException(status_code=500, detail="TikTok Organic configuration missing on server.")
+
+        base_url = "https://open-sandbox.tiktokapis.com" if settings.use_tiktok_sandbox else "https://open.tiktokapis.com"
+        async with httpx.AsyncClient() as client:
+            token_url = f"{base_url}/v2/oauth/token/"
+            token_data = {
+                "client_key": client_key,
+                "client_secret": client_secret,
+                "code": code,
+                "grant_type": "authorization_code",
+                "redirect_uri": backend_redirect_uri
+            }
+            token_res = await client.post(token_url, data=token_data)
+            if token_res.status_code != 200:
+                logger.error(f"TikTok Organic token exchange failed: {token_res.text}")
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TikTok Organic token exchange failed.")
+
+            res_json = token_res.json()
+            access_token = res_json.get("access_token")
+            open_id = res_json.get("open_id")
+            refresh_token = res_json.get("refresh_token")
+            expires_in = res_json.get("expires_in", 86400)
+            token_expires_at = (datetime.now(timezone.utc) + timedelta(seconds=expires_in)).isoformat()
+
+            user_info_url = f"{base_url}/v2/user/info/"
+            user_res = await client.get(
+                user_info_url,
+                headers={"Authorization": f"Bearer {access_token}"},
+                params={"fields": "username,display_name"}
+            )
+            account_name = "TikTok User"
+            if user_res.status_code == 200:
+                user_data = user_res.json().get("data", {}).get("user", {})
+                account_name = user_data.get("display_name") or user_data.get("username") or "TikTok User"
+
+            await credential_store.save_oauth_connection(
+                client_id=client_id,
+                platform="tiktok_organic",
+                account_id=open_id or "default_organic",
+                account_name=account_name,
+                access_token=access_token,
+                refresh_token=refresh_token,
+                token_expires_at=token_expires_at
+            )
 
         return RedirectResponse(url=f"{redirect_url}?oauth=success&platform={platform}")
 
