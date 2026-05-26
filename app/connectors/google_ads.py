@@ -41,6 +41,20 @@ class GoogleAdsConnector(BaseConnector):
         }
 
     def _build_client(self, creds: Dict[str, Any]) -> GoogleAdsClient:
+        if creds.get("access_token"):
+            from google.oauth2.credentials import Credentials
+            token_credentials = Credentials(
+                token=creds["access_token"],
+                refresh_token=creds.get("refresh_token"),
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=creds["client_id"],
+                client_secret=creds["client_secret"]
+            )
+            return GoogleAdsClient(
+                credentials=token_credentials,
+                developer_token=creds["developer_token"],
+                use_proto_plus=True
+            )
         client_dict = {
             "developer_token": creds["developer_token"],
             "client_id": creds["client_id"],
@@ -118,7 +132,38 @@ class GoogleAdsConnector(BaseConnector):
 
     def get_schema(self) -> Dict[str, Any]:
         return {
-            "metrics": ["impressions", "clicks", "cost_micros", "conversions", "all_conversions"],
+            "metrics": [
+                "impressions", 
+                "clicks", 
+                "cost_micros", 
+                "conversions", 
+                "all_conversions",
+                "conversions_value",
+                "all_conversions_value",
+                "interactions",
+                "engagements",
+                "video_views",
+                "active_view_impressions",
+                "conversions_from_interactions_rate",
+                "interaction_rate",
+                "average_cpc",
+                "average_cpm",
+                "ctr",
+                "bounce_rate",
+                "active_view_measurability",
+                "active_view_viewability",
+                "video_quartile_25_rate",
+                "video_quartile_50_rate",
+                "video_quartile_75_rate",
+                "video_quartile_100_rate",
+                "cost_per_conversion",
+                "cost_per_all_conversions",
+                "all_conversions_from_interactions_rate",
+                "value_per_conversion",
+                "value_per_all_conversion",
+                "active_view_cpm",
+                "active_view_ctr"
+            ],
             "dimensions": ["campaign.name", "segments.date", "ad_group.name", "ad_group_criterion.keyword.text"]
         }
 

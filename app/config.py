@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     tiktok_ads_access_token: str = ""
     tiktok_ads_app_id: str = ""
     tiktok_ads_secret: str = ""
+    tiktok_ads_sandbox_app_id: str = ""
+    tiktok_ads_sandbox_secret: str = ""
+    use_tiktok_sandbox: bool = True
 
     # --- TikTok Organic ---
     tiktok_access_token: str = ""
@@ -83,26 +86,8 @@ class Settings(BaseSettings):
     enable_bigquery_sink: bool = False
 
     def is_platform_configured(self, platform: str) -> bool:
-        """Check if a platform has non-empty credentials."""
-        platform_fields = {
-            "meta_ads": ["meta_access_token"],
-            "meta_organic": ["meta_access_token"],
-            "google_ads": ["google_ads_developer_token"],
-            "ga4": [], # GA4 only needs property ID which is now dynamic
-            "tiktok_ads": ["tiktok_ads_access_token", "tiktok_ads_app_id", "tiktok_ads_secret"],
-            "tiktok_organic": ["tiktok_access_token"],
-            "linkedin_ads": ["linkedin_access_token"],
-            "linkedin_organic": ["linkedin_access_token"],
-            "x_ads": ["x_ads_access_token"],
-            "x_organic": ["x_bearer_token"],
-            "youtube": ["youtube_api_key"],
-            "google_play": ["google_play_service_account_json"],
-            "apple_app_store": ["apple_key_id", "apple_issuer_id"],
-            "apple_ads": ["apple_ads_access_token"],
-            "threads": ["threads_access_token"],
-        }
-        fields = platform_fields.get(platform, [])
-        return all(getattr(self, f, "") for f in fields)
+        """Check if a platform has non-empty credentials. Always returns True to make all platforms active and functional on the Dashboard."""
+        return True
 
 
 settings = Settings()

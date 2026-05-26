@@ -133,16 +133,27 @@ class MetaAdsConnector(BaseConnector):
                         total_conversions = 0
                         for action in actions:
                             try:
-                                total_conversions += int(action.get("value", 0))
+                                total_conversions += int(float(action.get("value", 0)))
                             except Exception:
                                 pass
                         metrics_dict["conversions"] = total_conversions
                     else:
-                        try:
-                            # Safely cast metrics to float/int
-                            val = i.get(m, 0)
-                            metrics_dict[m] = float(val) if "." in str(val) else int(val)
-                        except Exception:
+                        val = i.get(m)
+                        if isinstance(val, list):
+                            total_val = 0
+                            for item in val:
+                                try:
+                                    total_val += float(item.get("value", 0))
+                                except Exception:
+                                    pass
+                            metrics_dict[m] = total_val
+                        elif val is not None:
+                            try:
+                                # Safely cast metrics to float/int
+                                metrics_dict[m] = float(val) if "." in str(val) else int(val)
+                            except Exception:
+                                metrics_dict[m] = 0
+                        else:
                             metrics_dict[m] = 0
 
                 results.append(
@@ -203,8 +214,42 @@ class MetaAdsConnector(BaseConnector):
 
     def get_schema(self) -> Dict[str, Any]:
         return {
-            "metrics": ["impressions", "clicks", "spend", "reach", "conversions",
-                        "cpc", "cpm", "ctr", "frequency", "actions"],
+            "metrics": [
+                "impressions", 
+                "clicks", 
+                "spend", 
+                "reach", 
+                "conversions",
+                "cpc", 
+                "cpm", 
+                "ctr", 
+                "frequency", 
+                "actions",
+                "purchase_roas",
+                "unique_clicks",
+                "inline_link_clicks",
+                "unique_inline_link_clicks",
+                "video_p25_watched_actions",
+                "video_p50_watched_actions",
+                "video_p75_watched_actions",
+                "video_p100_watched_actions",
+                "video_play_actions",
+                "video_30_sec_watched_actions",
+                "video_avg_time_watched_actions",
+                "social_spend",
+                "cost_per_unique_click",
+                "cost_per_inline_link_click",
+                "cost_per_conversion",
+                "action_values",
+                "cost_per_action_type",
+                "cost_per_unique_action_type",
+                "mobile_app_purchase_roas",
+                "website_purchase_roas",
+                "website_ctr",
+                "outbound_clicks",
+                "unique_outbound_clicks",
+                "cost_per_outbound_click"
+            ],
             "dimensions": ["campaign_name", "adset_name", "ad_name", "date_start",
                           "age", "gender", "country", "dma"],
             "metadata": {

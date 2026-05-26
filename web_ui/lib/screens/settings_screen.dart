@@ -49,7 +49,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       html.window.history.replaceState(null, 'Settings', uri.path);
       
       // Refresh the connections provider for this platform
-      const oauthPlatforms = {'meta_ads', 'meta_organic', 'google_ads', 'ga4', 'youtube', 'threads'};
+      const oauthPlatforms = {'meta_ads', 'meta_organic', 'google_ads', 'ga4', 'youtube', 'threads', 'tiktok_ads', 'tiktok_organic'};
       if (oauthPlatforms.contains(platform)) {
          ref.invalidate(oauthConnectionsProvider(platform));
       }
@@ -440,6 +440,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             _buildOAuthPlatformCard(context, ref, 'youtube', 'YouTube Channels', Icons.play_circle_fill, Colors.redAccent),
             const SizedBox(height: 16),
             _buildOAuthPlatformCard(context, ref, 'threads', 'Threads Profiles', Icons.alternate_email, AppTheme.textPrimaryColor),
+            const SizedBox(height: 16),
+            _buildOAuthPlatformCard(context, ref, 'tiktok_ads', 'TikTok Ads', Icons.music_note, Colors.pink),
+            const SizedBox(height: 16),
+            _buildOAuthPlatformCard(context, ref, 'tiktok_organic', 'TikTok Organic', Icons.video_library, Colors.redAccent),
           ],
         ),
       ),

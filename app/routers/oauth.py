@@ -36,7 +36,7 @@ GOOGLE_SCOPES = {
 # All Google scopes combined for a single consent prompt
 ALL_GOOGLE_SCOPES = " ".join(GOOGLE_SCOPES.values())
 
-SUPPORTED_PLATFORMS = {"meta_ads", "meta_organic", "google_ads", "ga4", "youtube", "threads"}
+SUPPORTED_PLATFORMS = {"meta_ads", "meta_organic", "google_ads", "ga4", "youtube", "threads", "tiktok_ads", "tiktok_organic"}
 
 
 def _build_meta_redirect_uri(request: Request) -> str:
@@ -151,6 +151,25 @@ async def get_authorize_url(
                 "response_type": "code",
                 "access_type": "offline",
                 "prompt": "consent",
+            })
+        )
+        return {"url": auth_url, "authorization_url": auth_url}
+
+    # ─── TikTok Platforms ──────────────────────────────────────────
+    if platform in ("tiktok_ads", "tiktok_organic"):
+        tiktok_client_id = settings.tiktok_ads_app_id
+        if not tiktok_client_id:
+            raise HTTPException(
+                status_code=400,
+                detail="TikTok Client ID (App ID) is not configured on the backend. Please set TIKTOK_ADS_APP_ID."
+            )
+        backend_redirect_uri = _build_meta_redirect_uri(request)
+        auth_url = (
+            f"https://business-api.tiktok.com/portal/auth?"
+            + urlencode({
+                "app_id": tiktok_client_id,
+                "state": state,
+                "redirect_uri": backend_redirect_uri,
             })
         )
         return {"url": auth_url, "authorization_url": auth_url}
@@ -427,12 +446,21 @@ async def google_oauth_callback(
         # 2. Discover Google Ads Accounts (via Customer Service)
         try:
             ads_res = await client.get(
-                "https://googleads.googleapis.com/v19/customers:listAccessibleCustomers",
+                "https://googleads.googleapis.com/v18/customers:listAccessibleCustomers",
                 headers={
                     "Authorization": f"Bearer {access_token}",
                     "developer-token": settings.google_ads_developer_token,
                 },
             )
+            if ads_res.status_code == 404:
+                logger.info("Google Ads v18 discovery returned 404. Falling back to v17...")
+                ads_res = await client.get(
+                    "https://googleads.googleapis.com/v17/customers:listAccessibleCustomers",
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "developer-token": settings.google_ads_developer_token,
+                    },
+                )
             if ads_res.status_code == 200:
                 customer_names = ads_res.json().get("resourceNames", [])
                 for name in customer_names:

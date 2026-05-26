@@ -44,8 +44,8 @@ class GA4Connector(BaseConnector):
                 token=creds["access_token"],
                 refresh_token=creds.get("refresh_token"),
                 token_uri="https://oauth2.googleapis.com/token",
-                client_id=settings.google_client_id,
-                client_secret=settings.google_client_secret
+                client_id=settings.google_client_id or settings.google_ads_client_id,
+                client_secret=settings.google_client_secret or settings.google_ads_client_secret
             )
             return BetaAnalyticsDataClient(credentials=token_credentials)
         return BetaAnalyticsDataClient()
