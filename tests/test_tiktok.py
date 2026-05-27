@@ -37,7 +37,7 @@ def test_tiktok_ads_authorize():
 def test_tiktok_organic_authorize():
     # Sandbox mode
     settings.use_tiktok_sandbox = True
-    settings.tiktok_ads_sandbox_app_id = "sbawioy0q8vqdzm3sl"
+    settings.tiktok_organic_sandbox_client_key = "sbawioy0q8vqdzm3sl"
     response = client.get("/api/v1/oauth/authorize?platform=tiktok_organic")
     assert response.status_code == 200
     data = response.json()

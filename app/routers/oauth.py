@@ -182,7 +182,7 @@ async def get_authorize_url(
         return {"url": auth_url, "authorization_url": auth_url}
 
     if platform == "tiktok_organic":
-        tiktok_client_id = settings.tiktok_ads_sandbox_app_id if settings.use_tiktok_sandbox else settings.tiktok_client_key
+        tiktok_client_id = settings.tiktok_organic_sandbox_client_key if settings.use_tiktok_sandbox else settings.tiktok_client_key
         if not tiktok_client_id:
             raise HTTPException(
                 status_code=400,
@@ -473,8 +473,8 @@ async def oauth_callback(
         return RedirectResponse(url=f"{redirect_url}?oauth=success&platform={platform}")
 
     elif platform == "tiktok_organic":
-        client_key = settings.tiktok_ads_sandbox_app_id if settings.use_tiktok_sandbox else settings.tiktok_client_key
-        client_secret = settings.tiktok_ads_sandbox_secret if settings.use_tiktok_sandbox else settings.tiktok_client_secret
+        client_key = settings.tiktok_organic_sandbox_client_key if settings.use_tiktok_sandbox else settings.tiktok_client_key
+        client_secret = settings.tiktok_organic_sandbox_secret if settings.use_tiktok_sandbox else settings.tiktok_client_secret
         if not client_key or not client_secret:
             raise HTTPException(status_code=500, detail="TikTok Organic configuration missing on server.")
 
