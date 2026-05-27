@@ -11,16 +11,23 @@ from app.config import settings
 client = TestClient(app)
 
 def test_tiktok_ads_authorize():
-    # Sandbox mode
+    # Alphanumeric sandbox App ID should return 400 Bad Request
     settings.use_tiktok_sandbox = True
+    settings.tiktok_ads_sandbox_app_id = "sbawioy0q8vqdzm3sl"
+    response = client.get("/api/v1/oauth/authorize?platform=tiktok_ads")
+    assert response.status_code == 400
+    assert "strictly requires a numeric App ID" in response.json()["detail"]
+
+    # Numeric sandbox App ID should succeed
+    settings.tiktok_ads_sandbox_app_id = "123456789"
     response = client.get("/api/v1/oauth/authorize?platform=tiktok_ads")
     assert response.status_code == 200
     data = response.json()
     assert "url" in data
-    assert "sbawioy0q8vqdzm3sl" in data["url"]
+    assert "123456789" in data["url"]
     assert "business-api.tiktok.com/portal/auth" in data["url"]
 
-    # Production mode
+    # Production mode (numeric App ID)
     settings.use_tiktok_sandbox = False
     response = client.get("/api/v1/oauth/authorize?platform=tiktok_ads")
     assert response.status_code == 200
@@ -30,6 +37,7 @@ def test_tiktok_ads_authorize():
 def test_tiktok_organic_authorize():
     # Sandbox mode
     settings.use_tiktok_sandbox = True
+    settings.tiktok_ads_sandbox_app_id = "sbawioy0q8vqdzm3sl"
     response = client.get("/api/v1/oauth/authorize?platform=tiktok_organic")
     assert response.status_code == 200
     data = response.json()

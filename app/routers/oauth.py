@@ -163,6 +163,13 @@ async def get_authorize_url(
                 status_code=400,
                 detail="TikTok Client ID (App ID) is not configured on the backend. Please set TIKTOK_ADS_APP_ID or TIKTOK_ADS_SANDBOX_APP_ID."
             )
+        # TikTok Ads OAuth strictly requires a numeric App ID. Alphanumeric Client Keys will fail on TikTok's side.
+        if not tiktok_client_id.isdigit():
+            raise HTTPException(
+                status_code=400,
+                detail=f"TikTok Ads strictly requires a numeric App ID (like '{settings.tiktok_ads_app_id or '7621197369555666962'}'), but received alphanumeric key '{tiktok_client_id}'. "
+                       f"Please ensure TIKTOK_ADS_SANDBOX_APP_ID is configured with the numeric App ID of your sandbox app, or toggle off sandbox mode for Ads."
+            )
         backend_redirect_uri = _build_meta_redirect_uri(request)
         auth_url = (
             f"https://business-api.tiktok.com/portal/auth?"
