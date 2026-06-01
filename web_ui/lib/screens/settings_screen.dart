@@ -42,25 +42,35 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   void _checkOAuthCallback() {
     if (!kIsWeb) return;
-    final uri = Uri.base;
-    if (uri.queryParameters['oauth'] == 'success') {
-      final platform = uri.queryParameters['platform'] ?? 'Unknown Platform';
-      
-      // Clear URL parameters to prevent re-triggering on refresh
-      html.window.history.replaceState(null, 'Settings', uri.path);
-      
-      // Refresh the connections provider for this platform
-      const oauthPlatforms = {'meta_ads', 'meta_organic', 'google_ads', 'ga4', 'youtube', 'threads', 'tiktok_ads', 'tiktok_organic'};
-      if (oauthPlatforms.contains(platform)) {
-         ref.invalidate(oauthConnectionsProvider(platform));
-      }
+    try {
+      final uri = Uri.base;
+      if (uri.queryParameters['oauth'] == 'success') {
+        final platform = uri.queryParameters['platform'] ?? 'Unknown Platform';
+        
+        // Clear URL parameters to prevent re-triggering on refresh
+        try {
+          html.window.history.replaceState(null, 'Settings', uri.path);
+        } catch (e) {
+          debugPrint('Failed to replace history state: $e');
+        }
+        
+        // Refresh the connections provider for this platform
+        const oauthPlatforms = {'meta_ads', 'meta_organic', 'google_ads', 'ga4', 'youtube', 'threads', 'tiktok_ads', 'tiktok_organic'};
+        if (oauthPlatforms.contains(platform)) {
+           ref.invalidate(oauthConnectionsProvider(platform));
+        }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Successfully connected $platform account!'),
-          backgroundColor: Colors.green,
-        ),
-      );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Successfully connected $platform account!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e, stack) {
+      debugPrint('Error handling OAuth callback: $e\n$stack');
     }
   }
 

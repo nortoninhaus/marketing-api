@@ -141,7 +141,7 @@ class ApiClient {
         'platform': platform,
         'redirect_url': currentOrigin,
       });
-      return response.data;
+      return _parseResponse(response.data) as Map<String, dynamic>;
     } catch (e) {
       throw _handleError(e);
     }
@@ -165,7 +165,7 @@ class ApiClient {
     }
     try {
       final response = await _dio.get('/api/v1/oauth/connections', queryParameters: {'platform': platform});
-      return response.data;
+      return _parseResponse(response.data, expectList: true) as List<dynamic>;
     } catch (e) {
       throw _handleError(e);
     }
