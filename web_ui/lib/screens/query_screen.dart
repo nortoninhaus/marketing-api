@@ -856,20 +856,39 @@ class _QueryScreenState extends ConsumerState<QueryScreen> {
   }
 
   Widget _buildConnectedAccountsSection() {
-    final oauthPlatforms = _selectedPlatforms.where((p) => p == 'meta_ads' || p == 'google_ads').toList();
+    final oauthPlatforms = _selectedPlatforms.where((p) => 
+        const ['meta_ads', 'meta_organic', 'google_ads', 'ga4', 'youtube', 'threads'].contains(p)
+    ).toList();
     if (oauthPlatforms.isEmpty) return const SizedBox.shrink();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 12),
-        Text('Connected Ad Accounts', style: Theme.of(context).textTheme.titleSmall?.copyWith(color: AppTheme.primaryColor)),
+        Text('Connected Accounts', style: Theme.of(context).textTheme.titleSmall?.copyWith(color: AppTheme.primaryColor)),
         const SizedBox(height: 8),
         ...oauthPlatforms.map((platform) {
           final connectionsAsync = ref.watch(oauthConnectionsProvider(platform));
           return connectionsAsync.when(
             data: (connections) {
               if (connections.isEmpty) return const SizedBox.shrink();
+
+              // Auto pre-select connected account if currently using default placeholder
+              if (_accountIdController.text == 'account_1' && connections.isNotEmpty) {
+                final firstId = connections.first['account_id']?.toString() ?? '';
+                if (firstId.isNotEmpty) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted && _accountIdController.text == 'account_1') {
+                      _accountIdController.text = firstId;
+                    }
+                  });
+                }
+              }
+
+              String label = platform == 'meta_ads' 
+                  ? 'Meta Ads:' 
+                  : (platform == 'meta_organic' ? 'Meta Pages:' : (platform == 'google_ads' ? 'Google:' : (platform == 'ga4' ? 'GA4:' : (platform == 'youtube' ? 'YouTube:' : 'Threads:'))));
+
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8.0),
                 child: Wrap(
@@ -878,7 +897,7 @@ class _QueryScreenState extends ConsumerState<QueryScreen> {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
-                      platform == 'meta_ads' ? 'Meta:' : 'Google:',
+                      label,
                       style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.mutedTextColor),
                     ),
                     ...connections.map((conn) {
@@ -891,7 +910,6 @@ class _QueryScreenState extends ConsumerState<QueryScreen> {
                         backgroundColor: isSelected ? AppTheme.primaryColor.withOpacity(0.1) : AppTheme.surfaceColor,
                         side: BorderSide(color: isSelected ? AppTheme.primaryColor : AppTheme.mutedTextColor.withOpacity(0.2)),
                         onPressed: () {
-                          // Change value but keep cursor at end or don't worry about cursor
                           _accountIdController.text = accountId;
                         },
                       );

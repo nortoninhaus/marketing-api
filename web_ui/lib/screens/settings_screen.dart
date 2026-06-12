@@ -22,6 +22,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _baseUrlController = TextEditingController();
   final _apiKeyController = TextEditingController();
   bool _isTesting = false;
+  final Map<String, bool> _expandedPlatforms = {};
 
   @override
   void initState() {
@@ -41,24 +42,35 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   void _checkOAuthCallback() {
     if (!kIsWeb) return;
-    final uri = Uri.base;
-    if (uri.queryParameters['oauth'] == 'success') {
-      final platform = uri.queryParameters['platform'] ?? 'Unknown Platform';
-      
-      // Clear URL parameters to prevent re-triggering on refresh
-      html.window.history.replaceState(null, 'Settings', uri.path);
-      
-      // Refresh the connections provider for this platform
-      if (platform == 'meta_ads' || platform == 'google_ads') {
-         ref.invalidate(oauthConnectionsProvider(platform));
-      }
+    try {
+      final uri = Uri.base;
+      if (uri.queryParameters['oauth'] == 'success') {
+        final platform = uri.queryParameters['platform'] ?? 'Unknown Platform';
+        
+        // Clear URL parameters to prevent re-triggering on refresh
+        try {
+          html.window.history.replaceState(null, 'Settings', uri.path);
+        } catch (e) {
+          debugPrint('Failed to replace history state: $e');
+        }
+        
+        // Refresh the connections provider for this platform
+        const oauthPlatforms = {'meta_ads', 'meta_organic', 'google_ads', 'ga4', 'youtube', 'threads', 'tiktok_ads', 'tiktok_organic'};
+        if (oauthPlatforms.contains(platform)) {
+           ref.invalidate(oauthConnectionsProvider(platform));
+        }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Successfully connected $platform account!'),
-          backgroundColor: Colors.green,
-        ),
-      );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Successfully connected $platform account!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e, stack) {
+      debugPrint('Error handling OAuth callback: $e\n$stack');
     }
   }
 
@@ -430,7 +442,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 24),
             _buildOAuthPlatformCard(context, ref, 'meta_ads', 'Meta Ads', Icons.facebook, Colors.blue),
             const SizedBox(height: 16),
+            _buildOAuthPlatformCard(context, ref, 'meta_organic', 'Meta Pages & Organic', Icons.pages, Colors.teal),
+            const SizedBox(height: 16),
             _buildOAuthPlatformCard(context, ref, 'google_ads', 'Google Ads', Icons.search, Colors.red),
+            const SizedBox(height: 16),
+            _buildOAuthPlatformCard(context, ref, 'ga4', 'Google Analytics (GA4)', Icons.analytics, AppTheme.analyticsColor),
+            const SizedBox(height: 16),
+            _buildOAuthPlatformCard(context, ref, 'youtube', 'YouTube Channels', Icons.play_circle_fill, Colors.redAccent),
+            const SizedBox(height: 16),
+            _buildOAuthPlatformCard(context, ref, 'threads', 'Threads Profiles', Icons.alternate_email, AppTheme.textPrimaryColor),
+            const SizedBox(height: 16),
+            _buildOAuthPlatformCard(context, ref, 'tiktok_ads', 'TikTok Ads', Icons.music_note, Colors.pink),
+            const SizedBox(height: 16),
+            _buildOAuthPlatformCard(context, ref, 'tiktok_organic', 'TikTok Organic', Icons.video_library, Colors.redAccent),
           ],
         ),
       ),
@@ -439,6 +463,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Widget _buildOAuthPlatformCard(BuildContext context, WidgetRef ref, String platformId, String platformName, IconData icon, Color color) {
     final connectionsAsync = ref.watch(oauthConnectionsProvider(platformId));
+    final isExpanded = _expandedPlatforms[platformId] ?? false;
     
     return Container(
       decoration: BoxDecoration(
@@ -446,16 +471,67 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.1)),
       ),
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
+              IconButton(
+                icon: Icon(
+                  isExpanded ? Icons.expand_more : Icons.navigate_next,
+                  color: color,
+                  size: 24,
+                ),
+                onPressed: () {
+                  setState(() {
+                    _expandedPlatforms[platformId] = !isExpanded;
+                  });
+                },
+              ),
               Icon(icon, color: color, size: 24),
               const SizedBox(width: 12),
-              Text(platformName, style: Theme.of(context).textTheme.titleMedium),
-              const Spacer(),
+              Expanded(
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _expandedPlatforms[platformId] = !isExpanded;
+                      });
+                    },
+                    child: Row(
+                      children: [
+                        Text(platformName, style: Theme.of(context).textTheme.titleMedium),
+                        const SizedBox(width: 12),
+                        connectionsAsync.when(
+                          data: (connections) {
+                            if (connections.isEmpty) return const SizedBox.shrink();
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: color.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: color.withOpacity(0.2)),
+                              ),
+                              child: Text(
+                                '${connections.length} connected',
+                                style: TextStyle(
+                                  color: color,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            );
+                          },
+                          loading: () => const SizedBox.shrink(),
+                          error: (_, __) => const SizedBox.shrink(),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
               TextButton.icon(
                 onPressed: () => ref.invalidate(oauthConnectionsProvider(platformId)),
                 icon: const Icon(Icons.refresh, size: 16),
@@ -484,65 +560,76 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          connectionsAsync.when(
-            data: (connections) {
-              if (connections.isEmpty) {
-                return Text('No accounts connected.', style: TextStyle(color: AppTheme.mutedTextColor, fontSize: 13));
-              }
-              return Column(
-                children: connections.map((conn) {
-                  final accountId = conn['account_id']?.toString() ?? 'Unknown ID';
-                  final accountName = conn['account_name']?.toString() ?? 'Unnamed Account';
-                  return ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: CircleAvatar(
-                      backgroundColor: color.withOpacity(0.1),
-                      child: Icon(Icons.account_circle, color: color, size: 20),
-                    ),
-                    title: Text(accountName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                    subtitle: Text('ID: $accountId', style: const TextStyle(fontSize: 12)),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.link_off, color: Colors.red, size: 20),
-                      tooltip: 'Disconnect Account',
-                      onPressed: () async {
-                        final confirm = await showDialog<bool>(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: const Text('Disconnect Account?'),
-                            content: Text('Are you sure you want to disconnect $accountName ($accountId)?'),
-                            actions: [
-                              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-                              TextButton(
-                                onPressed: () => Navigator.pop(ctx, true),
-                                style: TextButton.styleFrom(foregroundColor: Colors.red),
-                                child: const Text('Disconnect'),
-                              ),
-                            ],
-                          ),
-                        );
-                        if (confirm == true) {
-                          try {
-                            await ref.read(apiClientProvider).disconnectOAuthAccount(platformId, accountId);
-                            ref.invalidate(oauthConnectionsProvider(platformId));
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Account disconnected')));
-                            }
-                          } catch (e) {
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to disconnect: $e'), backgroundColor: Colors.red));
-                            }
-                          }
-                        }
-                      },
-                    ),
+          if (isExpanded) ...[
+            const Padding(
+              padding: EdgeInsets.only(left: 48),
+              child: Divider(height: 24),
+            ),
+            connectionsAsync.when(
+              data: (connections) {
+                if (connections.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.only(left: 48, bottom: 8),
+                    child: Text('No accounts connected.', style: TextStyle(color: AppTheme.mutedTextColor, fontSize: 13)),
                   );
-                }).toList(),
-              );
-            },
-            loading: () => const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator())),
-            error: (e, _) => Text('Failed to load connections: $e', style: const TextStyle(color: Colors.red)),
-          ),
+                }
+                return Padding(
+                  padding: const EdgeInsets.only(left: 48),
+                  child: Column(
+                    children: connections.map((conn) {
+                      final accountId = conn['account_id']?.toString() ?? 'Unknown ID';
+                      final accountName = conn['account_name']?.toString() ?? 'Unnamed Account';
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: CircleAvatar(
+                          backgroundColor: color.withOpacity(0.1),
+                          child: Icon(Icons.account_circle, color: color, size: 20),
+                        ),
+                        title: Text(accountName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                        subtitle: Text('ID: $accountId', style: const TextStyle(fontSize: 12)),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.link_off, color: Colors.red, size: 20),
+                          tooltip: 'Disconnect Account',
+                          onPressed: () async {
+                            final confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: const Text('Disconnect Account?'),
+                                content: Text('Are you sure you want to disconnect $accountName ($accountId)?'),
+                                actions: [
+                                  TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, true),
+                                    style: TextButton.styleFrom(foregroundColor: Colors.red),
+                                    child: const Text('Disconnect'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirm == true) {
+                              try {
+                                await ref.read(apiClientProvider).disconnectOAuthAccount(platformId, accountId);
+                                ref.invalidate(oauthConnectionsProvider(platformId));
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Account disconnected')));
+                                }
+                              } catch (e) {
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to disconnect: $e'), backgroundColor: Colors.red));
+                                }
+                              }
+                            }
+                          },
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                );
+              },
+              loading: () => const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator())),
+              error: (e, _) => Text('Failed to load connections: $e', style: const TextStyle(color: Colors.red)),
+            ),
+          ],
         ],
       ),
     );

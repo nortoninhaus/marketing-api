@@ -56,11 +56,11 @@ class AppTheme {
         titleLarge: TextStyle(color: textPrimaryColor, fontWeight: FontWeight.w600),
         titleMedium: TextStyle(color: textPrimaryColor, fontWeight: FontWeight.w500),
       ),
-      cardTheme: CardTheme(
+      cardTheme: const CardThemeData(
         color: surfaceColor,
         elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        margin: const EdgeInsets.only(bottom: 16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(16))),
+        margin: EdgeInsets.only(bottom: 16),
       ),
       chipTheme: ChipThemeData(
         backgroundColor: surfaceColor,

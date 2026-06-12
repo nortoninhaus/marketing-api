@@ -76,3 +76,35 @@ def test_batch_data_authorized(client, auth_headers):
     assert "results" in data
     # Results should be DataResponse objects
     assert data["results"][0]["platform"] == "google_ads"
+
+
+from unittest.mock import patch, MagicMock
+from app.models.responses import CommentData
+
+@patch("app.connectors.threads.ThreadsConnector.fetch_comments")
+def test_comments_endpoint(mock_fetch, client, auth_headers):
+    # Mock comment data
+    mock_fetch.return_value = [
+        CommentData(comment_id="c_1", text="Nice post!", author="user_a", timestamp="2026-05-22T12:00:00Z")
+    ]
+    
+    payload = {
+        "platform": "threads",
+        "post_id": "thread_post_123",
+        "client_id": "client_test",
+        "user_id": "user_test",
+        "account_id": "acc_test"
+    }
+    
+    response = client.post("/api/v1/comments", json=payload, headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["platform"] == "threads"
+    assert data["post_id"] == "thread_post_123"
+    assert len(data["comments"]) == 1
+    assert data["comments"][0]["comment_id"] == "c_1"
+    assert data["comments"][0]["text"] == "Nice post!"
+    assert data["comments"][0]["author"] == "user_a"
+    assert mock_fetch.call_args[0][0] == "thread_post_123"
+
