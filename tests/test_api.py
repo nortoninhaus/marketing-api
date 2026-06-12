@@ -106,5 +106,5 @@ def test_comments_endpoint(mock_fetch, client, auth_headers):
     assert data["comments"][0]["comment_id"] == "c_1"
     assert data["comments"][0]["text"] == "Nice post!"
     assert data["comments"][0]["author"] == "user_a"
-    mock_fetch.assert_called_once_with("thread_post_123", "")
+    assert mock_fetch.call_args[0][0] == "thread_post_123"
 

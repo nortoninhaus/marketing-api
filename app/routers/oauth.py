@@ -11,7 +11,7 @@ from typing import List, Dict, Any, Optional
 from urllib.parse import urlencode
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Depends, status, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, PlainTextResponse
 from app.config import settings
 from app.services.credential_store import credential_store
 from app.middleware.auth import verify_api_key
@@ -22,6 +22,13 @@ router = APIRouter(
     prefix="/api/v1/oauth",
     tags=["OAuth Connections"]
 )
+
+
+@router.get("/callback/tiktokvljxNNE2CCwtB8UPjjnsL7xB0DozpH1E.txt", response_class=PlainTextResponse)
+async def tiktok_site_verification():
+    """Endpoint to handle TikTok developer site verification."""
+    return "tiktok-developers-site-verification=vljxNNE2CCwtB8UPjjnsL7xB0DozpH1E"
+
 
 # ─── Google OAuth Scopes ───────────────────────────────────────────
 GOOGLE_SCOPES = {
