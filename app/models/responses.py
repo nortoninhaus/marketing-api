@@ -63,6 +63,31 @@ class DataResponse(BaseModel):
     pagination: Optional[PaginationInfo] = None
 
 
+class CommentData(BaseModel):
+    """Single comment with optional nested replies."""
+
+    comment_id: str = Field(..., description="Platform-native comment ID")
+    text: str = Field("", description="Comment text content")
+    author: str = Field("", description="Author username or name")
+    timestamp: str = Field("", description="ISO-8601 timestamp of the comment")
+    like_count: int = Field(0, description="Number of likes on this comment")
+    reply_count: int = Field(0, description="Number of replies to this comment")
+    replies: List["CommentData"] = Field(default_factory=list, description="Nested reply comments")
+
+
+class CommentsResponse(BaseModel):
+    """Response model for comment-fetching endpoints."""
+
+    status: Literal["success", "partial", "error"] = "success"
+    request_id: str = Field(default_factory=lambda: str(uuid4()))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    platform: Platform
+    post_id: str = ""
+    total_comments: int = 0
+    comments: List[CommentData] = Field(default_factory=list)
+    errors: List[ErrorDetail] = Field(default_factory=list)
+
+
 class BatchDataResponse(BaseModel):
     """Aggregated response for multi-platform batch queries."""
 

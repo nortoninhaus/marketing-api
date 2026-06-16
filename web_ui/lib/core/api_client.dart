@@ -135,8 +135,13 @@ class ApiClient {
       return {'url': 'https://example.com/oauth/authorize?platform=$platform&mock=true'};
     }
     try {
-      final response = await _dio.get('/api/v1/oauth/authorize', queryParameters: {'platform': platform});
-      return response.data;
+      // Pass the current browser origin so the backend redirects back here after OAuth
+      final currentOrigin = Uri.base.origin;
+      final response = await _dio.get('/api/v1/oauth/authorize', queryParameters: {
+        'platform': platform,
+        'redirect_url': currentOrigin,
+      });
+      return _parseResponse(response.data) as Map<String, dynamic>;
     } catch (e) {
       throw _handleError(e);
     }
@@ -160,7 +165,7 @@ class ApiClient {
     }
     try {
       final response = await _dio.get('/api/v1/oauth/connections', queryParameters: {'platform': platform});
-      return response.data;
+      return _parseResponse(response.data, expectList: true) as List<dynamic>;
     } catch (e) {
       throw _handleError(e);
     }

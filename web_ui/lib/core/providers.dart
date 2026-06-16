@@ -7,6 +7,7 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   return ApiClient(
     baseUrl: config?.baseUrl,
     apiKey: config?.apiKey,
+    useMockOAuth: false,
     onUnauthorized: () {
       // Clear credentials reactively on 401
       ref.read(configProvider.notifier).clearCredentials();
@@ -19,11 +20,19 @@ final credentialsCheckProvider = Provider<AsyncValue<bool>>((ref) {
 });
 
 final healthCheckProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  final config = ref.watch(configProvider).value;
+  if (config == null || !config.hasCredentials) {
+    return {'status': 'unconfigured', 'error': 'API Configuration is required.'};
+  }
   final apiClient = ref.watch(apiClientProvider);
   return await apiClient.checkHealth();
 });
 
 final platformsProvider = FutureProvider<List<dynamic>>((ref) async {
+  final config = ref.watch(configProvider).value;
+  if (config == null || !config.hasCredentials) {
+    return [];
+  }
   final apiClient = ref.watch(apiClientProvider);
   return await apiClient.getPlatforms();
 });
@@ -31,6 +40,10 @@ final platformsProvider = FutureProvider<List<dynamic>>((ref) async {
 /// Schema provider — fetches metrics/dimensions for a specific platform.
 /// Usage: ref.watch(schemaProvider('meta_ads'))
 final schemaProvider = FutureProvider.family<Map<String, dynamic>, String>((ref, platform) async {
+  final config = ref.watch(configProvider).value;
+  if (config == null || !config.hasCredentials) {
+    return {};
+  }
   final apiClient = ref.watch(apiClientProvider);
   return await apiClient.getSchema(platform);
 });
@@ -56,6 +69,10 @@ final platformsByTypeProvider = Provider<AsyncValue<Map<String, List<dynamic>>>>
 
 /// Fetches connected OAuth accounts for a given platform (e.g., 'meta_ads' or 'google_ads')
 final oauthConnectionsProvider = FutureProvider.family<List<dynamic>, String>((ref, platform) async {
+  final config = ref.watch(configProvider).value;
+  if (config == null || !config.hasCredentials) {
+    return [];
+  }
   final apiClient = ref.watch(apiClientProvider);
   return await apiClient.getOAuthConnections(platform);
 });
