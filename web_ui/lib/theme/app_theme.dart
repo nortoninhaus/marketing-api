@@ -56,7 +56,7 @@ class AppTheme {
         titleLarge: TextStyle(color: textPrimaryColor, fontWeight: FontWeight.w600),
         titleMedium: TextStyle(color: textPrimaryColor, fontWeight: FontWeight.w500),
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: surfaceColor,
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
