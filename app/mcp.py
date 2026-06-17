@@ -54,6 +54,92 @@ VALID_PLATFORMS = [
     "apple_app_store", "apple_ads", "threads",
 ]
 
+METRIC_TRANSLATION_MAP = {
+    "meta_ads": {
+        "spend": "spend",
+        "clicks": "clicks",
+        "impressions": "impressions",
+        "conversions": "conversions"
+    },
+    "google_ads": {
+        "spend": "cost_micros",
+        "clicks": "clicks",
+        "impressions": "impressions",
+        "conversions": "conversions"
+    },
+    "tiktok_ads": {
+        "spend": "spend",
+        "clicks": "clicks",
+        "impressions": "impressions",
+        "conversions": "conversion"
+    },
+    "linkedin_ads": {
+        "spend": "costInLocalCurrency",
+        "clicks": "clicks",
+        "impressions": "impressions"
+    },
+    "apple_ads": {
+        "spend": "spend",
+        "clicks": "taps",
+        "impressions": "impressions",
+        "conversions": "installs"
+    },
+    "ga4": {
+        "sessions": "sessions",
+        "users": "activeUsers",
+        "pageviews": "screenPageViews",
+        "bounce_rate": "bounceRate",
+        "conversions": "conversions"
+    },
+    "google_play": {
+        "downloads": "installs",
+        "ratings": "rating"
+    },
+    "apple_app_store": {
+        "downloads": "downloads",
+        "impressions": "impressions",
+        "sessions": "sessions"
+    },
+    "tiktok_organic": {
+        "impressions": "view_count",
+        "engagement": "like_count",
+        "followers": "follower_count"
+    },
+    "linkedin_organic": {
+        "impressions": "impressionCount",
+        "clicks": "clickCount",
+        "engagement": "engagement"
+    },
+    "x_organic": {
+        "impressions": "impression_count",
+        "engagement": "like_count"
+    },
+    "youtube": {
+        "impressions": "views",
+        "engagement": "likeCount",
+        "followers": "subscribersGained"
+    },
+    "threads": {
+        "impressions": "views",
+        "engagement": "likes",
+        "followers": "followers_count"
+    }
+}
+
+def _translate_metric_to_native(platform: str, metric: str) -> str:
+    """Translate a generic metric name to the platform-specific native metric name."""
+    if platform in METRIC_TRANSLATION_MAP:
+        return METRIC_TRANSLATION_MAP[platform].get(metric, metric)
+    return metric
+
+def _translate_metric_to_generic(platform: str, native_metric: str) -> str:
+    """Translate a platform-specific native metric name back to its generic name."""
+    if platform in METRIC_TRANSLATION_MAP:
+        for generic, native in METRIC_TRANSLATION_MAP[platform].items():
+            if native == native_metric:
+                return generic
+    return native_metric
+
 
 async def _get(path: str, params: dict | None = None) -> dict:
     """Issue an authenticated GET to the FastAPI backend."""
@@ -298,13 +384,13 @@ async def compare_platforms(
         if p not in account_ids:
             return {"error": f"Missing account_id for platform '{p}' in account_ids map."}
 
-    # Build batch sub-requests
+    # Build batch sub-requests with translated metrics
     sub_requests = [
         {
             "platform": p,
             "start_date": start_date,
             "end_date": end_date,
-            "metrics": metrics,
+            "metrics": list(set([_translate_metric_to_native(p, m) for m in metrics])),
             "client_id": client_id,
             "user_id": user_id,
             "account_id": account_ids[p],
@@ -329,10 +415,14 @@ async def compare_platforms(
         for row in result.get("data", []):
             row_metrics = row.get("metrics", {})
             for m in metrics:
-                val = row_metrics.get(m)
+                native_m = _translate_metric_to_native(plat, m)
+                val = row_metrics.get(native_m)
                 if val is not None:
                     try:
-                        totals[m] += float(val)
+                        val_float = float(val)
+                        if plat == "google_ads" and native_m == "cost_micros":
+                            val_float = val_float / 1000000.0
+                        totals[m] += val_float
                     except (ValueError, TypeError):
                         pass
         comparison[plat] = totals
@@ -427,14 +517,21 @@ async def summarize_performance(
     elif platform in ("google_play", "apple_app_store"):
         ptype = "app_store"
 
-    metrics = DEFAULT_METRICS[ptype]
+    generic_metrics = DEFAULT_METRICS[ptype]
+    native_metrics = []
+    for m in generic_metrics:
+        if platform in METRIC_TRANSLATION_MAP:
+            if m in METRIC_TRANSLATION_MAP[platform]:
+                native_metrics.append(METRIC_TRANSLATION_MAP[platform][m])
+        else:
+            native_metrics.append(m)
 
     try:
         result = await _post("/api/v1/campaign-data", {
             "platform": platform,
             "start_date": start_date,
             "end_date": end_date,
-            "metrics": metrics,
+            "metrics": native_metrics,
             "client_id": client_id,
             "user_id": user_id,
             "account_id": account_id,
@@ -447,15 +544,22 @@ async def summarize_performance(
         }
 
     # Aggregate
-    totals: dict[str, float] = {m: 0 for m in metrics}
+    totals: dict[str, float] = {}
     campaigns = result.get("data", [])
     for row in campaigns:
         row_metrics = row.get("metrics", {})
-        for m in metrics:
-            val = row_metrics.get(m)
+        for native_m in native_metrics:
+            generic_m = _translate_metric_to_generic(platform, native_m)
+            val = row_metrics.get(native_m)
             if val is not None:
                 try:
-                    totals[m] += float(val)
+                    val_float = float(val)
+                    if platform == "google_ads" and native_m == "cost_micros":
+                        val_float = val_float / 1000000.0
+                    
+                    if generic_m not in totals:
+                        totals[generic_m] = 0.0
+                    totals[generic_m] += val_float
                 except (ValueError, TypeError):
                     pass
 
