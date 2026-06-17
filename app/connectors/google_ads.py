@@ -29,7 +29,16 @@ class GoogleAdsConnector(BaseConnector):
         
         # Use account_id as the primary target for google ads queries
         customer_id = request.account_id if request and request.account_id else creds.get("customer_id")
+        if customer_id:
+            customer_id = str(customer_id).replace("-", "")
+            
         login_customer_id = creds.get("login_customer_id")
+        if login_customer_id:
+            login_customer_id = str(login_customer_id).replace("-", "")
+            
+        # Omit login_customer_id if it is empty, not provided, or matches target customer_id
+        if not login_customer_id or login_customer_id == customer_id:
+            login_customer_id = None
         
         return {
             "developer_token": developer_token,
@@ -53,6 +62,7 @@ class GoogleAdsConnector(BaseConnector):
             return GoogleAdsClient(
                 credentials=token_credentials,
                 developer_token=creds["developer_token"],
+                login_customer_id=creds.get("login_customer_id"),
                 use_proto_plus=True
             )
         client_dict = {

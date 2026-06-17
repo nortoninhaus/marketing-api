@@ -14,6 +14,7 @@ from typing import Optional
 
 import httpx
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from app.config import settings
 
@@ -38,6 +39,7 @@ mcp = FastMCP(
         "Use the tools below to discover platforms, inspect schemas, "
         "fetch campaign/organic data, and run cross-platform comparisons."
     ),
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
 )
 
 # ---------------------------------------------------------------------------
