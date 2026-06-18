@@ -29,7 +29,16 @@ class GoogleAdsConnector(BaseConnector):
         
         # Use account_id as the primary target for google ads queries
         customer_id = request.account_id if request and request.account_id else creds.get("customer_id")
+        if customer_id:
+            customer_id = str(customer_id).replace("-", "")
+            
         login_customer_id = creds.get("login_customer_id")
+        if login_customer_id:
+            login_customer_id = str(login_customer_id).replace("-", "")
+            
+        # Omit login_customer_id if it is empty, not provided, or matches target customer_id
+        if not login_customer_id or login_customer_id == customer_id:
+            login_customer_id = None
         
         return {
             "developer_token": developer_token,
@@ -53,6 +62,7 @@ class GoogleAdsConnector(BaseConnector):
             return GoogleAdsClient(
                 credentials=token_credentials,
                 developer_token=creds["developer_token"],
+                login_customer_id=creds.get("login_customer_id"),
                 use_proto_plus=True
             )
         client_dict = {
@@ -86,8 +96,18 @@ class GoogleAdsConnector(BaseConnector):
                 select_dims.append("ad_group.name")
                 select_dims.append("ad_group_criterion.keyword.text")
 
+        MAP_METRICS = {
+            "video_views": "video_trueview_views",
+            "video_quartile_25_rate": "video_quartile_p25_rate",
+            "video_quartile_50_rate": "video_quartile_p50_rate",
+            "video_quartile_75_rate": "video_quartile_p75_rate",
+            "video_quartile_100_rate": "video_quartile_p100_rate",
+            "value_per_all_conversion": "value_per_all_conversions",
+        }
+
         # Build metrics select list
-        metric_fields = [f"metrics.{m}" for m in request.metrics]
+        query_metrics = [MAP_METRICS.get(m, m) for m in request.metrics]
+        metric_fields = [f"metrics.{m}" for m in query_metrics]
         query_fields = select_dims + metric_fields
         
         query = f"""
@@ -104,8 +124,9 @@ class GoogleAdsConnector(BaseConnector):
             for row in batch.results:
                 metrics_dict = {}
                 for m in request.metrics:
+                    mapped_m = MAP_METRICS.get(m, m)
                     try:
-                        metrics_dict[m] = getattr(row.metrics, m, 0)
+                        metrics_dict[m] = getattr(row.metrics, mapped_m, 0)
                     except Exception:
                         metrics_dict[m] = 0
 

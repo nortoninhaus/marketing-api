@@ -3,6 +3,7 @@ OAuth Router — Handles OAuth flows for Meta and Google platforms.
 Supports: Meta Ads, Meta Organic, Google Ads, GA4, YouTube.
 """
 
+import asyncio
 import base64
 import json
 import logging
@@ -593,42 +594,44 @@ async def google_oauth_callback(
 
         headers = {"Authorization": f"Bearer {access_token}"}
 
-        # 2. Discover Google Ads Accounts (via Customer Service)
+        # 2. Discover Google Ads Accounts (via Google Ads SDK Customer Service)
         try:
-            ads_res = await client.get(
-                "https://googleads.googleapis.com/v18/customers:listAccessibleCustomers",
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "developer-token": settings.google_ads_developer_token,
-                },
+            from google.oauth2.credentials import Credentials
+            from google.ads.googleads.client import GoogleAdsClient
+            
+            token_credentials = Credentials(
+                token=access_token,
+                refresh_token=refresh_token,
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=google_client_id,
+                client_secret=google_client_secret
             )
-            if ads_res.status_code == 404:
-                logger.info("Google Ads v18 discovery returned 404. Falling back to v17...")
-                ads_res = await client.get(
-                    "https://googleads.googleapis.com/v17/customers:listAccessibleCustomers",
-                    headers={
-                        "Authorization": f"Bearer {access_token}",
-                        "developer-token": settings.google_ads_developer_token,
-                    },
+            
+            ads_client = GoogleAdsClient(
+                credentials=token_credentials,
+                developer_token=settings.google_ads_developer_token,
+                use_proto_plus=True
+            )
+            
+            # Offload blocking gRPC call to a thread
+            customer_service = ads_client.get_service("CustomerService")
+            accessible_customers = await asyncio.to_thread(customer_service.list_accessible_customers)
+            
+            customer_names = accessible_customers.resource_names
+            for name in customer_names:
+                # format: "customers/1234567890"
+                cid = name.split("/")[-1]
+                await credential_store.save_oauth_connection(
+                    client_id=client_id,
+                    platform="google_ads",
+                    account_id=cid,
+                    account_name=f"Google Ads {cid}",
+                    access_token=access_token,
+                    refresh_token=refresh_token,
+                    token_expires_at=token_expires_at,
+                    extra_data={"developer_token": settings.google_ads_developer_token},
                 )
-            if ads_res.status_code == 200:
-                customer_names = ads_res.json().get("resourceNames", [])
-                for name in customer_names:
-                    # format: "customers/1234567890"
-                    cid = name.split("/")[-1]
-                    await credential_store.save_oauth_connection(
-                        client_id=client_id,
-                        platform="google_ads",
-                        account_id=cid,
-                        account_name=f"Google Ads {cid}",
-                        access_token=access_token,
-                        refresh_token=refresh_token,
-                        token_expires_at=token_expires_at,
-                        extra_data={"developer_token": settings.google_ads_developer_token},
-                    )
-                logger.info(f"Discovered {len(customer_names)} Google Ads accounts")
-            else:
-                logger.warning(f"Google Ads discovery returned {ads_res.status_code}: {ads_res.text}")
+            logger.info(f"Discovered {len(customer_names)} Google Ads accounts via SDK")
         except Exception as e:
             logger.warning(f"Google Ads discovery failed (non-fatal): {e}")
 

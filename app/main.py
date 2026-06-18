@@ -84,6 +84,24 @@ app.add_middleware(
 from app.routers.oauth import router as oauth_router
 app.include_router(oauth_router)
 
+# Mount FastMCP SSE server and protect it with middleware
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from app.mcp import mcp
+
+@app.middleware("http")
+async def mcp_auth_middleware(request: Request, call_next):
+    # Match /mcp, /mcp/sse, etc.
+    if request.url.path.startswith("/mcp"):
+        api_key = request.headers.get("X-API-Key")
+        if not api_key:
+            api_key = request.query_params.get("api_key")
+        if api_key != settings.api_key:
+            return JSONResponse(status_code=401, content={"detail": "Invalid API Key"})
+    return await call_next(request)
+
+app.mount("/mcp", mcp.sse_app())
+
 # Import comment models
 from app.models.responses import CommentsResponse, CommentData
 
