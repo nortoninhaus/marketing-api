@@ -125,4 +125,65 @@ def test_credentials_status_endpoint(mock_get, mock_list, client, auth_headers):
     assert "platforms" in data
     # Check meta_ads status
     assert data["platforms"]["meta_ads"]["has_credentials"] is True
-    assert data["platforms"]["meta_ads"]["type"] == "oauth"
+    assert data["platforms"]["meta_ads"]["credential_type"] == "oauth"
+
+
+def test_campaign_data_dry_run(client, auth_headers):
+    payload = {
+        "platform": "meta_ads",
+        "start_date": "2024-01-01",
+        "end_date": "2024-01-31",
+        "metrics": ["impressions"],
+        "client_id": "test_client",
+        "user_id": "test_user",
+        "account_id": "act_12345",
+        "dry_run": True
+    }
+    resp = client.post("/api/v1/campaign-data", json=payload, headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "success"
+    assert data["data"] == []
+    assert data["metadata"]["dry_run"] is True
+
+
+@patch("app.services.credential_store.credential_store.list_oauth_connections")
+@patch("app.services.credential_store.credential_store.get_credentials")
+def test_validate_endpoint_semantic_failure(mock_get, mock_list, client, auth_headers):
+    mock_list.return_value = []
+    mock_get.return_value = None
+
+    payload = {
+        "platform": "meta_ads",
+        "metrics": ["impressions"],
+        "client_id": "client_without_creds",
+        "account_id": "act_12345"
+    }
+    resp = client.post("/api/v1/validate", json=payload, headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["valid"] is False
+    assert any("semántica" in err for err in data["parameter_errors"])
+
+
+def test_base_connector_rate_limit_parsing():
+    import requests as _requests
+    from app.connectors.base import BaseConnector
+    
+    class TestConnector(BaseConnector):
+        platform_name = "test"
+        def fetch_data(self, request): return []
+        def get_schema(self): return {}
+
+    response = _requests.Response()
+    response.status_code = 429
+    response.headers = {"x-rate-limit-remaining": "0"}
+    
+    error = _requests.exceptions.HTTPError(response=response)
+    
+    connector = TestConnector()
+    detail = connector.handle_error(error)
+    
+    assert detail.code == "RATE_LIMIT"
+    assert detail.rate_limit_remaining == 0
+

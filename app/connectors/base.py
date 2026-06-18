@@ -57,10 +57,22 @@ class BaseConnector(ABC):
         code = "API_ERROR"
         retryable = True
         message = str(e)
+        rate_limit_remaining = None
 
         # Classify by HTTP status code
         if isinstance(e, _requests.exceptions.HTTPError) and e.response is not None:
             status = e.response.status_code
+            
+            # Inspect headers for rate limits
+            headers = e.response.headers or {}
+            for k in ("x-rate-limit-remaining", "rate-limit-remaining", "x-ratelimit-remaining"):
+                if k in headers:
+                    try:
+                        rate_limit_remaining = int(headers[k])
+                        break
+                    except (ValueError, TypeError):
+                        pass
+
             if status in (401, 403):
                 code = "AUTH_ERROR"
                 retryable = False
@@ -95,5 +107,6 @@ class BaseConnector(ABC):
             code=code,
             message=message,
             platform=self.platform_name,
-            retryable=retryable
+            retryable=retryable,
+            rate_limit_remaining=rate_limit_remaining
         )

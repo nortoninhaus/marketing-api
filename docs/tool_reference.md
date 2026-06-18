@@ -83,6 +83,23 @@ Every call to `get_marketing_data` undergoes platform-specific parameter validat
 | `apple_ads` | Search Ads Organization ID (numeric) | `12345678` | — |
 | `threads` | Threads User ID or `me` | `me` or `12345678` | `post_id` (Media ID) |
 
+### Optional/Platform-Specific Query Parameters Support
+
+Below is a quick reference table showing which platforms support or require specific optional parameters (`post_id`, `video_id`, `app_id`) in `get_marketing_data`:
+
+| Platform | Supports `post_id` | Supports `video_id` | Supports `app_id` |
+|----------|:-----------------:|:------------------:|:----------------:|
+| `meta_ads` | Optional (ad creative level) | No | No |
+| `meta_organic` | Optional (IG media/Page post) | No | No |
+| `linkedin_organic` | Optional (Share ID) | No | No |
+| `x_organic` | Optional (Tweet ID) | No | No |
+| `youtube` | No | Optional (Video ID) | No |
+| `tiktok_organic` | No | Optional (Video ID) | No |
+| `threads` | Optional (Threads Media ID) | No | No |
+| `google_play` | No | No | Optional (Package name) |
+| `apple_app_store` | No | No | Optional (App ID) |
+| All others | No | No | No |
+
 ---
 
 
