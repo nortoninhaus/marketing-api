@@ -96,8 +96,53 @@ class XOrganicConnector(BaseConnector):
     def get_schema(self) -> Dict[str, Any]:
         return {
             "metrics": ["retweet_count", "reply_count", "like_count", "quote_count", "impression_count"],
-            "dimensions": ["tweet_id", "created_at"]
+            "dimensions": ["tweet_id", "created_at"],
+            "metadata": {
+                "comment_support": True,
+            },
         }
+
+    def fetch_comments(self, tweet_id: str, bearer_token: str) -> list:
+        """Fetch replies to a tweet using X API v2 search endpoint."""
+        from app.models.responses import CommentData
+
+        comments: list = []
+        url = "https://api.twitter.com/2/tweets/search/recent"
+        headers = {"Authorization": f"Bearer {bearer_token}"}
+        params = {
+            "query": f"conversation_id:{tweet_id}",
+            "tweet.fields": "author_id,created_at,public_metrics,in_reply_to_user_id",
+            "expansions": "author_id",
+            "user.fields": "username,name",
+            "max_results": 100,
+        }
+
+        try:
+            response = requests.get(url, headers=headers, params=params, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+
+            # Build author lookup
+            users = {u["id"]: u for u in data.get("includes", {}).get("users", [])}
+
+            for tweet in data.get("data", []):
+                author_id = tweet.get("author_id", "")
+                author_info = users.get(author_id, {})
+                public_metrics = tweet.get("public_metrics", {})
+
+                comments.append(CommentData(
+                    comment_id=tweet.get("id", ""),
+                    text=tweet.get("text", ""),
+                    author=author_info.get("username", author_id),
+                    timestamp=tweet.get("created_at", ""),
+                    like_count=public_metrics.get("like_count", 0),
+                    reply_count=public_metrics.get("reply_count", 0),
+                ))
+
+        except Exception as e:
+            logger.error(f"X/Twitter comments fetch error for tweet {tweet_id}: {e}")
+
+        return comments
 
     def ping(self) -> bool:
         try:
