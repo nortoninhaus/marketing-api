@@ -96,8 +96,18 @@ class GoogleAdsConnector(BaseConnector):
                 select_dims.append("ad_group.name")
                 select_dims.append("ad_group_criterion.keyword.text")
 
+        MAP_METRICS = {
+            "video_views": "video_trueview_views",
+            "video_quartile_25_rate": "video_quartile_p25_rate",
+            "video_quartile_50_rate": "video_quartile_p50_rate",
+            "video_quartile_75_rate": "video_quartile_p75_rate",
+            "video_quartile_100_rate": "video_quartile_p100_rate",
+            "value_per_all_conversion": "value_per_all_conversions",
+        }
+
         # Build metrics select list
-        metric_fields = [f"metrics.{m}" for m in request.metrics]
+        query_metrics = [MAP_METRICS.get(m, m) for m in request.metrics]
+        metric_fields = [f"metrics.{m}" for m in query_metrics]
         query_fields = select_dims + metric_fields
         
         query = f"""
@@ -114,8 +124,9 @@ class GoogleAdsConnector(BaseConnector):
             for row in batch.results:
                 metrics_dict = {}
                 for m in request.metrics:
+                    mapped_m = MAP_METRICS.get(m, m)
                     try:
-                        metrics_dict[m] = getattr(row.metrics, m, 0)
+                        metrics_dict[m] = getattr(row.metrics, mapped_m, 0)
                     except Exception:
                         metrics_dict[m] = 0
 
