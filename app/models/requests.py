@@ -67,6 +67,8 @@ class DataRequest(BaseModel):
     app_id: Optional[str] = Field(None, description="App package name or ID (app store platforms)")
     dimensions: Optional[List[str]] = Field(None, description="List of dimensions to group by")
     dry_run: bool = Field(False, description="If true, only validate parameters/metrics without fetching upstream data")
+    limit: Optional[int] = Field(None, description="Maximum number of items to return")
+    next_page_token: Optional[str] = Field(None, description="Cursor for the next page of results")
 
     @model_validator(mode="after")
     def validate_date_range(self) -> "DataRequest":
@@ -102,6 +104,8 @@ class CommentsRequest(BaseModel):
     client_id: str = Field("client_1", description="ID of the client/agency")
     user_id: str = Field("user_1", description="ID of the user making the request")
     account_id: str = Field("", description="Platform-specific account identifier (optional)")
+    limit: Optional[int] = Field(None, description="Maximum number of items to return")
+    next_page_token: Optional[str] = Field(None, description="Cursor for the next page of results")
 
 
 class ValidationRequest(BaseModel):

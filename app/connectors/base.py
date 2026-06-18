@@ -1,10 +1,7 @@
-"""
-Base Connector with unified error handling and retry logic.
-"""
-
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 import logging
+import contextvars
 
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -13,10 +10,44 @@ from app.models.responses import CampaignData, ErrorDetail
 
 logger = logging.getLogger(__name__)
 
+# Thread-safe context variable to track rate limits for successful requests
+import threading
+
+# Thread-safe ContextVar for local thread tracking
+rate_limit_ctx = contextvars.ContextVar("rate_limit_remaining", default=None)
+
+# Thread-local storage to track the active request object in worker threads
+thread_local_storage = threading.local()
+
+# Global registry to pass rate limits back from worker threads to main threads
+request_rate_limits = {}
+request_rate_limits_lock = threading.Lock()
+
 class BaseConnector(ABC):
     """Abstract base class for all marketing platforms."""
 
     platform_name: str = "base"
+
+    def _record_rate_limit(self, response_headers: Dict[str, str]):
+        """Helper to parse and record rate limit remaining from headers."""
+        headers = response_headers or {}
+        # Lowercase headers to ensure case-insensitive matching
+        headers_lower = {k.lower(): v for k, v in headers.items()}
+        for k in ("x-rate-limit-remaining", "rate-limit-remaining", "x-ratelimit-remaining"):
+            if k in headers_lower:
+                try:
+                    val = int(headers_lower[k])
+                    rate_limit_ctx.set(val)
+                    # Also register in global map if current_request is tracked
+                    req = getattr(thread_local_storage, "current_request", None)
+                    if req is not None:
+                        with request_rate_limits_lock:
+                            request_rate_limits[id(req)] = val
+                    logger.info(f"Recorded rate limit remaining for {self.platform_name}: {val}")
+                    break
+                except (ValueError, TypeError):
+                    pass
+
 
     def get_credentials(self, request: Optional[DataRequest] = None) -> Dict[str, Any]:
         """
@@ -44,11 +75,15 @@ class BaseConnector(ABC):
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     def fetch_with_retry(self, request: DataRequest) -> List[CampaignData]:
         """Fetch data with exponential backoff for transient errors."""
+        thread_local_storage.current_request = request
         try:
             return self.fetch_data(request)
         except Exception as e:
             logger.error(f"Error fetching data for {self.platform_name}: {e}")
             raise
+        finally:
+            if hasattr(thread_local_storage, "current_request"):
+                del thread_local_storage.current_request
 
     def handle_error(self, e: Exception) -> ErrorDetail:
         """Map raw exceptions to structured ErrorDetail for agents."""

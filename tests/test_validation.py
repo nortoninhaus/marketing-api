@@ -187,3 +187,166 @@ def test_base_connector_rate_limit_parsing():
     assert detail.code == "RATE_LIMIT"
     assert detail.rate_limit_remaining == 0
 
+
+def test_platforms_api_version(client, auth_headers):
+    resp = client.get("/api/v1/platforms", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data, list)
+    assert len(data) > 0
+    # Check that api_version is populated on all items
+    for platform in data:
+        assert "api_version" in platform
+        assert platform["api_version"] is not None
+
+
+@patch("app.services.dispatcher.dispatcher.get_connector")
+@patch("app.services.credential_store.credential_store.resolve_credentials")
+def test_campaign_data_pagination_slicing(mock_resolve, mock_get_connector, client, auth_headers):
+    from app.models.responses import CampaignData
+    mock_resolve.return_value = {"access_token": "mock_token"}
+    
+    mock_connector = MagicMock()
+    mock_connector.platform_name = "meta_ads"
+    # Return 5 items
+    mock_connector.fetch_with_retry.return_value = [
+        CampaignData(campaign_name=f"Campaign {i}", date="2026-06-01", metrics={})
+        for i in range(5)
+    ]
+    mock_get_connector.return_value = mock_connector
+
+    # Request first page of 2 items
+    payload = {
+        "platform": "meta_ads",
+        "start_date": "2026-06-01",
+        "end_date": "2026-06-05",
+        "metrics": ["impressions"],
+        "client_id": "test_client",
+        "user_id": "test_user",
+        "account_id": "act_12345",
+        "limit": 2
+    }
+    resp = client.post("/api/v1/campaign-data", json=payload, headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["data"]) == 2
+    assert data["data"][0]["campaign_name"] == "Campaign 0"
+    assert data["data"][1]["campaign_name"] == "Campaign 1"
+    assert data["pagination"]["has_next"] is True
+    assert data["pagination"]["next_page_token"] == "2"
+    assert data["pagination"]["total_count"] == 5
+
+    # Request second page using next_page_token
+    payload["next_page_token"] = "2"
+    resp = client.post("/api/v1/campaign-data", json=payload, headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["data"]) == 2
+    assert data["data"][0]["campaign_name"] == "Campaign 2"
+    assert data["data"][1]["campaign_name"] == "Campaign 3"
+    assert data["pagination"]["has_next"] is True
+    assert data["pagination"]["next_page_token"] == "4"
+
+    # Request third page
+    payload["next_page_token"] = "4"
+    resp = client.post("/api/v1/campaign-data", json=payload, headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["data"]) == 1
+    assert data["data"][0]["campaign_name"] == "Campaign 4"
+    assert data["pagination"]["has_next"] is False
+    assert data["pagination"]["next_page_token"] is None
+
+
+@patch("app.services.credential_store.credential_store.resolve_credentials")
+@patch("app.connectors.threads.ThreadsConnector.fetch_comments")
+def test_comments_pagination_slicing(mock_fetch_comments, mock_resolve, client, auth_headers):
+    from app.models.responses import CommentData
+    mock_resolve.return_value = {"access_token": "mock_token"}
+    mock_fetch_comments.return_value = [
+        CommentData(comment_id=f"comment_{i}", text=f"text {i}", author=f"author {i}", timestamp="2026-06-01T12:00:00Z")
+        for i in range(5)
+    ]
+
+    payload = {
+        "platform": "threads",
+        "post_id": "post_123",
+        "client_id": "test_client",
+        "user_id": "test_user",
+        "account_id": "threads_acc",
+        "limit": 2
+    }
+    resp = client.post("/api/v1/comments", json=payload, headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["comments"]) == 2
+    assert data["comments"][0]["comment_id"] == "comment_0"
+    assert data["next_page_token"] == "2"
+    assert data["total_comments"] == 5
+
+    payload["next_page_token"] = "2"
+    resp = client.post("/api/v1/comments", json=payload, headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["comments"]) == 2
+    assert data["comments"][0]["comment_id"] == "comment_2"
+    assert data["next_page_token"] == "4"
+
+
+@patch("app.services.dispatcher.dispatcher.get_connector")
+@patch("app.services.credential_store.credential_store.resolve_credentials")
+def test_campaign_data_rate_limit_propagation(mock_resolve, mock_get_connector, client, auth_headers):
+    mock_resolve.return_value = {"access_token": "mock_token"}
+    
+    from app.connectors.base import BaseConnector
+    
+    class DummyConnector(BaseConnector):
+        platform_name = "meta_ads"
+        def get_schema(self): return {}
+        def fetch_data(self, request):
+            self._record_rate_limit({"x-rate-limit-remaining": "42"})
+            return []
+            
+    mock_connector = DummyConnector()
+    mock_get_connector.return_value = mock_connector
+
+    payload = {
+        "platform": "meta_ads",
+        "start_date": "2026-06-01",
+        "end_date": "2026-06-05",
+        "metrics": ["impressions"],
+        "client_id": "test_client",
+        "user_id": "test_user",
+        "account_id": "act_12345"
+    }
+    resp = client.post("/api/v1/campaign-data", json=payload, headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["rate_limit_remaining"] == 42
+
+
+import logging
+def test_audit_logging(client, auth_headers, caplog):
+    caplog.set_level(logging.INFO)
+    payload = {
+        "platform": "meta_ads",
+        "start_date": "2026-06-01",
+        "end_date": "2026-06-05",
+        "metrics": ["impressions"],
+        "client_id": "audit_client_123",
+        "user_id": "audit_user_456",
+        "account_id": "act_12345",
+        "dry_run": True
+    }
+    # Test campaign-data
+    client.post("/api/v1/campaign-data", json=payload, headers=auth_headers)
+    assert any("AUDIT LOG: client_id='audit_client_123' user_id='audit_user_456' platform='meta_ads'" in record.message for record in caplog.records)
+
+    caplog.clear()
+
+    # Test batch
+    batch_payload = {"requests": [payload]}
+    client.post("/api/v1/batch", json=batch_payload, headers=auth_headers)
+    assert any("AUDIT LOG: client_id='audit_client_123' user_id='audit_user_456' platform='batch'" in record.message for record in caplog.records)
+
+

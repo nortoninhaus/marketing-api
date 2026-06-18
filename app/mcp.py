@@ -272,6 +272,8 @@ async def get_marketing_data(
     post_id: str | None = None,
     video_id: str | None = None,
     app_id: str | None = None,
+    limit: int | None = None,
+    next_page_token: str | None = None,
 ) -> dict:
     """
     Fetch campaign or content performance data from a single platform.
@@ -300,6 +302,8 @@ async def get_marketing_data(
                     Only relevant for YouTube or TikTok Organic.
         app_id:     (Optional) App package name or store ID.
                     Only relevant for Google Play / Apple App Store.
+        limit:      (Optional) Maximum number of items to return.
+        next_page_token: (Optional) Cursor for the next page of results.
 
     Returns:
         A dict with keys: status, request_id, timestamp, platform,
@@ -335,6 +339,10 @@ async def get_marketing_data(
         payload["video_id"] = video_id
     if app_id:
         payload["app_id"] = app_id
+    if limit is not None:
+        payload["limit"] = limit
+    if next_page_token:
+        payload["next_page_token"] = next_page_token
 
     return await _post("/api/v1/campaign-data", payload)
 
@@ -668,6 +676,8 @@ async def get_comments(
     client_id: str,
     user_id: str,
     account_id: str = "",
+    limit: int | None = None,
+    next_page_token: str | None = None,
 ) -> dict:
     """
     Fetch comments/replies for a specific post.
@@ -683,6 +693,8 @@ async def get_comments(
         client_id: Client/tenant identifier.
         user_id:   Requesting user ID.
         account_id: Platform-specific account identifier (optional).
+        limit:      (Optional) Maximum number of comments to return.
+        next_page_token: (Optional) Cursor for the next page of comments.
 
     Returns:
         A dict with: status, platform, post_id, total_comments,
@@ -703,6 +715,11 @@ async def get_comments(
         "user_id": user_id,
         "account_id": account_id,
     }
+    if limit is not None:
+        payload["limit"] = limit
+    if next_page_token:
+        payload["next_page_token"] = next_page_token
+
     return await _post("/api/v1/comments", payload)
 
 
