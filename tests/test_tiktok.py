@@ -41,21 +41,21 @@ def test_tiktok_ads_authorize():
 def test_tiktok_organic_authorize():
     # Sandbox mode
     settings.use_tiktok_sandbox = True
-    settings.tiktok_organic_sandbox_client_key = "sbawioy0q8vqdzm3sl"
+    settings.tiktok_organic_sandbox_client_key = "123456789"
     response = client.get("/api/v1/oauth/authorize?platform=tiktok_organic")
     assert response.status_code == 200
     data = response.json()
-    assert "open-sandbox.tiktokapis.com" in data["url"]
-    assert "client_key=sbawioy0q8vqdzm3sl" in data["url"]
+    assert "open-sandbox.tiktokapis.com/v2/auth/authorize" in data["url"]
+    assert "client_key=123456789" in data["url"]
 
     # Production mode
     settings.use_tiktok_sandbox = False
-    settings.tiktok_client_key = "awvc6io3a6k3z9xi"
+    settings.tiktok_client_key = "7650392266468507649"
     response = client.get("/api/v1/oauth/authorize?platform=tiktok_organic")
     assert response.status_code == 200
     data = response.json()
-    assert "www.tiktok.com" in data["url"]
-    assert "client_key=awvc6io3a6k3z9xi" in data["url"]
+    assert "www.tiktok.com/v2/auth/authorize" in data["url"]
+    assert "client_key=7650392266468507649" in data["url"]
 
 @pytest.mark.asyncio
 @patch("app.routers.oauth.credential_store.save_oauth_connection", new_callable=AsyncMock)
@@ -75,22 +75,55 @@ async def test_tiktok_ads_callback(mock_get, mock_post, mock_save):
     }
     mock_post.return_value = mock_post_resp
 
-    # Mock Advertiser Info
-    mock_get_resp = MagicMock()
-    mock_get_resp.status_code = 200
-    mock_get_resp.json.return_value = {
-        "code": 0,
-        "message": "OK",
-        "data": {
-            "list": [
-                {
-                    "advertiser_id": "123456789",
-                    "advertiser_name": "Test Advertiser"
+    # Mock Advertiser Info / Business Center endpoints
+    def get_side_effect(url, *args, **kwargs):
+        resp = MagicMock()
+        resp.status_code = 200
+        if "advertiser/info" in url:
+            resp.json.return_value = {
+                "code": 0,
+                "message": "OK",
+                "data": {
+                    "list": [
+                        {
+                            "advertiser_id": "123456789",
+                            "advertiser_name": "Test Advertiser"
+                        }
+                    ]
                 }
-            ]
-        }
-    }
-    mock_get.return_value = mock_get_resp
+            }
+        elif "bc/get" in url:
+            resp.json.return_value = {
+                "code": 0,
+                "message": "OK",
+                "data": {
+                    "list": [
+                        {
+                            "bc_id": "bc_123",
+                            "bc_name": "Test BC"
+                        }
+                    ]
+                }
+            }
+        elif "bc/asset/get" in url:
+            resp.json.return_value = {
+                "code": 0,
+                "message": "OK",
+                "data": {
+                    "list": [
+                        {
+                            "asset_id": "organic_user_id",
+                            "asset_name": "Organic Account Name",
+                            "permission": "ADMIN"
+                        }
+                    ]
+                }
+            }
+        else:
+            resp.json.return_value = {"code": 0, "data": {}}
+        return resp
+
+    mock_get.side_effect = get_side_effect
 
     import base64
     import json
@@ -105,20 +138,37 @@ async def test_tiktok_ads_callback(mock_get, mock_post, mock_save):
     assert response.status_code == 307
     assert "oauth=success" in response.headers["location"]
     
-    mock_save.assert_called_once()
-    args, kwargs = mock_save.call_args
-    assert kwargs["client_id"] == "test_client"
-    assert kwargs["platform"] == "tiktok_ads"
-    assert kwargs["account_id"] == "123456789"
-    assert kwargs["account_name"] == "Test Advertiser"
-    assert kwargs["access_token"] == "mock_ads_token"
+    assert mock_save.call_count == 2
+    
+    # Verify Ad connection saved
+    mock_save.assert_any_call(
+        client_id="test_client",
+        platform="tiktok_ads",
+        account_id="123456789",
+        account_name="Test Advertiser",
+        access_token="mock_ads_token"
+    )
+    
+    # Verify Brand Profile connection saved
+    mock_save.assert_any_call(
+        client_id="test_client",
+        platform="tiktok_organic",
+        account_id="organic_user_id",
+        account_name="Organic Account Name",
+        access_token="mock_ads_token",
+        extra_data={
+            "bc_id": "bc_123",
+            "is_bc_asset": True,
+            "permission": "ADMIN"
+        }
+    )
 
 @pytest.mark.asyncio
 @patch("app.routers.oauth.credential_store.save_oauth_connection", new_callable=AsyncMock)
 @patch("httpx.AsyncClient.post")
 @patch("httpx.AsyncClient.get")
 async def test_tiktok_organic_callback(mock_get, mock_post, mock_save):
-    # Mock Token exchange
+    # Mock Token exchange for Consumer API authentication
     mock_post_resp = MagicMock()
     mock_post_resp.status_code = 200
     mock_post_resp.json.return_value = {
@@ -129,14 +179,14 @@ async def test_tiktok_organic_callback(mock_get, mock_post, mock_save):
     }
     mock_post.return_value = mock_post_resp
 
-    # Mock User Info
+    # Mock User Info endpoint
     mock_get_resp = MagicMock()
     mock_get_resp.status_code = 200
     mock_get_resp.json.return_value = {
         "data": {
             "user": {
-                "username": "tiktok_user",
-                "display_name": "TikTok User Name"
+                "display_name": "TikTok User Name",
+                "username": "tiktokusername"
             }
         }
     }
@@ -156,9 +206,11 @@ async def test_tiktok_organic_callback(mock_get, mock_post, mock_save):
     assert "oauth=success" in response.headers["location"]
     
     mock_save.assert_called_once()
-    args, kwargs = mock_save.call_args
-    assert kwargs["client_id"] == "test_client"
-    assert kwargs["platform"] == "tiktok_organic"
-    assert kwargs["account_id"] == "mock_open_id"
-    assert kwargs["account_name"] == "TikTok User Name"
-    assert kwargs["access_token"] == "mock_organic_token"
+    call_kwargs = mock_save.call_args[1]
+    assert call_kwargs["client_id"] == "test_client"
+    assert call_kwargs["platform"] == "tiktok_organic"
+    assert call_kwargs["account_id"] == "mock_open_id"
+    assert call_kwargs["account_name"] == "TikTok User Name"
+    assert call_kwargs["access_token"] == "mock_organic_token"
+    assert call_kwargs["refresh_token"] == "mock_refresh_token"
+    assert "token_expires_at" in call_kwargs

@@ -478,6 +478,43 @@ async def oauth_callback(
                     access_token=access_token
                 )
 
+            # Discover Business Centers and Linked TikTok Accounts (Brand Profiles)
+            try:
+                bc_url = "https://business-api.tiktok.com/open_api/v1.3/bc/get/"
+                bc_res = await client.get(bc_url, headers={"Access-Token": access_token})
+                if bc_res.status_code == 200:
+                    bc_data = bc_res.json()
+                    bc_list = bc_data.get("data", {}).get("list", [])
+                    for bc in bc_list:
+                        bc_id = bc.get("bc_id")
+                        asset_url = "https://business-api.tiktok.com/open_api/v1.3/bc/asset/get/"
+                        asset_res = await client.get(
+                            asset_url,
+                            params={"bc_id": bc_id, "asset_type": "TIKTOK_ACCOUNT"},
+                            headers={"Access-Token": access_token}
+                        )
+                        if asset_res.status_code == 200:
+                            asset_data = asset_res.json()
+                            assets = asset_data.get("data", {}).get("list", [])
+                            for asset in assets:
+                                asset_id = asset.get("asset_id")
+                                asset_name = asset.get("asset_name") or f"TikTok Profile {asset_id}"
+                                await credential_store.save_oauth_connection(
+                                    client_id=client_id,
+                                    platform="tiktok_organic",
+                                    account_id=str(asset_id),
+                                    account_name=asset_name,
+                                    access_token=access_token,
+                                    extra_data={
+                                        "bc_id": bc_id,
+                                        "is_bc_asset": True,
+                                        "permission": asset.get("permission")
+                                    }
+                                )
+            except Exception as e:
+                logger.warning(f"TikTok Business Center asset discovery failed: {e}")
+
+
         return RedirectResponse(url=f"{redirect_url}?oauth=success&platform={platform}")
 
     elif platform == "tiktok_organic":

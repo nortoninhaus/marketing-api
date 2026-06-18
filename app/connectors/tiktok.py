@@ -122,27 +122,56 @@ class TikTokOrganicConnector(BaseConnector):
     def fetch_data(self, request: DataRequest) -> List[CampaignData]:
         creds = self.get_credentials(request)
         access_token = creds["access_token"]
+        open_id = creds.get("open_id") or request.account_id
         
-        # TikTok Display API or Video List API
-        base_url = "https://open-sandbox.tiktokapis.com" if settings.use_tiktok_sandbox else "https://open.tiktokapis.com"
-        url = f"{base_url}/v2/video/list/"
-        headers = {"Authorization": f"Bearer {access_token}"}
+        # Check if this is a Business Center asset connection
+        is_bc_asset = creds.get("is_bc_asset") == True
         
-        response = requests.get(url, headers=headers, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-        
-        videos = data.get("data", {}).get("videos", [])
-        return [CampaignData(
-            campaign_name=v.get("title", f"Video_{v.get('id')}")[:50],
-            date=request.start_date.strftime("%Y-%m-%d"),
-            metrics={
-                "view_count": v.get("view_count", 0),
-                "like_count": v.get("like_count", 0),
-                "comment_count": v.get("comment_count", 0),
-                "share_count": v.get("share_count", 0)
+        if is_bc_asset:
+            url = "https://business-api.tiktok.com/open_api/v1.3/business/video/list/"
+            headers = {"Access-Token": access_token}
+            import json
+            from datetime import datetime
+            params = {
+                "business_id": open_id,
+                "fields": '["item_id", "title", "create_time", "video_views", "likes", "comments", "shares"]'
             }
-        ) for v in videos]
+            response = requests.get(url, params=params, headers=headers, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            
+            videos = data.get("data", {}).get("list", [])
+            return [CampaignData(
+                campaign_name=v.get("title", f"Video_{v.get('item_id')}")[:50],
+                date=datetime.fromtimestamp(v.get("create_time", 0)).strftime("%Y-%m-%d") if v.get("create_time") else request.start_date.strftime("%Y-%m-%d"),
+                metrics={
+                    "view_count": v.get("video_views", 0),
+                    "like_count": v.get("likes", 0),
+                    "comment_count": v.get("comments", 0),
+                    "share_count": v.get("shares", 0)
+                }
+            ) for v in videos]
+        else:
+            # TikTok Display API or Video List API (Legacy Creator Web API)
+            base_url = "https://open-sandbox.tiktokapis.com" if settings.use_tiktok_sandbox else "https://open.tiktokapis.com"
+            url = f"{base_url}/v2/video/list/"
+            headers = {"Authorization": f"Bearer {access_token}"}
+            
+            response = requests.get(url, headers=headers, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            
+            videos = data.get("data", {}).get("videos", [])
+            return [CampaignData(
+                campaign_name=v.get("title", f"Video_{v.get('id')}")[:50],
+                date=request.start_date.strftime("%Y-%m-%d"),
+                metrics={
+                    "view_count": v.get("view_count", 0),
+                    "like_count": v.get("like_count", 0),
+                    "comment_count": v.get("comment_count", 0),
+                    "share_count": v.get("share_count", 0)
+                }
+            ) for v in videos]
 
     def get_schema(self) -> Dict[str, Any]:
         return {
