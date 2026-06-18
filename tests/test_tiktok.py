@@ -29,10 +29,14 @@ def test_tiktok_ads_authorize():
 
     # Production mode (numeric App ID)
     settings.use_tiktok_sandbox = False
+    # Set a dummy production App ID if none configured to avoid empty string matching everything
+    old_app_id = settings.tiktok_ads_app_id
+    settings.tiktok_ads_app_id = "7650392266468507649"
     response = client.get("/api/v1/oauth/authorize?platform=tiktok_ads")
     assert response.status_code == 200
     data = response.json()
-    assert "7621197369555666962" in data["url"]
+    assert "7650392266468507649" in data["url"]
+    settings.tiktok_ads_app_id = old_app_id
 
 def test_tiktok_organic_authorize():
     # Sandbox mode

@@ -3,6 +3,7 @@ OAuth Router — Handles OAuth flows for Meta and Google platforms.
 Supports: Meta Ads, Meta Organic, Google Ads, GA4, YouTube.
 """
 
+import asyncio
 import base64
 import json
 import logging
