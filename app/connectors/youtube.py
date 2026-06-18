@@ -148,8 +148,79 @@ class YouTubeConnector(BaseConnector):
                 "likeCount",
                 "commentCount"
             ],
-            "dimensions": ["video_id", "title", "date"]
+            "dimensions": ["video_id", "title", "date"],
+            "metadata": {
+                "comment_support": True,
+            },
         }
+
+    def fetch_comments(self, video_id: str, api_key_or_token: str, is_oauth: bool = False) -> list:
+        """Fetch comment threads on a YouTube video using Data API v3."""
+        from app.models.responses import CommentData
+
+        if is_oauth:
+            from google.oauth2.credentials import Credentials as OAuthCreds
+            token_creds = OAuthCreds(
+                token=api_key_or_token,
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=settings.google_client_id,
+                client_secret=settings.google_client_secret,
+            )
+            youtube = build("youtube", "v3", credentials=token_creds)
+        else:
+            youtube = build("youtube", "v3", developerKey=api_key_or_token)
+
+        comments: list = []
+        page_token: Optional[str] = None
+
+        try:
+            while True:
+                request_params = {
+                    "part": "snippet,replies",
+                    "videoId": video_id,
+                    "maxResults": 50,
+                    "textFormat": "plainText",
+                    "order": "time",
+                }
+                if page_token:
+                    request_params["pageToken"] = page_token
+
+                response = youtube.commentThreads().list(**request_params).execute()
+
+                for item in response.get("items", []):
+                    snippet = item.get("snippet", {}).get("topLevelComment", {}).get("snippet", {})
+
+                    # Parse replies
+                    replies_data = item.get("replies", {}).get("comments", [])
+                    reply_list = []
+                    for r in replies_data:
+                        r_snippet = r.get("snippet", {})
+                        reply_list.append(CommentData(
+                            comment_id=r.get("id", ""),
+                            text=r_snippet.get("textDisplay", ""),
+                            author=r_snippet.get("authorDisplayName", ""),
+                            timestamp=r_snippet.get("publishedAt", ""),
+                            like_count=r_snippet.get("likeCount", 0),
+                        ))
+
+                    comments.append(CommentData(
+                        comment_id=item.get("id", ""),
+                        text=snippet.get("textDisplay", ""),
+                        author=snippet.get("authorDisplayName", ""),
+                        timestamp=snippet.get("publishedAt", ""),
+                        like_count=snippet.get("likeCount", 0),
+                        reply_count=item.get("snippet", {}).get("totalReplyCount", 0),
+                        replies=reply_list,
+                    ))
+
+                page_token = response.get("nextPageToken")
+                if not page_token or len(comments) >= 200:
+                    break
+
+        except Exception as e:
+            logger.error(f"YouTube comments fetch error for video {video_id}: {e}")
+
+        return comments
 
     def ping(self) -> bool:
         try:

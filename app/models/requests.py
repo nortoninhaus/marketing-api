@@ -73,6 +73,20 @@ class DataRequest(BaseModel):
             raise ValueError(f"start_date ({self.start_date}) must be on or before end_date ({self.end_date})")
         return self
 
+    @model_validator(mode="after")
+    def validate_platform_parameters(self) -> "DataRequest":
+        from app.metrics import validate_platform_params
+        errors = validate_platform_params(
+            self.platform.value,
+            self.account_id,
+            self.post_id,
+            self.video_id,
+            self.app_id
+        )
+        if errors:
+            raise ValueError(" | ".join(errors))
+        return self
+
 
 class BatchDataRequest(BaseModel):
     """Multi-platform batch request — agents send one call, get all platforms."""
@@ -87,4 +101,16 @@ class CommentsRequest(BaseModel):
     client_id: str = Field("client_1", description="ID of the client/agency")
     user_id: str = Field("user_1", description="ID of the user making the request")
     account_id: str = Field("", description="Platform-specific account identifier (optional)")
+
+
+class ValidationRequest(BaseModel):
+    """Payload to validate parameters and metrics without fetching data."""
+    platform: Platform = Field(..., description="Platform to validate against")
+    metrics: List[str] = Field(..., description="List of metrics to validate")
+    use_generic_names: bool = Field(False, description="If true, metrics are validated as generic names")
+    account_id: str = Field("", description="Platform account ID to validate format")
+    post_id: Optional[str] = Field(None, description="Specific post/content ID")
+    video_id: Optional[str] = Field(None, description="Specific video ID")
+    app_id: Optional[str] = Field(None, description="App store ID or package name")
+
 

@@ -1,6 +1,7 @@
 """
 Main FastAPI application.
 """
+import time as _time
 
 import asyncio
 import logging
@@ -84,7 +85,7 @@ app.add_middleware(
 from app.routers.oauth import router as oauth_router
 app.include_router(oauth_router)
 
-# Mount FastMCP SSE server and protect it with middleware
+# Mount FastMCP server and protect it with middleware
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from app.mcp import mcp
@@ -100,7 +101,30 @@ async def mcp_auth_middleware(request: Request, call_next):
             return JSONResponse(status_code=401, content={"detail": "Invalid API Key"})
     return await call_next(request)
 
-app.mount("/mcp", mcp.sse_app())
+@app.middleware("http")
+async def latency_logging_middleware(request: Request, call_next):
+    """Log structured request/response info with latency."""
+    start = _time.monotonic()
+    response = await call_next(request)
+    elapsed_ms = (_time.monotonic() - start) * 1000
+    # Only log API and MCP routes
+    path = request.url.path
+    if path.startswith("/api/") or path.startswith("/mcp"):
+        logger.info(
+            f"[HTTP] {request.method} {path} → {response.status_code} "
+            f"({elapsed_ms:.0f}ms)"
+        )
+    return response
+
+# Use Streamable HTTP transport (more robust than SSE for long-lived connections)
+# Falls back to SSE for clients that don't support Streamable HTTP
+try:
+    app.mount("/mcp", mcp.streamable_http_app())
+    logger.info("MCP mounted with Streamable HTTP transport")
+except AttributeError:
+    # Fallback for older mcp versions that don't have streamable_http_app
+    app.mount("/mcp", mcp.sse_app())
+    logger.info("MCP mounted with SSE transport (streamable_http_app not available)")
 
 # Import comment models
 from app.models.responses import CommentsResponse, CommentData
@@ -140,41 +164,39 @@ async def health_check(deep: bool = False):
 @app.get("/api/v1/platforms", response_model=List[PlatformInfo])
 async def list_platforms(api_key: str = Depends(verify_api_key)):
     """Discovery endpoint for agents to list available platforms."""
+    from app.metrics import get_supported_generic_metrics, COMMENT_SUPPORTED_PLATFORMS, get_platform_type
     platforms = []
     for p in Platform:
+        pval = p.value
         try:
             connector = dispatcher.get_connector(p)
             schema = connector.get_schema()
-            # Handle both string lists and dict lists for metrics
             raw_metrics = schema.get("metrics", [])
             available = [m["name"] if isinstance(m, dict) else m for m in raw_metrics]
-            
-            # Determine platform type
-            pval = p.value
-            if "ads" in pval:
-                ptype = "ads"
-            elif "app_store" in pval or "play" in pval:
-                ptype = "app_store"
-            elif any(x in pval for x in ["organic", "youtube"]):
-                ptype = "organic"
-            else:
-                ptype = "analytics"
             
             platforms.append(PlatformInfo(
                 platform=p,
                 display_name=pval.replace("_", " ").title(),
-                type=ptype,
+                type=get_platform_type(pval),
                 configured=settings.is_platform_configured(pval),
                 available_metrics=available,
+                generic_metrics=get_supported_generic_metrics(pval),
+                supports_comments=pval in COMMENT_SUPPORTED_PLATFORMS,
+                supports_batch=True,
                 description=f"Connector for {pval.replace('_', ' ').title()}"
             ))
         except Exception as e:
-            logger.warning(f"Could not get schema for {p.value}: {e}")
+            logger.warning(f"Could not get schema for {pval}: {e}")
             platforms.append(PlatformInfo(
                 platform=p,
-                display_name=p.value.replace("_", " ").title(),
-                type="ads" if "ads" in p.value else "organic",
-                configured=settings.is_platform_configured(p.value)
+                display_name=pval.replace("_", " ").title(),
+                type=get_platform_type(pval),
+                configured=settings.is_platform_configured(pval),
+                available_metrics=[],
+                generic_metrics=get_supported_generic_metrics(pval),
+                supports_comments=pval in COMMENT_SUPPORTED_PLATFORMS,
+                supports_batch=True,
+                description=f"Connector for {pval.replace('_', ' ').title()} (failed to load schema)"
             ))
     return platforms
 
@@ -197,6 +219,103 @@ async def get_platform_schema(platform: Platform, api_key: str = Depends(verify_
         raise HTTPException(status_code=500, detail="Internal error fetching schema")
 
 from app.services.credential_store import credential_store
+from app.models.requests import ValidationRequest
+from app.models.responses import ValidationResponse, CredentialStatusResponse, CredentialStatusDetails
+
+@app.post("/api/v1/validate", response_model=ValidationResponse)
+async def validate_request_endpoint(
+    request: ValidationRequest,
+    api_key: str = Depends(verify_api_key)
+):
+    """Validate parameters and metrics for a platform without making any upstream calls."""
+    from app.metrics import validate_platform_params, validate_metrics, METRIC_TRANSLATION_MAP
+    
+    # 1. Parameter validation
+    param_errors = validate_platform_params(
+        request.platform.value,
+        request.account_id,
+        request.post_id,
+        request.video_id,
+        request.app_id
+    )
+    
+    # 2. Metric validation
+    if request.use_generic_names:
+        native_metrics, metric_errors = validate_metrics(request.platform.value, request.metrics)
+        translations = {}
+        for m in request.metrics:
+            native = METRIC_TRANSLATION_MAP.get(request.platform.value, {}).get(m)
+            translations[m] = native
+            
+        invalid_metrics = [e["metric"] for e in metric_errors]
+        valid_metrics = [m for m in request.metrics if translations.get(m) is not None]
+        
+        return ValidationResponse(
+            valid=len(param_errors) == 0 and len(metric_errors) == 0,
+            platform=request.platform,
+            valid_metrics=valid_metrics,
+            invalid_metrics=invalid_metrics,
+            translations=translations,
+            native_metrics_to_request=native_metrics,
+            parameter_errors=param_errors
+        )
+    else:
+        try:
+            connector = dispatcher.get_connector(request.platform)
+            schema = connector.get_schema()
+            raw_metrics = schema.get("metrics", [])
+            schema_names = {m["name"] if isinstance(m, dict) else m for m in raw_metrics}
+        except Exception:
+            schema_names = set()
+            
+        valid_metrics = [m for m in request.metrics if m in schema_names]
+        invalid_metrics = [m for m in request.metrics if m not in schema_names]
+        
+        return ValidationResponse(
+            valid=len(param_errors) == 0 and len(invalid_metrics) == 0,
+            platform=request.platform,
+            valid_metrics=valid_metrics,
+            invalid_metrics=invalid_metrics,
+            parameter_errors=param_errors
+        )
+
+@app.get("/api/v1/credentials/status", response_model=CredentialStatusResponse)
+async def get_credentials_status(
+    client_id: str,
+    api_key: str = Depends(verify_api_key)
+):
+    """Check configuration and credential status for all platforms for a client."""
+    platforms_status = {}
+    for p in Platform:
+        pval = p.value
+        # Check Firestore for OAuth connections
+        oauth_conns = await credential_store.list_oauth_connections(client_id, pval)
+        # Check Firestore for manual credentials
+        manual_creds = await credential_store.get_credentials(client_id, pval)
+        
+        has_creds = len(oauth_conns) > 0 or manual_creds is not None
+        cred_type = "none"
+        if oauth_conns:
+            cred_type = "oauth"
+        elif manual_creds:
+            cred_type = "manual"
+            
+        details = (
+            f"{len(oauth_conns)} OAuth connection(s)"
+            if oauth_conns
+            else ("Manual credentials configured" if manual_creds else "No credentials configured")
+        )
+        
+        platforms_status[pval] = CredentialStatusDetails(
+            has_credentials=has_creds,
+            type=cred_type,
+            details=details
+        )
+        
+    return CredentialStatusResponse(
+        client_id=client_id,
+        platforms=platforms_status
+    )
 
 @app.post("/api/v1/campaign-data", response_model=DataResponse)
 async def get_campaign_data(
@@ -261,34 +380,56 @@ async def get_comments(
     request: CommentsRequest,
     api_key: str = Depends(verify_api_key)
 ):
-    """Fetch comments on a specific post for Meta Ads, Meta Organic (FB Pages + Instagram), or Threads."""
+    """Fetch comments on a specific post.
+    
+    Supported platforms: meta_ads, meta_organic (FB Pages + Instagram),
+    threads, youtube, x_organic.
+    """
     logger.info(f"Comment request for platform: {request.platform.value}, post: {request.post_id}")
 
     # Resolve credentials
     creds = await credential_store.resolve_credentials(request.client_id, request.platform.value, request.account_id)
     if not creds:
         creds = {}
-    access_token = creds.get("access_token") or settings.meta_access_token
-    is_instagram = creds.get("is_instagram", False)
 
     try:
         if request.platform == Platform.THREADS:
+            access_token = creds.get("access_token") or settings.threads_access_token
             from app.connectors.threads import ThreadsConnector
             connector = ThreadsConnector()
             comments = await asyncio.to_thread(
                 connector.fetch_comments, request.post_id, access_token
             )
         elif request.platform == Platform.META_ADS:
+            access_token = creds.get("access_token") or settings.meta_access_token
             from app.connectors.meta import MetaAdsConnector
             connector = MetaAdsConnector()
             comments = await asyncio.to_thread(
                 connector.fetch_comments, request.post_id, access_token
             )
         elif request.platform == Platform.META_ORGANIC:
+            access_token = creds.get("access_token") or settings.meta_access_token
+            is_instagram = creds.get("is_instagram", False)
             from app.connectors.meta import MetaOrganicConnector
             connector = MetaOrganicConnector()
             comments = await asyncio.to_thread(
                 connector.fetch_comments, request.post_id, access_token, is_instagram
+            )
+        elif request.platform == Platform.YOUTUBE:
+            # YouTube comments use API key or OAuth token
+            api_key_or_token = creds.get("access_token") or settings.youtube_api_key
+            is_oauth = bool(creds.get("access_token"))
+            from app.connectors.youtube import YouTubeConnector
+            connector = YouTubeConnector()
+            comments = await asyncio.to_thread(
+                connector.fetch_comments, request.post_id, api_key_or_token, is_oauth
+            )
+        elif request.platform == Platform.X_ORGANIC:
+            bearer_token = creds.get("bearer_token") or settings.x_bearer_token
+            from app.connectors.x_twitter import XOrganicConnector
+            connector = XOrganicConnector()
+            comments = await asyncio.to_thread(
+                connector.fetch_comments, request.post_id, bearer_token
             )
         else:
             return CommentsResponse(
@@ -297,7 +438,8 @@ async def get_comments(
                 post_id=request.post_id,
                 errors=[ErrorDetail(
                     code="UNSUPPORTED",
-                    message=f"Comments not supported for platform {request.platform.value}",
+                    message=f"Comments not supported for platform {request.platform.value}. "
+                            f"Supported: meta_ads, meta_organic, threads, youtube, x_organic",
                     retryable=False
                 )]
             )

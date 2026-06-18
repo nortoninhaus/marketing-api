@@ -108,6 +108,9 @@ class PlatformInfo(BaseModel):
     type: Literal["ads", "organic", "analytics", "app_store"]
     configured: bool = False
     available_metrics: List[str] = Field(default_factory=list)
+    generic_metrics: List[str] = Field(default_factory=list)
+    supports_comments: bool = False
+    supports_batch: bool = True
     description: str = ""
 
 
@@ -117,7 +120,7 @@ class HealthResponse(BaseModel):
     status: str
     version: str
     platforms_configured: int
-    platforms_total: int = 14
+    platforms_total: int = 15  # Updated to 15 platforms
     details: Dict[str, str] = Field(default_factory=dict)
 
 
@@ -128,3 +131,31 @@ class SchemaResponse(BaseModel):
     metrics: List[Any] = Field(..., description="Available metrics (strings or dicts with name/description)")
     dimensions: List[Any] = Field(..., description="Available dimensions (strings or dicts with name/description)")
     metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ValidationResponse(BaseModel):
+    """Unified validation response."""
+
+    valid: bool
+    platform: Platform
+    valid_metrics: List[str] = Field(default_factory=list)
+    invalid_metrics: List[str] = Field(default_factory=list)
+    translations: Optional[Dict[str, Optional[str]]] = None
+    native_metrics_to_request: Optional[List[str]] = None
+    parameter_errors: List[str] = Field(default_factory=list)
+
+
+class CredentialStatusDetails(BaseModel):
+    """Details of credential status for a platform."""
+
+    has_credentials: bool
+    type: Literal["oauth", "manual", "none"]
+    details: str
+
+
+class CredentialStatusResponse(BaseModel):
+    """Response showing client credential status across all platforms."""
+
+    client_id: str
+    platforms: Dict[str, CredentialStatusDetails]
+

@@ -52,9 +52,48 @@ class BaseConnector(ABC):
 
     def handle_error(self, e: Exception) -> ErrorDetail:
         """Map raw exceptions to structured ErrorDetail for agents."""
+        import requests as _requests
+
+        code = "API_ERROR"
+        retryable = True
+        message = str(e)
+
+        # Classify by HTTP status code
+        if isinstance(e, _requests.exceptions.HTTPError) and e.response is not None:
+            status = e.response.status_code
+            if status in (401, 403):
+                code = "AUTH_ERROR"
+                retryable = False
+                message = f"Authentication/authorization failed (HTTP {status}): {e}"
+            elif status == 429:
+                code = "RATE_LIMIT"
+                retryable = True
+                message = f"Rate limit exceeded (HTTP 429). Please wait before retrying."
+            elif 400 <= status < 500:
+                code = "INVALID_REQUEST"
+                retryable = False
+                message = f"Client error (HTTP {status}): {e}"
+            else:
+                code = "API_ERROR"
+                retryable = True
+
+        # Classify by exception type
+        elif isinstance(e, _requests.exceptions.ConnectionError):
+            code = "CONNECTIVITY"
+            retryable = True
+            message = f"Connection failed to {self.platform_name} API: {e}"
+        elif isinstance(e, _requests.exceptions.Timeout):
+            code = "TIMEOUT"
+            retryable = True
+            message = f"Request to {self.platform_name} API timed out: {e}"
+        elif isinstance(e, ValueError):
+            code = "INVALID_METRIC"
+            retryable = False
+            message = f"Invalid parameter or metric: {e}"
+
         return ErrorDetail(
-            code="API_ERROR",
-            message=str(e),
+            code=code,
+            message=message,
             platform=self.platform_name,
-            retryable=True
+            retryable=retryable
         )
