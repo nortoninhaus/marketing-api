@@ -38,6 +38,7 @@ class ErrorDetail(BaseModel):
     message: str = Field(..., description="Human-readable error message")
     platform: Optional[str] = None
     retryable: bool = False
+    rate_limit_remaining: Optional[int] = Field(None, description="Remaining rate limit quota if available")
 
 
 class DataResponse(BaseModel):
@@ -149,8 +150,9 @@ class CredentialStatusDetails(BaseModel):
     """Details of credential status for a platform."""
 
     has_credentials: bool
-    type: Literal["oauth", "manual", "none"]
+    credential_type: Literal["oauth", "api_key", "service_account", "none"]
     details: str
+    last_refreshed: Optional[str] = None
 
 
 class CredentialStatusResponse(BaseModel):

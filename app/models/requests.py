@@ -66,6 +66,7 @@ class DataRequest(BaseModel):
     video_id: Optional[str] = Field(None, description="Specific video ID (TikTok/YouTube)")
     app_id: Optional[str] = Field(None, description="App package name or ID (app store platforms)")
     dimensions: Optional[List[str]] = Field(None, description="List of dimensions to group by")
+    dry_run: bool = Field(False, description="If true, only validate parameters/metrics without fetching upstream data")
 
     @model_validator(mode="after")
     def validate_date_range(self) -> "DataRequest":
@@ -108,6 +109,7 @@ class ValidationRequest(BaseModel):
     platform: Platform = Field(..., description="Platform to validate against")
     metrics: List[str] = Field(..., description="List of metrics to validate")
     use_generic_names: bool = Field(False, description="If true, metrics are validated as generic names")
+    client_id: Optional[str] = Field(None, description="ID of the client for semantic credential checks")
     account_id: str = Field("", description="Platform account ID to validate format")
     post_id: Optional[str] = Field(None, description="Specific post/content ID")
     video_id: Optional[str] = Field(None, description="Specific video ID")

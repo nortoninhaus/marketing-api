@@ -230,7 +230,7 @@ async def validate_request_endpoint(
     """Validate parameters and metrics for a platform without making any upstream calls."""
     from app.metrics import validate_platform_params, validate_metrics, METRIC_TRANSLATION_MAP
     
-    # 1. Parameter validation
+    # 1. Parameter validation (syntactic)
     param_errors = validate_platform_params(
         request.platform.value,
         request.account_id,
@@ -238,6 +238,17 @@ async def validate_request_endpoint(
         request.video_id,
         request.app_id
     )
+    
+    # 1.5 Semantic validation (check Firestore connection/credentials)
+    if request.client_id and request.account_id:
+        oauth_conns = await credential_store.list_oauth_connections(request.client_id, request.platform.value)
+        has_oauth = any(c.get("account_id") == request.account_id for c in oauth_conns)
+        manual_creds = await credential_store.get_credentials(request.client_id, request.platform.value)
+        
+        if not (has_oauth or manual_creds is not None):
+            param_errors.append(
+                f"Validación semántica fallida: No se encontraron credenciales o conexiones activas para la cuenta '{request.account_id}' en el cliente '{request.client_id}'."
+            )
     
     # 2. Metric validation
     if request.use_generic_names:
@@ -295,10 +306,18 @@ async def get_credentials_status(
         
         has_creds = len(oauth_conns) > 0 or manual_creds is not None
         cred_type = "none"
+        last_refreshed = None
+        
         if oauth_conns:
             cred_type = "oauth"
+            dates = [c.get("connected_at") for c in oauth_conns if c.get("connected_at")]
+            if dates:
+                last_refreshed = max(dates)
         elif manual_creds:
-            cred_type = "manual"
+            if pval in ("google_play", "apple_app_store") or "service_account" in manual_creds or "private_key_path" in manual_creds or "service_account_json" in manual_creds:
+                cred_type = "service_account"
+            else:
+                cred_type = "api_key"
             
         details = (
             f"{len(oauth_conns)} OAuth connection(s)"
@@ -308,8 +327,9 @@ async def get_credentials_status(
         
         platforms_status[pval] = CredentialStatusDetails(
             has_credentials=has_creds,
-            type=cred_type,
-            details=details
+            credential_type=cred_type,
+            details=details,
+            last_refreshed=last_refreshed
         )
         
     return CredentialStatusResponse(
@@ -325,6 +345,15 @@ async def get_campaign_data(
 ):
     """Fetch data for a single platform with multi-tenant support."""
     logger.info(f"Request for platform: {request.platform.value}, client: {request.client_id}")
+    
+    if request.dry_run:
+        return DataResponse(
+            status="success",
+            platform=request.platform,
+            date_range={"start": str(request.start_date), "end": str(request.end_date)},
+            data=[],
+            metadata={"dry_run": True, "message": "Dry-run validation successful."}
+        )
     
     # Resolve credentials: first check OAuth connections, then fall back to manual
     if not request.credentials:
