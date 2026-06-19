@@ -92,8 +92,8 @@ from app.mcp import mcp
 
 @app.middleware("http")
 async def mcp_auth_middleware(request: Request, call_next):
-    # Match /mcp, /mcp/sse, etc.
-    if request.url.path.startswith("/mcp"):
+    # Match /mcp, /mcp_http, etc.
+    if request.url.path.startswith("/mcp") or request.url.path.startswith("/mcp_http"):
         api_key = request.headers.get("X-API-Key")
         if not api_key:
             api_key = request.query_params.get("api_key")
@@ -109,22 +109,23 @@ async def latency_logging_middleware(request: Request, call_next):
     elapsed_ms = (_time.monotonic() - start) * 1000
     # Only log API and MCP routes
     path = request.url.path
-    if path.startswith("/api/") or path.startswith("/mcp"):
+    if path.startswith("/api/") or path.startswith("/mcp") or path.startswith("/mcp_http"):
         logger.info(
             f"[HTTP] {request.method} {path} → {response.status_code} "
             f"({elapsed_ms:.0f}ms)"
         )
     return response
 
-# Use Streamable HTTP transport (more robust than SSE for long-lived connections)
-# Falls back to SSE for clients that don't support Streamable HTTP
+# Mount SSE transport under /mcp (exposing /mcp/sse and /mcp/messages)
+app.mount("/mcp", mcp.sse_app())
+logger.info("MCP mounted with SSE transport at /mcp/sse")
+
+# Also mount Streamable HTTP transport under /mcp_http
 try:
-    app.mount("/mcp", mcp.streamable_http_app())
-    logger.info("MCP mounted with Streamable HTTP transport")
+    app.mount("/mcp_http", mcp.streamable_http_app())
+    logger.info("MCP mounted with Streamable HTTP transport at /mcp_http")
 except AttributeError:
-    # Fallback for older mcp versions that don't have streamable_http_app
-    app.mount("/mcp", mcp.sse_app())
-    logger.info("MCP mounted with SSE transport (streamable_http_app not available)")
+    pass
 
 # Import comment models
 from app.models.responses import CommentsResponse, CommentData
