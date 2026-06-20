@@ -166,7 +166,7 @@ METRIC_TRANSLATION_MAP: dict[str, dict[str, str | None]] = {
         "followers": "follower_count",
         "sessions": None,
         "users": None,
-        "pageviews": None,
+        "pageviews": "profile_views",
         "bounce_rate": None,
         "downloads": None,
         "ratings": None,

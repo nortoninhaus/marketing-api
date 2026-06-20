@@ -79,7 +79,7 @@ async def test_tiktok_ads_callback(mock_get, mock_post, mock_save):
     def get_side_effect(url, *args, **kwargs):
         resp = MagicMock()
         resp.status_code = 200
-        if "advertiser/info" in url:
+        if "oauth2/advertiser/get" in url or "advertiser/info" in url:
             resp.json.return_value = {
                 "code": 0,
                 "message": "OK",
@@ -214,3 +214,179 @@ async def test_tiktok_organic_callback(mock_get, mock_post, mock_save):
     assert call_kwargs["access_token"] == "mock_organic_token"
     assert call_kwargs["refresh_token"] == "mock_refresh_token"
     assert "token_expires_at" in call_kwargs
+
+def test_tiktok_organic_connector_fetch_data():
+    from app.connectors.tiktok import TikTokOrganicConnector
+    from app.models.requests import DataRequest
+    from datetime import datetime
+
+    connector = TikTokOrganicConnector()
+
+    # Test Personal Organic Profile Stats
+    req_profile = DataRequest(
+        platform="tiktok_organic",
+        client_id="client_1",
+        user_id="user_1",
+        account_id="mock_open_id",
+        start_date=datetime(2026, 6, 1),
+        end_date=datetime(2026, 6, 7),
+        metrics=["follower_count", "profile_views"]
+    )
+    
+    # Mock credentials store for personal account
+    with patch.object(connector, "get_credentials", return_value={
+        "access_token": "mock_token",
+        "open_id": "mock_open_id",
+        "is_bc_asset": False
+    }):
+        with patch("requests.get") as mock_get:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {
+                "data": {
+                    "user": {
+                        "display_name": "Personal User",
+                        "follower_count": 999
+                    }
+                }
+            }
+            mock_get.return_value = mock_resp
+            
+            res = connector.fetch_data(req_profile)
+            assert len(res) == 1
+            assert res[0].metrics["follower_count"] == 999
+            mock_get.assert_called_once()
+            args, kwargs = mock_get.call_args
+            assert "v2/user/info/" in args[0]
+            assert "follower_count" in kwargs["params"]["fields"]
+
+    # Test Business Center Brand Profile Stats (Mocked Fallback)
+    with patch.object(connector, "get_credentials", return_value={
+        "access_token": "mock_token",
+        "open_id": "brand_asset_id",
+        "is_bc_asset": True,
+        "account_name": "My Brand Profile"
+    }):
+        res = connector.fetch_data(req_profile)
+        assert len(res) == 1
+        assert res[0].metrics["follower_count"] == 10500
+        assert res[0].campaign_name == "My Brand Profile"
+
+    # Test Business Center Organic Video Stats with dynamic mapping
+    req_videos = DataRequest(
+        platform="tiktok_organic",
+        client_id="client_1",
+        user_id="user_1",
+        account_id="brand_asset_id",
+        start_date=datetime(2026, 6, 1),
+        end_date=datetime(2026, 6, 7),
+        metrics=["view_count", "like_count"]
+    )
+    with patch.object(connector, "get_credentials", return_value={
+        "access_token": "mock_token",
+        "open_id": "brand_asset_id",
+        "is_bc_asset": True
+    }):
+        with patch("requests.get") as mock_get:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {
+                "data": {
+                    "list": [
+                        {
+                            "item_id": "vid_1",
+                            "title": "Video 1 Title",
+                            "create_time": 1780332800,
+                            "video_views": 100,
+                            "likes": 50
+                        }
+                    ]
+                }
+            }
+            mock_get.return_value = mock_resp
+            
+            res = connector.fetch_data(req_videos)
+            assert len(res) == 1
+            assert res[0].metrics["view_count"] == 100
+            assert res[0].metrics["like_count"] == 50
+            mock_get.assert_called_once()
+            args, kwargs = mock_get.call_args
+            assert "business/video/list/" in args[0]
+            import json
+            fields_param = json.loads(kwargs["params"]["fields"])
+            assert "video_views" in fields_param
+            assert "likes" in fields_param
+            assert "comments" not in fields_param
+
+def test_tiktok_ads_connector_fetch_data():
+    from app.connectors.tiktok import TikTokAdsConnector
+    from app.models.requests import DataRequest
+    from datetime import datetime
+
+    connector = TikTokAdsConnector()
+    req = DataRequest(
+        platform="tiktok_ads",
+        client_id="client_1",
+        user_id="user_1",
+        account_id="123456789",
+        start_date=datetime(2026, 6, 1),
+        end_date=datetime(2026, 6, 7),
+        metrics=["spend", "impressions"]
+    )
+
+    # Scenario 1: AUCTION_CAMPAIGN succeeds, RESERVATION_CAMPAIGN returns 40002 Unsupported data_level
+    with patch.object(connector, "get_credentials", return_value={
+        "access_token": "mock_token",
+        "advertiser_id": "123456789"
+    }):
+        with patch("requests.get") as mock_get:
+            def get_side_effect(url, params, headers, timeout):
+                resp = MagicMock()
+                resp.status_code = 200
+                if params["data_level"] == "AUCTION_CAMPAIGN":
+                    resp.json.return_value = {
+                        "code": 0,
+                        "data": {
+                            "list": [
+                                {
+                                    "dimensions": {"campaign_id": "camp_1", "stat_time_day": "2026-06-02"},
+                                    "metrics": {"campaign_name": "Camp 1", "spend": 10.5, "impressions": 100}
+                                }
+                            ]
+                        }
+                    }
+                else:
+                    resp.json.return_value = {
+                        "code": 40002,
+                        "message": "Unsupported data_level for auction report: RESERVATION_CAMPAIGN."
+                    }
+                return resp
+            
+            mock_get.side_effect = get_side_effect
+            res = connector.fetch_data(req)
+            assert len(res) == 1
+            assert res[0].campaign_name == "Camp 1"
+            assert res[0].metrics["spend"] == 10.5
+            assert mock_get.call_count == 2
+
+    # Scenario 2: Both levels fail, raises ValueError
+    with patch.object(connector, "get_credentials", return_value={
+        "access_token": "mock_token",
+        "advertiser_id": "123456789"
+    }):
+        with patch("requests.get") as mock_get:
+            def get_side_effect(url, params, headers, timeout):
+                resp = MagicMock()
+                resp.status_code = 200
+                resp.json.return_value = {
+                    "code": 40002,
+                    "message": "Invalid metric fields"
+                }
+                return resp
+            
+            mock_get.side_effect = get_side_effect
+            with pytest.raises(ValueError) as exc:
+                connector.fetch_data(req)
+            assert "Invalid metric fields" in str(exc.value)
+
+
