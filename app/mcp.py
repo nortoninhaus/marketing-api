@@ -63,7 +63,9 @@ mcp = FastMCP(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-BASE_URL = "http://localhost:8000"
+import os
+PORT = os.environ.get("PORT", "8000")
+BASE_URL = f"http://localhost:{PORT}"
 HEADERS = {"X-API-Key": settings.api_key}
 TIMEOUT = httpx.Timeout(60.0, connect=15.0)
 
