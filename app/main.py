@@ -94,6 +94,11 @@ from app.mcp import mcp
 async def mcp_auth_middleware(request: Request, call_next):
     # Match /mcp, /mcp_http, etc.
     if request.url.path.startswith("/mcp") or request.url.path.startswith("/mcp_http"):
+        # Exclude /messages subpath from API key check since standard MCP SSE clients
+        # might not copy query parameters or custom headers on POST tool calls.
+        # The session_id itself serves as the secure authorization token for messages.
+        if "/messages" in request.url.path:
+            return await call_next(request)
         api_key = request.headers.get("X-API-Key")
         if not api_key:
             api_key = request.query_params.get("api_key")
