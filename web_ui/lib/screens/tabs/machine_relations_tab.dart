@@ -112,7 +112,7 @@ class _MachineRelationsTabState extends ConsumerState<MachineRelationsTab> {
                               itemBuilder: (context, idx) {
                                 final item = _calendar[idx];
                                 return Card(
-                                  color: Colors.black25,
+                                  color: Colors.black26,
                                   margin: const EdgeInsets.only(bottom: 8),
                                   child: ListTile(
                                     leading: const Icon(Icons.calendar_today, color: AppTheme.primaryColor),

@@ -115,7 +115,7 @@ class _ModoIaTabState extends ConsumerState<ModoIaTab> {
                               itemBuilder: (context, idx) {
                                 final p = _brandProfiles[idx];
                                 return Card(
-                                  color: Colors.black25,
+                                  color: Colors.black26,
                                   margin: const EdgeInsets.only(bottom: 8),
                                   child: ListTile(
                                     leading: const Icon(Icons.palette_outlined, color: AppTheme.primaryColor),
@@ -211,7 +211,7 @@ class _ModoIaTabState extends ConsumerState<ModoIaTab> {
                               itemBuilder: (context, idx) {
                                 final s = _agentSkills[idx];
                                 return Card(
-                                  color: Colors.black25,
+                                  color: Colors.black26,
                                   margin: const EdgeInsets.only(bottom: 8),
                                   child: SwitchListTile(
                                     secondary: const Icon(Icons.bolt, color: AppTheme.primaryColor),

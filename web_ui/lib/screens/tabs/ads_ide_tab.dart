@@ -245,7 +245,7 @@ class _AdsIdeTabState extends ConsumerState<AdsIdeTab> {
 
   Widget _buildProposalTile(dynamic p, {required bool isDraft}) {
     return Card(
-      color: Colors.black25,
+      color: Colors.black26,
       margin: const EdgeInsets.only(bottom: 8),
       child: Padding(
         padding: const EdgeInsets.all(12.0),

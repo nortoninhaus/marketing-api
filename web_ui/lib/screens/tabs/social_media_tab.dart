@@ -279,7 +279,7 @@ class _SocialMediaTabState extends ConsumerState<SocialMediaTab> {
                               itemBuilder: (context, idx) {
                                 final t = _tickets[idx];
                                 return Card(
-                                  color: Colors.black25,
+                                  color: Colors.black26,
                                   margin: const EdgeInsets.only(bottom: 8),
                                   child: ListTile(
                                     title: Text('${t['user']} (${t['platform']})'),
@@ -323,7 +323,7 @@ class _SocialMediaTabState extends ConsumerState<SocialMediaTab> {
                               itemBuilder: (context, idx) {
                                 final a = _alerts[idx];
                                 return Card(
-                                  color: Colors.black25,
+                                  color: Colors.black26,
                                   margin: const EdgeInsets.only(bottom: 8),
                                   child: ListTile(
                                     title: Text('${a['keyword']} - ${a['source']}'),
