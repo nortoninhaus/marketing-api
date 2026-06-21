@@ -4,6 +4,11 @@ import 'theme/app_theme.dart';
 import 'screens/settings_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/query_screen.dart';
+import 'screens/tabs/social_media_tab.dart';
+import 'screens/tabs/ads_ide_tab.dart';
+import 'screens/tabs/machine_relations_tab.dart';
+import 'screens/tabs/white_label_tab.dart';
+import 'screens/tabs/modo_ia_tab.dart';
 import 'core/providers.dart';
 
 void main() {
@@ -66,6 +71,11 @@ class _MainScreenState extends State<MainScreen> {
   final List<Widget> _screens = const [
     DashboardScreen(),
     QueryScreen(),
+    SocialMediaTab(),
+    AdsIdeTab(),
+    MachineRelationsTab(),
+    WhiteLabelTab(),
+    ModoIaTab(),
   ];
 
   @override
@@ -111,6 +121,31 @@ class _MainScreenState extends State<MainScreen> {
                 icon: Icon(Icons.analytics_outlined),
                 selectedIcon: Icon(Icons.analytics),
                 label: Text('Query'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.trending_up_outlined),
+                selectedIcon: Icon(Icons.trending_up),
+                label: Text('Social SOTA'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.campaign_outlined),
+                selectedIcon: Icon(Icons.campaign),
+                label: Text('Ads IDE'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.hub_outlined),
+                selectedIcon: Icon(Icons.hub),
+                label: Text('SEO/ASO'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.palette_outlined),
+                selectedIcon: Icon(Icons.palette),
+                label: Text('Brand Portal'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.smart_toy_outlined),
+                selectedIcon: Icon(Icons.smart_toy),
+                label: Text('Modo IA'),
               ),
             ],
           ),

@@ -78,6 +78,8 @@ app = FastAPI(
 # Allowed CORS origins — add your dashboard / frontend domains here
 _cors_origins = [
     "https://inhaus-marketing-api-btdf7nijqa-uc.a.run.app",
+    "https://inhaus-marketing-api.web.app",
+    "https://inhaus-marketing-api.firebaseapp.com",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:5000",
@@ -89,7 +91,7 @@ _cors_origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?|https://inhaus-marketing-api--[a-z0-9-]+\.web\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -98,6 +100,10 @@ app.add_middleware(
 # Register OAuth router
 from app.routers.oauth import router as oauth_router
 app.include_router(oauth_router)
+
+# Register SOTA router
+from app.routers.sota import router as sota_router
+app.include_router(sota_router)
 
 # Mount FastMCP server and protect it with middleware
 from fastapi import Request
