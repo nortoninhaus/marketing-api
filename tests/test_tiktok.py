@@ -125,14 +125,13 @@ async def test_tiktok_ads_callback(mock_get, mock_post, mock_save):
 
     mock_get.side_effect = get_side_effect
 
-    import base64
-    import json
+    from app.routers.oauth import _sign_state
     state_data = {
         "client_id": "test_client",
         "platform": "tiktok_ads",
         "redirect_url": "http://localhost:3000"
     }
-    state = base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
+    state = _sign_state(state_data)
 
     response = client.get(f"/api/v1/oauth/callback?code=mock_code&state={state}", follow_redirects=False)
     assert response.status_code == 307
@@ -192,14 +191,13 @@ async def test_tiktok_organic_callback(mock_get, mock_post, mock_save):
     }
     mock_get.return_value = mock_get_resp
 
-    import base64
-    import json
+    from app.routers.oauth import _sign_state
     state_data = {
         "client_id": "test_client",
         "platform": "tiktok_organic",
         "redirect_url": "http://localhost:3000"
     }
-    state = base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
+    state = _sign_state(state_data)
 
     response = client.get(f"/api/v1/oauth/callback?code=mock_code&state={state}", follow_redirects=False)
     assert response.status_code == 307

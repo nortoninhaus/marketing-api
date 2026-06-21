@@ -97,7 +97,7 @@ class DataRequest(BaseModel):
 class BatchDataRequest(BaseModel):
     """Multi-platform batch request — agents send one call, get all platforms."""
 
-    requests: List[DataRequest] = Field(..., min_length=1, max_length=14, description="List of platform requests")
+    requests: List[DataRequest] = Field(..., min_length=1, max_length=16, description="List of platform requests")
 
 
 class CommentsRequest(BaseModel):

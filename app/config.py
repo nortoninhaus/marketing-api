@@ -20,7 +20,8 @@ class Settings(BaseSettings):
     )
 
     # --- API Authentication ---
-    api_key: str = "dev-key-change-me"
+    # No default — deployment MUST set API_KEY in the environment.
+    api_key: str
 
     # --- Meta (Facebook / Instagram) ---
     meta_access_token: str = ""

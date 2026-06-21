@@ -48,7 +48,7 @@ mcp = FastMCP(
     "Inhaus Marketing API",
     instructions=(
         "You are connected to the Inhaus Marketing Data API — a unified, "
-        "multi-tenant gateway to 15 marketing and analytics platforms "
+        "multi-tenant gateway to 16 marketing and analytics platforms "
         "(Meta Ads, Google Ads, TikTok, LinkedIn, YouTube, GA4, and more). "
         "Use the tools below to discover platforms, inspect schemas, "
         "fetch campaign/organic data, and run cross-platform comparisons. "
@@ -242,7 +242,8 @@ async def get_platform_schema(platform: str) -> dict:
                   meta_ads, meta_organic, google_ads, ga4,
                   tiktok_ads, tiktok_organic, linkedin_ads,
                   linkedin_organic, x_ads, x_organic, youtube,
-                  google_play, apple_app_store, apple_ads, threads.
+                  google_play, apple_app_store, apple_ads, threads,
+                  spotify_ads.
 
     Returns:
         A dict with keys: platform, metrics (list), dimensions (list),
@@ -383,7 +384,7 @@ async def get_batch_marketing_data(requests: list[dict]) -> dict:
             - video_id (str, optional)
             - app_id (str, optional)
 
-        Maximum 15 sub-requests per batch (one per platform).
+        Maximum 16 sub-requests per batch (one per platform).
 
     Returns:
         A dict with keys: status, request_id, timestamp, results
