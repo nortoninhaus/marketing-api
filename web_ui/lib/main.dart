@@ -26,7 +26,9 @@ class InhausMarketingApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp(
       title: 'Inhaus Marketing API',
-      theme: AppTheme.darkTheme,
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: ThemeMode.system,
       home: const AuthWrapper(),
       debugShowCheckedModeBanner: false,
     );
