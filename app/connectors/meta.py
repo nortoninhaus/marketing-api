@@ -335,43 +335,39 @@ class MetaOrganicConnector(BaseConnector):
         since_ts = int(since_dt.replace(tzinfo=timezone.utc).timestamp())
         until_ts = int(until_dt.replace(tzinfo=timezone.utc).timestamp())
 
-        # Check if demographics are requested
-        has_demographics = any(m in self.IG_ACCOUNT_DEMO_METRICS or "audience_" in m for m in request.metrics)
-        if has_demographics:
-            # Filter demographics metrics
-            demo_metrics = [m for m in request.metrics if m in self.IG_ACCOUNT_DEMO_METRICS or "audience_" in m]
-            if not demo_metrics:
-                demo_metrics = list(self.IG_ACCOUNT_DEMO_METRICS)
-            demo_url = f"{GRAPH_BASE}/{ig_account_id}/insights"
-            with httpx.Client() as client:
-                res = client.get(
-                    demo_url,
-                    params={
-                        "metric": ",".join(demo_metrics),
-                        "period": "lifetime",
-                        "access_token": access_token
-                    }
-                )
-                if res.status_code != 200:
-                    logger.error(f"IG Demographics insights error: {res.text}")
-                    return []
-                
-                insights_data = res.json().get("data", [])
-                metrics_dict = {}
-                for item in insights_data:
-                    name = item.get("name")
-                    values = item.get("values", [])
-                    if values:
-                        metrics_dict[name] = values[0].get("value", {})
-                return [
-                    CampaignData(
-                        campaign_name="Instagram_Organic_Demographics",
-                        date=request.start_date.strftime("%Y-%m-%d"),
-                        metrics=metrics_dict
-                    )
-                ]
+        daily_data: Dict[str, Dict[str, Any]] = {}
+        campaign_name = "Instagram_Organic_Insights"
 
-        # If post_id is "all" or dimension post_id is requested (fetch all media with nested insights in one batch API request)
+        # 1. Check if demographic metrics are requested (Lifetime)
+        demo_metrics = [m for m in request.metrics if m in self.IG_ACCOUNT_DEMO_METRICS or "audience_" in m]
+        if demo_metrics and not request.post_id:
+            try:
+                demo_url = f"{GRAPH_BASE}/{ig_account_id}/insights"
+                with httpx.Client() as client:
+                    res = client.get(
+                        demo_url,
+                        params={
+                            "metric": ",".join(demo_metrics),
+                            "period": "lifetime",
+                            "access_token": access_token
+                        }
+                    )
+                    if res.status_code == 200:
+                        insights_data = res.json().get("data", [])
+                        day = request.start_date.strftime("%Y-%m-%d")
+                        if day not in daily_data:
+                            daily_data[day] = {}
+                        for item in insights_data:
+                            name = item.get("name")
+                            values = item.get("values", [])
+                            if values:
+                                daily_data[day][name] = values[0].get("value", {})
+                    else:
+                        logger.warning(f"IG Demographics fetch failed: {res.text}")
+            except Exception as e:
+                logger.warning(f"IG Demographics insights error: {e}")
+
+        # 2. If post_id is "all" or dimension post_id is requested (fetch all media with nested insights in one batch API request)
         if request.post_id == "all" or (not request.post_id and request.dimensions and "post_id" in request.dimensions):
             # Filter for valid Instagram Media metrics
             media_metrics = []
@@ -398,42 +394,43 @@ class MetaOrganicConnector(BaseConnector):
             
             url = f"{GRAPH_BASE}/{ig_account_id}/media"
             results = []
-            with httpx.Client() as client:
-                res = client.get(
-                    url,
-                    params={
-                        "fields": f"id,caption,timestamp,media_type,insights.metric({','.join(media_metrics)}){{name,values}}",
-                        "limit": request.limit or 50,
-                        "access_token": access_token
-                    }
-                )
-                if res.status_code != 200:
-                    logger.error(f"IG Media batch fetch error: {res.text}")
-                    return []
-                
-                media_list = res.json().get("data", [])
-                for item in media_list:
-                    media_id = item.get("id")
-                    caption = item.get("caption", "")
-                    timestamp = item.get("timestamp", request.start_date.strftime("%Y-%m-%d"))
-                    
-                    insights_data = item.get("insights", {}).get("data", [])
-                    metrics_dict = {}
-                    for ins in insights_data:
-                        name = ins.get("name")
-                        values = ins.get("values", [])
-                        if values:
-                            metrics_dict[name] = values[0].get("value", 0)
-                    
-                    results.append(CampaignData(
-                        campaign_name=f"IG_Post_{media_id}_{caption[:20]}",
-                        date=timestamp[:10],
-                        metrics=metrics_dict
-                    ))
-            return results
+            try:
+                with httpx.Client() as client:
+                    res = client.get(
+                        url,
+                        params={
+                            "fields": f"id,caption,timestamp,media_type,insights.metric({','.join(media_metrics)}){{name,values}}",
+                            "limit": request.limit or 50,
+                            "access_token": access_token
+                        }
+                    )
+                    if res.status_code == 200:
+                        media_list = res.json().get("data", [])
+                        for item in media_list:
+                            media_id = item.get("id")
+                            caption = item.get("caption", "")
+                            timestamp = item.get("timestamp", request.start_date.strftime("%Y-%m-%d"))
+                            
+                            insights_data = item.get("insights", {}).get("data", [])
+                            metrics_dict = {}
+                            for ins in insights_data:
+                                name = ins.get("name")
+                                values = ins.get("values", [])
+                                if values:
+                                    metrics_dict[name] = values[0].get("value", 0)
+                            
+                            results.append(CampaignData(
+                                campaign_name=f"IG_Post_{media_id}_{caption[:20]}",
+                                date=timestamp[:10],
+                                metrics=metrics_dict
+                            ))
+                return results
+            except Exception as e:
+                logger.error(f"IG Media batch fetch error: {e}")
+                return []
 
-        # If post_id is provided, fetch insights for specific Instagram Media
-        if request.post_id:
+        # 3. If post_id is provided, fetch insights for specific Instagram Media
+        elif request.post_id:
             media_id = request.post_id
             url = f"{GRAPH_BASE}/{media_id}/insights"
             # Map and filter for valid Instagram Media metrics
@@ -463,90 +460,87 @@ class MetaOrganicConnector(BaseConnector):
 
             media_metrics = list(dict.fromkeys(media_metrics))
 
-            with httpx.Client() as client:
-                res = client.get(
-                    url,
-                    params={
-                        "metric": ",".join(media_metrics),
-                        "access_token": access_token
-                    }
-                )
-                if res.status_code != 200:
-                    logger.error(f"IG Media insights error: {res.text}")
-                    return []
-                
-                insights_data = res.json().get("data", [])
-                metrics_dict = {}
-                for item in insights_data:
-                    name = item.get("name")
-                    values = item.get("values", [])
-                    if values:
-                        metrics_dict[name] = values[0].get("value", 0)
-
-                return [
-                    CampaignData(
-                        campaign_name=f"IG_Post_{media_id}",
-                        date=request.start_date.strftime("%Y-%m-%d"),
-                        metrics=metrics_dict
+            try:
+                with httpx.Client() as client:
+                    res = client.get(
+                        url,
+                        params={
+                            "metric": ",".join(media_metrics),
+                            "access_token": access_token
+                        }
                     )
-                ]
+                    if res.status_code == 200:
+                        insights_data = res.json().get("data", [])
+                        day = request.start_date.strftime("%Y-%m-%d")
+                        if day not in daily_data:
+                            daily_data[day] = {}
+                        for item in insights_data:
+                            name = item.get("name")
+                            values = item.get("values", [])
+                            if values:
+                                daily_data[day][name] = values[0].get("value", 0)
+                        campaign_name = f"IG_Post_{media_id}"
+            except Exception as e:
+                logger.error(f"IG Media insights error: {e}")
 
-        # Otherwise, fetch Account/Profile level Insights
-        url = f"{GRAPH_BASE}/{ig_account_id}/insights"
-        # Map and filter for valid Instagram Account daily metrics
-        ig_metrics = []
-        for m in request.metrics:
-            if m in ("views", "impressions"):
-                ig_metrics.append("views")
-            elif "reach" in m:
-                ig_metrics.append("reach")
-            elif "profile_views" in m:
-                ig_metrics.append("profile_views")
-            elif "follower" in m:
-                ig_metrics.append("follower_count")
-            elif "accounts_engaged" in m or "engaged" in m:
-                ig_metrics.append("accounts_engaged")
-            elif "total_interactions" in m or "interaction" in m:
-                ig_metrics.append("total_interactions")
-            elif "website_clicks" in m:
-                ig_metrics.append("website_clicks")
-            elif m in self.IG_ACCOUNT_DAILY_METRICS:
-                ig_metrics.append(m)
+        # 4. Otherwise, fetch Account/Profile level Insights
+        else:
+            url = f"{GRAPH_BASE}/{ig_account_id}/insights"
+            ig_metrics = []
+            for m in request.metrics:
+                if m in ("views", "impressions"):
+                    ig_metrics.append("views")
+                elif "reach" in m:
+                    ig_metrics.append("reach")
+                elif "profile_views" in m:
+                    ig_metrics.append("profile_views")
+                elif "follower" in m:
+                    ig_metrics.append("follower_count")
+                elif "accounts_engaged" in m or "engaged" in m:
+                    ig_metrics.append("accounts_engaged")
+                elif "total_interactions" in m or "interaction" in m:
+                    ig_metrics.append("total_interactions")
+                elif "website_clicks" in m:
+                    ig_metrics.append("website_clicks")
+                elif m in self.IG_ACCOUNT_DAILY_METRICS:
+                    ig_metrics.append(m)
 
-        if not ig_metrics:
-            ig_metrics = ["views", "reach", "profile_views", "accounts_engaged", "total_interactions"]
+            if not ig_metrics:
+                ig_metrics = ["views", "reach", "profile_views", "accounts_engaged", "total_interactions"]
 
-        ig_metrics = list(dict.fromkeys(ig_metrics))
+            ig_metrics = list(dict.fromkeys(ig_metrics))
 
-        daily_data: Dict[str, Dict[str, Any]] = {}
-        with httpx.Client() as client:
-            res = client.get(
-                url,
-                params={
-                    "metric": ",".join(ig_metrics),
-                    "period": "day",
-                    "since": since_ts,
-                    "until": until_ts,
-                    "access_token": access_token
-                }
-            )
-            if res.status_code != 200:
-                logger.error(f"IG Account insights error: {res.text}")
-                return []
+            try:
+                with httpx.Client() as client:
+                    res = client.get(
+                        url,
+                        params={
+                            "metric": ",".join(ig_metrics),
+                            "period": "day",
+                            "since": since_ts,
+                            "until": until_ts,
+                            "access_token": access_token
+                        }
+                    )
+                    if res.status_code == 200:
+                        insights_data = res.json().get("data", [])
+                        for item in insights_data:
+                            metric_name = item.get("name")
+                            for val_entry in item.get("values", []):
+                                end_time = val_entry.get("end_time")
+                                day = end_time[:10] if end_time else request.start_date.strftime("%Y-%m-%d")
+                                if day not in daily_data:
+                                    daily_data[day] = {}
+                                daily_data[day][metric_name] = val_entry.get("value", 0)
+            except Exception as e:
+                logger.error(f"IG Account insights error: {e}")
 
-            insights_data = res.json().get("data", [])
-            for item in insights_data:
-                metric_name = item.get("name")
-                for val_entry in item.get("values", []):
-                    end_time = val_entry.get("end_time")
-                    day = end_time[:10] if end_time else request.start_date.strftime("%Y-%m-%d")
-                    if day not in daily_data:
-                        daily_data[day] = {}
-                    daily_data[day][metric_name] = val_entry.get("value", 0)
+        if not daily_data:
+            return []
 
         return [
             CampaignData(
-                campaign_name="Instagram_Organic_Insights",
+                campaign_name=campaign_name,
                 date=day,
                 metrics=metrics_dict
             ) for day, metrics_dict in sorted(daily_data.items())
@@ -667,37 +661,29 @@ class MetaOrganicConnector(BaseConnector):
         since_str = request.start_date.strftime("%Y-%m-%d")
         until_str = request.end_date.strftime("%Y-%m-%d")
 
-        # 1. Filter demographic metrics if requested
-        has_page_demographics = any(m in self.PAGE_DEMO_METRICS or "page_fans_" in m for m in request.metrics)
-        if has_page_demographics:
-            demo_metrics = [m for m in request.metrics if m in self.PAGE_DEMO_METRICS or "page_fans_" in m]
-            if not demo_metrics:
-                demo_metrics = list(self.PAGE_DEMO_METRICS)
-            
-            insights = page.get_insights(params={
-                "metric": ",".join(demo_metrics),
-                "period": "lifetime"
-            })
-            campaign_name = "Page_Demographics"
-            
-            daily_data: Dict[str, Dict[str, Any]] = {}
-            for insight in insights:
-                metric_name = insight.get("name", "unknown")
-                values_list = insight.get("values", [])
-                for val_entry in values_list:
-                    end_time = val_entry.get("end_time", since_str)
-                    day = end_time[:10] if end_time else since_str
-                    if day not in daily_data:
-                        daily_data[day] = {}
-                    daily_data[day][metric_name] = val_entry.get("value", {})
-                    
-            return [
-                CampaignData(
-                    campaign_name=campaign_name,
-                    date=day,
-                    metrics=metrics_dict
-                ) for day, metrics_dict in sorted(daily_data.items())
-            ]
+        results = []
+        daily_data: Dict[str, Dict[str, Any]] = {}
+        campaign_name = "Page_Insights"
+
+        # 1. Fetch demographics if requested (run safely in try/except)
+        demo_metrics = [m for m in request.metrics if m in self.PAGE_DEMO_METRICS or "page_fans_" in m]
+        if demo_metrics and not request.post_id:
+            try:
+                insights = page.get_insights(params={
+                    "metric": ",".join(demo_metrics),
+                    "period": "lifetime"
+                })
+                for insight in insights:
+                    metric_name = insight.get("name", "unknown")
+                    values_list = insight.get("values", [])
+                    for val_entry in values_list:
+                        end_time = val_entry.get("end_time", since_str)
+                        day = end_time[:10] if end_time else since_str
+                        if day not in daily_data:
+                            daily_data[day] = {}
+                        daily_data[day][metric_name] = val_entry.get("value", {})
+            except Exception as e:
+                logger.warning(f"Meta Page demographics fetch failed (possibly due to < 100 fans): {e}")
 
         # 2. If post_id is "all" or dimension post_id is requested (fetch all posts with nested insights in one batch request)
         if request.post_id == "all" or (not request.post_id and request.dimensions and "post_id" in request.dimensions):
@@ -707,87 +693,99 @@ class MetaOrganicConnector(BaseConnector):
                 post_metrics = ["post_clicks", "post_media_view", "post_total_media_view_unique"]
             post_metrics = list(dict.fromkeys(post_metrics))
             
-            url = f"{GRAPH_BASE}/{creds['page_id']}/posts"
-            results = []
-            with httpx.Client() as client:
-                res = client.get(
-                    url,
-                    params={
-                        "fields": f"id,message,created_time,insights.metric({','.join(post_metrics)}){{name,values}}",
-                        "limit": request.limit or 50,
-                        "access_token": creds["access_token"]
-                    }
-                )
-                if res.status_code == 200:
-                    post_list = res.json().get("data", [])
-                    for item in post_list:
-                        pid = item.get("id")
-                        message = item.get("message", "")
-                        created_time = item.get("created_time", since_str)
-                        
-                        insights_data = item.get("insights", {}).get("data", [])
-                        metrics_dict = {}
-                        for ins in insights_data:
-                            name = ins.get("name")
-                            values = ins.get("values", [])
-                            if values:
-                                metrics_dict[name] = values[0].get("value", 0)
-                        
-                        results.append(CampaignData(
-                            campaign_name=f"Post_{pid}_{message[:20]}",
-                            date=created_time[:10],
-                            metrics=metrics_dict
-                        ))
-            return results
-
-        if request.post_id:
-            # Get specific post insights
-            posts = page.get_posts(params={"ids": request.post_id})
-            if not posts:
+            try:
+                url = f"{GRAPH_BASE}/{creds['page_id']}/posts"
+                with httpx.Client() as client:
+                    res = client.get(
+                        url,
+                        params={
+                            "fields": f"id,message,created_time,insights.metric({','.join(post_metrics)}){{name,values}}",
+                            "limit": request.limit or 50,
+                            "access_token": creds["access_token"]
+                        }
+                    )
+                    if res.status_code == 200:
+                        post_list = res.json().get("data", [])
+                        for item in post_list:
+                            pid = item.get("id")
+                            message = item.get("message", "")
+                            created_time = item.get("created_time", since_str)
+                            
+                            insights_data = item.get("insights", {}).get("data", [])
+                            metrics_dict = {}
+                            for ins in insights_data:
+                                name = ins.get("name")
+                                values = ins.get("values", [])
+                                if values:
+                                    metrics_dict[name] = values[0].get("value", 0)
+                            
+                            results.append(CampaignData(
+                                campaign_name=f"Post_{pid}_{message[:20]}",
+                                date=created_time[:10],
+                                metrics=metrics_dict
+                            ))
+                return results
+            except Exception as e:
+                logger.error(f"Meta Page posts batch fetch failed: {e}")
                 return []
-            post = posts[0]
-            # Filter for valid Facebook Post metrics
-            post_metrics = [m for m in request.metrics if m in self.PAGE_POST_METRICS]
-            if not post_metrics:
-                post_metrics = ["post_clicks", "post_media_view", "post_total_media_view_unique"]
-            post_metrics = list(dict.fromkeys(post_metrics))
-            
-            insights = post.get_insights(params={
-                "metric": ",".join(post_metrics),
-                "since": since_str,
-                "until": until_str
-            })
-            campaign_name = f"Post_{request.post_id}"
+
+        # 3. Fetch specific post if requested
+        elif request.post_id:
+            try:
+                posts = page.get_posts(params={"ids": request.post_id})
+                if posts:
+                    post = posts[0]
+                    post_metrics = [m for m in request.metrics if m in self.PAGE_POST_METRICS]
+                    if not post_metrics:
+                        post_metrics = ["post_clicks", "post_media_view", "post_total_media_view_unique"]
+                    post_metrics = list(dict.fromkeys(post_metrics))
+                    
+                    insights = post.get_insights(params={
+                        "metric": ",".join(post_metrics),
+                        "since": since_str,
+                        "until": until_str
+                    })
+                    campaign_name = f"Post_{request.post_id}"
+                    for insight in insights:
+                        metric_name = insight.get("name", "unknown")
+                        values_list = insight.get("values", [])
+                        for val_entry in values_list:
+                            end_time = val_entry.get("end_time", since_str)
+                            day = end_time[:10] if end_time else since_str
+                            if day not in daily_data:
+                                daily_data[day] = {}
+                            daily_data[day][metric_name] = val_entry.get("value", 0)
+            except Exception as e:
+                logger.error(f"Meta Page post fetch failed: {e}")
+
+        # 4. Fetch Page daily metrics
         else:
-            # Filter for valid Page daily metrics
             page_metrics = [m for m in request.metrics if m in self.PAGE_DAILY_METRICS]
             if not page_metrics:
                 page_metrics = ["page_views_total", "page_post_engagements", "page_follows", "page_fans", "page_actions_post_reactions_total"]
             page_metrics = list(dict.fromkeys(page_metrics))
 
-            params = {
-                "metric": ",".join(page_metrics),
-                "since": since_str,
-                "until": until_str
-            }
-            insights = page.get_insights(params=params)
-            campaign_name = "Page_Insights"
+            try:
+                insights = page.get_insights(params={
+                    "metric": ",".join(page_metrics),
+                    "since": since_str,
+                    "until": until_str
+                })
+                for insight in insights:
+                    metric_name = insight.get("name", "unknown")
+                    values_list = insight.get("values", [])
+                    for val_entry in values_list:
+                        end_time = val_entry.get("end_time", since_str)
+                        day = end_time[:10] if end_time else since_str
+                        if day not in daily_data:
+                            daily_data[day] = {}
+                        daily_data[day][metric_name] = val_entry.get("value", 0)
+            except Exception as e:
+                logger.error(f"Meta Page insights fetch failed: {e}")
 
-        daily_data: Dict[str, Dict[str, Any]] = {}
-        
-        for insight in insights:
-            metric_name = insight.get("name", "unknown")
-            values_list = insight.get("values", [])
-            for val_entry in values_list:
-                end_time = val_entry.get("end_time", since_str)
-                day = end_time[:10] if end_time else since_str
-                if day not in daily_data:
-                    daily_data[day] = {}
-                daily_data[day][metric_name] = val_entry.get("value", 0)
-        
         if not daily_data:
             return []
-        
+
         return [
             CampaignData(
                 campaign_name=campaign_name,
