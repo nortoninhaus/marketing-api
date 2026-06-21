@@ -31,10 +31,11 @@ class Platform(str, Enum):
     APPLE_APP_STORE = "apple_app_store"
     APPLE_ADS = "apple_ads"
     THREADS = "threads"
+    SPOTIFY_ADS = "spotify_ads"
 
     @classmethod
     def ads_platforms(cls) -> list["Platform"]:
-        return [cls.META_ADS, cls.GOOGLE_ADS, cls.TIKTOK_ADS, cls.LINKEDIN_ADS, cls.X_ADS, cls.APPLE_ADS]
+        return [cls.META_ADS, cls.GOOGLE_ADS, cls.TIKTOK_ADS, cls.LINKEDIN_ADS, cls.X_ADS, cls.APPLE_ADS, cls.SPOTIFY_ADS]
 
     @classmethod
     def organic_platforms(cls) -> list["Platform"]:
@@ -130,6 +131,17 @@ class TikTokProxyRequest(BaseModel):
     method: str = Field("GET", description="HTTP method: GET or POST")
     params: Optional[Dict[str, Any]] = Field(None, description="Query parameters")
     json_body: Optional[Dict[str, Any]] = Field(None, description="JSON body for POST requests")
+
+
+class TikTokOrganicProxyRequest(BaseModel):
+    """Generic proxy request model for executing any TikTok Organic/Display API endpoint."""
+    client_id: str = Field(..., description="ID of the client/agency")
+    account_id: str = Field(..., description="Organic profile account_id (open_id or BC asset ID)")
+    path: str = Field(..., description="The TikTok API path (e.g. business/video/list/ or v2/video/list/)")
+    method: str = Field("GET", description="HTTP method: GET or POST")
+    params: Optional[Dict[str, Any]] = Field(None, description="Query parameters")
+    json_body: Optional[Dict[str, Any]] = Field(None, description="JSON body for POST requests")
+
 
 
 

@@ -465,4 +465,81 @@ async def test_tiktok_proxy_endpoint(mock_post, mock_get, mock_resolve_creds):
     assert kwargs["headers"]["Access-Token"] == "mock_token"
 
 
+@pytest.mark.asyncio
+@patch("app.main.credential_store.resolve_credentials", new_callable=AsyncMock)
+@patch("requests.get")
+@patch("requests.post")
+async def test_tiktok_organic_proxy_endpoint(mock_post, mock_get, mock_resolve_creds):
+    headers = {"X-API-Key": settings.api_key}
+
+    # Scenario 1: Credentials not found (401)
+    mock_resolve_creds.return_value = None
+    response = client.post(
+        "/api/v1/tiktok-organic-proxy",
+        json={
+            "client_id": "client_1",
+            "account_id": "org_123",
+            "path": "business/video/list/",
+            "method": "GET"
+        },
+        headers=headers
+    )
+    assert response.status_code == 401
+    assert "Credentials not found" in response.json()["detail"]
+
+    # Scenario 2: BC Asset (is_bc_asset = True) -> routes to business-api.tiktok.com with Access-Token
+    mock_resolve_creds.return_value = {"access_token": "bc_token", "is_bc_asset": True}
+    
+    mock_get_resp = MagicMock()
+    mock_get_resp.status_code = 200
+    mock_get_resp.json.return_value = {"code": 0, "message": "OK", "data": {"list": []}}
+    mock_get.return_value = mock_get_resp
+
+    response = client.post(
+        "/api/v1/tiktok-organic-proxy",
+        json={
+            "client_id": "client_1",
+            "account_id": "org_123",
+            "path": "business/video/list/",
+            "method": "GET",
+            "params": {"max_count": 10}
+        },
+        headers=headers
+    )
+    assert response.status_code == 200
+    assert response.json()["code"] == 0
+    mock_get.assert_called_once()
+    args, kwargs = mock_get.call_args
+    assert "https://business-api.tiktok.com/open_api/v1.3/business/video/list/" in args[0]
+    assert kwargs["params"] == {"max_count": 10}
+    assert kwargs["headers"]["Access-Token"] == "bc_token"
+    assert "Authorization" not in kwargs["headers"]
+
+    # Reset mocks
+    mock_get.reset_mock()
+
+    # Scenario 3: Personal Profile (is_bc_asset = False) -> routes to open.tiktokapis.com with Bearer token
+    mock_resolve_creds.return_value = {"access_token": "personal_token", "is_bc_asset": False}
+    
+    response = client.post(
+        "/api/v1/tiktok-organic-proxy",
+        json={
+            "client_id": "client_1",
+            "account_id": "org_123",
+            "path": "video/list/",
+            "method": "GET"
+        },
+        headers=headers
+    )
+    assert response.status_code == 200
+    assert response.json()["code"] == 0
+    mock_get.assert_called_once()
+    args, kwargs = mock_get.call_args
+    assert "v2/video/list/" in args[0]
+    assert "open.tiktokapis.com" in args[0]
+    assert kwargs["headers"]["Authorization"] == "Bearer personal_token"
+    assert "Access-Token" not in kwargs["headers"]
+
+
+
 

@@ -73,7 +73,7 @@ VALID_PLATFORMS = [
     "meta_ads", "meta_organic", "google_ads", "ga4",
     "tiktok_ads", "tiktok_organic", "linkedin_ads", "linkedin_organic",
     "x_ads", "x_organic", "youtube", "google_play",
-    "apple_app_store", "apple_ads", "threads",
+    "apple_app_store", "apple_ads", "threads", "spotify_ads",
 ]
 
 # ---------------------------------------------------------------------------
@@ -885,6 +885,51 @@ async def execute_tiktok_api_call(
         payload["json_body"] = json_body
 
     return await _post("/api/v1/tiktok-proxy", payload)
+
+
+# ===================================================================
+# TOOL 14 — Execute TikTok Organic API Call
+# ===================================================================
+@mcp.tool()
+@_track_latency("execute_tiktok_organic_api_call")
+async def execute_tiktok_organic_api_call(
+    client_id: str,
+    account_id: str,
+    path: str,
+    method: str = "GET",
+    params: dict | None = None,
+    json_body: dict | None = None,
+) -> dict:
+    """
+    Execute any arbitrary TikTok Organic/Display API method/endpoint dynamically.
+
+    This tool acts as a secure proxy to forward calls to either the TikTok Business Organic API
+    (for Business Center Brand Assets) or the legacy Creator/Display API (for personal profiles),
+    automatically resolving the active OAuth tokens.
+
+    Args:
+        client_id:  Unique ID of the client/tenant.
+        account_id: The organic profile account ID (open_id or BC asset ID).
+        path:       The API path, e.g. "business/video/list/" or "v2/video/list/".
+        method:     HTTP method to use (GET or POST). Default is GET.
+        params:     (Optional) Query parameters.
+        json_body:  (Optional) JSON body for POST requests.
+
+    Returns:
+        The raw JSON response from the TikTok Organic/Display API.
+    """
+    payload = {
+        "client_id": client_id,
+        "account_id": account_id,
+        "path": path,
+        "method": method,
+    }
+    if params:
+        payload["params"] = params
+    if json_body:
+        payload["json_body"] = json_body
+
+    return await _post("/api/v1/tiktok-organic-proxy", payload)
 
 
 # ---------------------------------------------------------------------------
