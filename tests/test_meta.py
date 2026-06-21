@@ -244,3 +244,69 @@ def test_meta_ads_fetch_comments(mock_client_class):
     assert comments[0].text == "How much does it cost?"
     assert comments[0].author == "Interested Customer"
 
+
+@patch("app.connectors.meta.FacebookSession")
+@patch("app.connectors.meta.FacebookAdsApi")
+@patch("app.connectors.meta.Page")
+@patch("app.connectors.meta.httpx.Client")
+def test_meta_organic_fetch_data_combined(mock_client_class, mock_page, mock_api, mock_session):
+    mock_instance = MagicMock()
+    mock_page.return_value = mock_instance
+    
+    mock_instance.get_insights.return_value = [
+        {"name": "page_media_view", "period": "day", "values": [{"value": 1200, "end_time": "2026-05-02T07:00:00+0000"}]}
+    ]
+
+    mock_client = MagicMock()
+    mock_client_class.return_value.__enter__.return_value = mock_client
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "data": [
+            {
+                "id": "post_1",
+                "message": "Hello World",
+                "created_time": "2026-05-02T10:00:00+0000",
+                "insights": {
+                    "data": [
+                        {
+                            "name": "post_clicks",
+                            "values": [{"value": 42}]
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+    mock_client.get.return_value = mock_resp
+
+    connector = MetaOrganicConnector()
+    with patch.object(connector, "get_credentials") as mock_get_creds:
+        mock_get_creds.return_value = {
+            "access_token": "fake_page_token",
+            "page_id": "1033741419822859"
+        }
+        
+        req = DataRequest(
+            platform="meta_organic",
+            start_date=date(2026, 5, 1),
+            end_date=date(2026, 5, 7),
+            metrics=["page_media_view", "post_clicks"],
+            dimensions=["post_id"],
+            client_id="test_client",
+            user_id="test_user",
+            account_id="1033741419822859"
+        )
+        
+        results = connector.fetch_data(req)
+        assert len(results) == 2
+        
+        post_campaign = next(c for c in results if "Post_post_1" in c.campaign_name)
+        assert post_campaign.metrics["post_clicks"] == 42
+        assert post_campaign.date == "2026-05-02"
+
+        page_campaign = next(c for c in results if c.campaign_name == "Page_Insights")
+        assert page_campaign.metrics["page_media_view"] == 1200
+        assert page_campaign.date == "2026-05-02"
+
+

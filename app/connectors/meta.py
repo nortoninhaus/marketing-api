@@ -686,7 +686,9 @@ class MetaOrganicConnector(BaseConnector):
                 logger.warning(f"Meta Page demographics fetch failed (possibly due to < 100 fans): {e}")
 
         # 2. If post_id is "all" or dimension post_id is requested (fetch all posts with nested insights in one batch request)
+        fetch_posts = False
         if request.post_id == "all" or (not request.post_id and request.dimensions and "post_id" in request.dimensions):
+            fetch_posts = True
             # Filter for valid Facebook Post metrics
             post_metrics = [m for m in request.metrics if m in self.PAGE_POST_METRICS]
             if not post_metrics:
@@ -724,13 +726,11 @@ class MetaOrganicConnector(BaseConnector):
                                 date=created_time[:10],
                                 metrics=metrics_dict
                             ))
-                return results
             except Exception as e:
                 logger.error(f"Meta Page posts batch fetch failed: {e}")
-                return []
 
         # 3. Fetch specific post if requested
-        elif request.post_id:
+        if request.post_id and request.post_id != "all":
             try:
                 posts = page.get_posts(params={"ids": request.post_id})
                 if posts:
@@ -759,40 +759,42 @@ class MetaOrganicConnector(BaseConnector):
                 logger.error(f"Meta Page post fetch failed: {e}")
 
         # 4. Fetch Page daily metrics
-        else:
+        if not request.post_id or request.post_id == "all":
             page_metrics = [m for m in request.metrics if m in self.PAGE_DAILY_METRICS]
-            if not page_metrics:
+            if not page_metrics and not fetch_posts:
                 page_metrics = ["page_views_total", "page_post_engagements", "page_follows", "page_fans", "page_actions_post_reactions_total"]
-            page_metrics = list(dict.fromkeys(page_metrics))
-
-            try:
-                insights = page.get_insights(params={
-                    "metric": ",".join(page_metrics),
-                    "since": since_str,
-                    "until": until_str
-                })
-                for insight in insights:
-                    metric_name = insight.get("name", "unknown")
-                    values_list = insight.get("values", [])
-                    for val_entry in values_list:
-                        end_time = val_entry.get("end_time", since_str)
-                        day = end_time[:10] if end_time else since_str
-                        if day not in daily_data:
-                            daily_data[day] = {}
-                        daily_data[day][metric_name] = val_entry.get("value", 0)
-            except Exception as e:
-                logger.error(f"Meta Page insights fetch failed: {e}")
+            
+            if page_metrics:
+                page_metrics = list(dict.fromkeys(page_metrics))
+                try:
+                    insights = page.get_insights(params={
+                        "metric": ",".join(page_metrics),
+                        "since": since_str,
+                        "until": until_str
+                    })
+                    for insight in insights:
+                        metric_name = insight.get("name", "unknown")
+                        values_list = insight.get("values", [])
+                        for val_entry in values_list:
+                            end_time = val_entry.get("end_time", since_str)
+                            day = end_time[:10] if end_time else since_str
+                            if day not in daily_data:
+                                daily_data[day] = {}
+                            daily_data[day][metric_name] = val_entry.get("value", 0)
+                except Exception as e:
+                    logger.error(f"Meta Page insights fetch failed: {e}")
 
         if not daily_data:
-            return []
+            return results
 
-        return [
+        results.extend([
             CampaignData(
                 campaign_name=campaign_name,
                 date=day,
                 metrics=metrics_dict
             ) for day, metrics_dict in sorted(daily_data.items())
-        ]
+        ])
+        return results
 
     def get_schema(self) -> Dict[str, Any]:
         return {

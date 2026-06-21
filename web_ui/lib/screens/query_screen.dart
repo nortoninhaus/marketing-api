@@ -145,6 +145,9 @@ class _QueryScreenState extends ConsumerState<QueryScreen> {
     if (_appIdController.text.isNotEmpty) {
       data['app_id'] = _appIdController.text;
     }
+    if (_selectedDimensions.isNotEmpty) {
+      data['dimensions'] = _selectedDimensions;
+    }
     
     return data;
   }

@@ -19,11 +19,26 @@ class _MachineRelationsTabState extends ConsumerState<MachineRelationsTab> {
   final TextEditingController _asoKeywordsController = TextEditingController(text: 'marketing app, analytics platform, sota ads');
   final TextEditingController _asoDescriptionController = TextEditingController(text: 'La plataforma líder en análisis e integración de APIs de marketing para agencias multicliente.');
 
+  // AEO Graph filters
+  bool _filterChatGPT = true;
+  bool _filterPerplexity = true;
+  bool _filterGemini = true;
+  bool _hideCompetitors = false;
+
   @override
   void initState() {
     super.initState();
     _loadCalendar();
     _loadGraph();
+    _asoKeywordsController.addListener(() => setState(() {}));
+    _asoDescriptionController.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _asoKeywordsController.dispose();
+    _asoDescriptionController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadCalendar() async {
@@ -56,6 +71,181 @@ class _MachineRelationsTabState extends ConsumerState<MachineRelationsTab> {
     }
   }
 
+  List<dynamic> get _filteredNodes {
+    if (_fanOutGraph == null) return [];
+    final nodes = List<dynamic>.from(_fanOutGraph!['nodes'] ?? []);
+    return nodes.where((n) {
+      final type = n['type'].toString();
+      final label = n['label'].toString().toLowerCase();
+      
+      if (_hideCompetitors && type == 'competitor') {
+        return false;
+      }
+      
+      if (type == 'source') {
+        if (label.contains('chat') && !_filterChatGPT) return false;
+        if (label.contains('perp') && !_filterPerplexity) return false;
+        if (label.contains('gemini') && !_filterGemini) return false;
+      }
+      
+      return true;
+    }).toList();
+  }
+
+  List<dynamic> get _filteredLinks {
+    if (_fanOutGraph == null) return [];
+    final links = List<dynamic>.from(_fanOutGraph!['links'] ?? []);
+    final nodeIds = _filteredNodes.map((n) => n['id'].toString()).toSet();
+    return links.where((l) {
+      return nodeIds.contains(l['source'].toString()) && nodeIds.contains(l['target'].toString());
+    }).toList();
+  }
+
+  Widget _buildCalendarGrid() {
+    final days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+    
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 7,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        childAspectRatio: 0.8,
+      ),
+      itemCount: 7,
+      itemBuilder: (context, index) {
+        final dayName = days[index];
+        final dayItems = _calendar.where((item) {
+          final pDate = item['publish_date'].toString();
+          return pDate.endsWith('${index + 1}') || (index == 0 && pDate.endsWith('0'));
+        }).toList();
+
+        return DragTarget<Object>(
+          onAcceptWithDetails: (details) {
+            final draggedItem = details.data as Map<String, dynamic>;
+            setState(() {
+              draggedItem['publish_date'] = '2026-06-${index + 15}';
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Artículo "${draggedItem['title']}" reprogramado para $dayName')),
+            );
+          },
+          builder: (context, candidateData, rejectedData) {
+            final isOver = candidateData.isNotEmpty;
+            return Container(
+              decoration: BoxDecoration(
+                color: isOver ? AppTheme.secondaryColor.withOpacity(0.1) : Colors.black26,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: isOver ? AppTheme.secondaryColor : Colors.white10),
+              ),
+              padding: const EdgeInsets.all(8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    dayName,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: AppTheme.tertiaryColor),
+                  ),
+                  const Divider(color: Colors.white10, height: 12),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: dayItems.length,
+                      itemBuilder: (ctx, itemIdx) {
+                        final item = dayItems[itemIdx];
+                        final cardChild = Card(
+                          color: AppTheme.surfaceColor,
+                          margin: const EdgeInsets.only(bottom: 4),
+                          child: Padding(
+                            padding: const EdgeInsets.all(4.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item['title'],
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${item['word_count']} palabras',
+                                  style: const TextStyle(fontSize: 8, color: AppTheme.mutedTextColor),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+
+                        return Draggable<Object>(
+                          data: item as Object,
+                          feedback: Material(
+                            color: Colors.transparent,
+                            child: SizedBox(
+                              width: 100,
+                              height: 60,
+                              child: cardChild,
+                            ),
+                          ),
+                          childWhenDragging: Opacity(
+                            opacity: 0.4,
+                            child: cardChild,
+                          ),
+                          child: cardChild,
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildCharCounter(String currentText, int maxLength) {
+    final len = currentText.length;
+    final ratio = (len / maxLength).clamp(0.0, 1.0);
+    final isExceeded = len > maxLength;
+    
+    Color progressColor = AppTheme.neonGreen;
+    if (isExceeded) {
+      progressColor = AppTheme.neonRed;
+    } else if (ratio > 0.8) {
+      progressColor = AppTheme.neonOrange;
+    }
+    
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: LinearProgressIndicator(
+                value: ratio,
+                minHeight: 4,
+                backgroundColor: Colors.white10,
+                valueColor: AlwaysStoppedAnimation<Color>(progressColor),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            '$len/$maxLength',
+            style: TextStyle(
+              fontSize: 11,
+              color: isExceeded ? AppTheme.neonRed : AppTheme.mutedTextColor,
+              fontWeight: isExceeded ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
@@ -65,7 +255,7 @@ class _MachineRelationsTabState extends ConsumerState<MachineRelationsTab> {
         children: [
           Row(
             children: [
-              const Icon(Icons.hub, color: AppTheme.primaryColor, size: 28),
+              const Icon(Icons.hub, color: AppTheme.secondaryColor, size: 28),
               const SizedBox(width: 12),
               Text(
                 'Relaciones con Máquinas: SEO, AEO & ASO',
@@ -93,11 +283,11 @@ class _MachineRelationsTabState extends ConsumerState<MachineRelationsTab> {
                       const Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('SEO Tradicional: Calendario Editorial (30 días)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                          Text('Artículos optimizados bajo directrices E-E-A-T con publicación directa', style: TextStyle(fontSize: 12, color: AppTheme.mutedTextColor)),
+                          Text('SEO Tradicional: Planificador Semanal Interactivo', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                          Text('Arrastra y suelta artículos para reprogramar la fecha de publicación', style: TextStyle(fontSize: 12, color: AppTheme.mutedTextColor)),
                         ],
                       ),
-                      IconButton(onPressed: _loadCalendar, icon: const Icon(Icons.refresh, color: AppTheme.primaryColor)),
+                      IconButton(onPressed: _loadCalendar, icon: const Icon(Icons.refresh, color: AppTheme.secondaryColor)),
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -105,33 +295,7 @@ class _MachineRelationsTabState extends ConsumerState<MachineRelationsTab> {
                       ? const Center(child: CircularProgressIndicator())
                       : _calendar.isEmpty
                           ? const Text('No hay programaciones cargadas.')
-                          : ListView.builder(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              itemCount: _calendar.length,
-                              itemBuilder: (context, idx) {
-                                final item = _calendar[idx];
-                                return Card(
-                                  color: Colors.black26,
-                                  margin: const EdgeInsets.only(bottom: 8),
-                                  child: ListTile(
-                                    leading: const Icon(Icons.calendar_today, color: AppTheme.primaryColor),
-                                    title: Text(item['title']),
-                                    subtitle: Text('Fecha: ${item['publish_date']} | Palabras: ${item['word_count']}'),
-                                    trailing: Chip(
-                                      label: Text(item['status']),
-                                      backgroundColor: item['status'] == 'published'
-                                          ? Colors.green.withOpacity(0.2)
-                                          : Colors.orange.withOpacity(0.2),
-                                      labelStyle: TextStyle(
-                                        color: item['status'] == 'published' ? Colors.green : Colors.orange,
-                                        fontSize: 10,
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
+                          : _buildCalendarGrid(),
                 ],
               ),
             ),
@@ -147,8 +311,42 @@ class _MachineRelationsTabState extends ConsumerState<MachineRelationsTab> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text('AEO / GEO: Auditoría de Citas LLM (Query Fan-Out)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  const Text('Visualización de la influencia de citas y Share of Voice (SOV) en asistentes de IA (ChatGPT, Perplexity).', style: TextStyle(fontSize: 12, color: AppTheme.mutedTextColor)),
-                  const SizedBox(height: 20),
+                  const Text('Visualización de la influencia de citas y Share of Voice (SOV) en asistentes de IA.', style: TextStyle(fontSize: 12, color: AppTheme.mutedTextColor)),
+                  const SizedBox(height: 16),
+                  
+                  // Graph Filters Header Row
+                  Row(
+                    children: [
+                      const Text('Motores de Búsqueda:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                      const SizedBox(width: 8),
+                      FilterChip(
+                        label: const Text('ChatGPT'),
+                        selected: _filterChatGPT,
+                        onSelected: (val) => setState(() => _filterChatGPT = val),
+                      ),
+                      const SizedBox(width: 6),
+                      FilterChip(
+                        label: const Text('Perplexity'),
+                        selected: _filterPerplexity,
+                        onSelected: (val) => setState(() => _filterPerplexity = val),
+                      ),
+                      const SizedBox(width: 6),
+                      FilterChip(
+                        label: const Text('Gemini'),
+                        selected: _filterGemini,
+                        onSelected: (val) => setState(() => _filterGemini = val),
+                      ),
+                      const Spacer(),
+                      FilterChip(
+                        label: const Text('Ocultar Competidores'),
+                        selected: _hideCompetitors,
+                        selectedColor: AppTheme.neonRed.withOpacity(0.2),
+                        checkmarkColor: AppTheme.neonRed,
+                        onSelected: (val) => setState(() => _hideCompetitors = val),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
                   _loadingGraph
                       ? const Center(child: CircularProgressIndicator())
                       : _fanOutGraph == null
@@ -166,8 +364,8 @@ class _MachineRelationsTabState extends ConsumerState<MachineRelationsTab> {
                                   CustomPaint(
                                     size: Size.infinite,
                                     painter: NodeGraphPainter(
-                                      nodes: _fanOutGraph!['nodes'] ?? [],
-                                      links: _fanOutGraph!['links'] ?? [],
+                                      nodes: _filteredNodes,
+                                      links: _filteredLinks,
                                     ),
                                   ),
                                   const Positioned(
@@ -179,7 +377,7 @@ class _MachineRelationsTabState extends ConsumerState<MachineRelationsTab> {
                                         padding: EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
                                         child: Text(
                                           'Graficación Interactiva de Redes Semánticas',
-                                          style: TextStyle(fontSize: 10, color: AppTheme.primaryColor),
+                                          style: TextStyle(fontSize: 10, color: AppTheme.secondaryColor),
                                         ),
                                       ),
                                     ),
@@ -211,7 +409,7 @@ class _MachineRelationsTabState extends ConsumerState<MachineRelationsTab> {
                       prefixIcon: Icon(Icons.key),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  _buildCharCounter(_asoKeywordsController.text, 100),
                   TextField(
                     controller: _asoDescriptionController,
                     maxLines: 3,
@@ -220,17 +418,20 @@ class _MachineRelationsTabState extends ConsumerState<MachineRelationsTab> {
                       prefixIcon: Icon(Icons.description),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  _buildCharCounter(_asoDescriptionController.text, 150),
+                  const SizedBox(height: 8),
                   Row(
                     children: [
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Metadatos sincronizados con App Store y Google Play con éxito!')),
-                          );
-                        },
-                        icon: const Icon(Icons.sync),
-                        label: const Text('Sincronizar Consolas'),
+                      ButtonTheme(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Metadatos sincronizados con App Store y Google Play con éxito!')),
+                            );
+                          },
+                          icon: const Icon(Icons.sync),
+                          label: const Text('Sincronizar Consolas'),
+                        ),
                       ),
                       const SizedBox(width: 12),
                       OutlinedButton.icon(

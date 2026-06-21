@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'theme/app_theme.dart';
 import 'screens/settings_screen.dart';
 import 'screens/dashboard_screen.dart';
@@ -84,7 +85,18 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Inhaus Marketing API'),
+        title: Row(
+          children: [
+            SvgPicture.network(
+              Theme.of(context).brightness == Brightness.dark
+                  ? 'https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/69691ca0d848087449f86454.svg'
+                  : 'https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/69697a2c4e42b97e53146bd6.svg',
+              height: 28,
+            ),
+            const SizedBox(width: 12),
+            const Text('Inhaus Marketing API'),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
