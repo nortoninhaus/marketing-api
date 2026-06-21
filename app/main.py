@@ -78,6 +78,8 @@ app = FastAPI(
 # Allowed CORS origins — add your dashboard / frontend domains here
 _cors_origins = [
     "https://inhaus-marketing-api-btdf7nijqa-uc.a.run.app",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
     "http://localhost:5000",
     "http://127.0.0.1:5000",
     "http://localhost:8000",
@@ -87,6 +89,7 @@ _cors_origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
