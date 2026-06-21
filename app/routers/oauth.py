@@ -442,25 +442,39 @@ async def oauth_callback(
             access_token = token_data.get("data", {}).get("access_token")
             advertiser_ids = token_data.get("data", {}).get("advertiser_ids", [])
             
-            if advertiser_ids:
-                info_url = "https://business-api.tiktok.com/open_api/v1.3/advertiser/info/"
-                info_res = await client.get(
-                    info_url,
-                    params={"advertiser_ids": json.dumps(advertiser_ids)},
+            # Retrieve advertiser names using the OAuth-specific advertiser listing endpoint
+            try:
+                advertisers_url = "https://business-api.tiktok.com/open_api/v1.3/oauth2/advertiser/get/"
+                advertisers_res = await client.get(
+                    advertisers_url,
+                    params={"app_id": app_id, "secret": secret},
                     headers={"Access-Token": access_token}
                 )
-                if info_res.status_code == 200:
-                    info_data = info_res.json()
-                    advertisers = info_data.get("data", {}).get("list", [])
-                    for adv in advertisers:
-                        await credential_store.save_oauth_connection(
-                            client_id=client_id,
-                            platform="tiktok_ads",
-                            account_id=str(adv.get("advertiser_id")),
-                            account_name=adv.get("advertiser_name", f"TikTok Ads {adv.get('advertiser_id')}"),
-                            access_token=access_token
-                        )
+                if advertisers_res.status_code == 200:
+                    advertisers_data = advertisers_res.json()
+                    logger.info(f"Oauth advertiser/get response: {advertisers_data}")
+                    advertisers_list = advertisers_data.get("data", {}).get("list", [])
+                    
+                    if advertisers_list:
+                        for adv in advertisers_list:
+                            await credential_store.save_oauth_connection(
+                                client_id=client_id,
+                                platform="tiktok_ads",
+                                account_id=str(adv.get("advertiser_id")),
+                                account_name=adv.get("advertiser_name", f"TikTok Ads {adv.get('advertiser_id')}"),
+                                access_token=access_token
+                            )
+                    else:
+                        for adv_id in advertiser_ids:
+                            await credential_store.save_oauth_connection(
+                                client_id=client_id,
+                                platform="tiktok_ads",
+                                account_id=str(adv_id),
+                                account_name=f"TikTok Ads {adv_id}",
+                                access_token=access_token
+                            )
                 else:
+                    logger.warning(f"Oauth advertiser/get failed: {advertisers_res.text}")
                     for adv_id in advertiser_ids:
                         await credential_store.save_oauth_connection(
                             client_id=client_id,
@@ -469,14 +483,17 @@ async def oauth_callback(
                             account_name=f"TikTok Ads {adv_id}",
                             access_token=access_token
                         )
-            else:
-                await credential_store.save_oauth_connection(
-                    client_id=client_id,
-                    platform="tiktok_ads",
-                    account_id="default",
-                    account_name="TikTok Ads Connected",
-                    access_token=access_token
-                )
+            except Exception as e:
+                logger.error(f"Error querying advertiser names via oauth2/advertiser/get: {e}")
+                for adv_id in advertiser_ids:
+                    await credential_store.save_oauth_connection(
+                        client_id=client_id,
+                        platform="tiktok_ads",
+                        account_id=str(adv_id),
+                        account_name=f"TikTok Ads {adv_id}",
+                        access_token=access_token
+                    )
+
 
             # Discover Business Centers and Linked TikTok Accounts (Brand Profiles)
             try:
@@ -495,7 +512,8 @@ async def oauth_callback(
                         )
                         if asset_res.status_code == 200:
                             asset_data = asset_res.json()
-                            assets = asset_data.get("data", {}).get("list", [])
+                            logger.info(f"BC asset/get response data: {asset_data}")
+                            assets = asset_data.get("data", {}).get("asset_list", []) or asset_data.get("data", {}).get("list", [])
                             for asset in assets:
                                 asset_id = asset.get("asset_id")
                                 asset_name = asset.get("asset_name") or f"TikTok Profile {asset_id}"

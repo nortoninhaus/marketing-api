@@ -29,6 +29,7 @@ class PaginationInfo(BaseModel):
     page_size: int = 100
     total_count: Optional[int] = None
     has_next: bool = False
+    next_page_token: Optional[str] = None
 
 
 class ErrorDetail(BaseModel):
@@ -62,6 +63,7 @@ class DataResponse(BaseModel):
     )
     errors: List[ErrorDetail] = Field(default_factory=list)
     pagination: Optional[PaginationInfo] = None
+    rate_limit_remaining: Optional[int] = None
 
 
 class CommentData(BaseModel):
@@ -87,6 +89,8 @@ class CommentsResponse(BaseModel):
     total_comments: int = 0
     comments: List[CommentData] = Field(default_factory=list)
     errors: List[ErrorDetail] = Field(default_factory=list)
+    rate_limit_remaining: Optional[int] = None
+    next_page_token: Optional[str] = None
 
 
 class BatchDataResponse(BaseModel):
@@ -99,6 +103,7 @@ class BatchDataResponse(BaseModel):
     total_platforms: int = 0
     successful_platforms: int = 0
     failed_platforms: int = 0
+    rate_limit_remaining: Optional[int] = None
 
 
 class PlatformInfo(BaseModel):
@@ -113,6 +118,7 @@ class PlatformInfo(BaseModel):
     supports_comments: bool = False
     supports_batch: bool = True
     description: str = ""
+    api_version: Optional[str] = None
 
 
 class HealthResponse(BaseModel):

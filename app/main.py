@@ -92,8 +92,13 @@ from app.mcp import mcp
 
 @app.middleware("http")
 async def mcp_auth_middleware(request: Request, call_next):
-    # Match /mcp, /mcp/sse, etc.
-    if request.url.path.startswith("/mcp"):
+    # Match /mcp, /mcp_http, etc.
+    if request.url.path.startswith("/mcp") or request.url.path.startswith("/mcp_http"):
+        # Exclude /messages subpath from API key check since standard MCP SSE clients
+        # might not copy query parameters or custom headers on POST tool calls.
+        # The session_id itself serves as the secure authorization token for messages.
+        if "/messages" in request.url.path:
+            return await call_next(request)
         api_key = request.headers.get("X-API-Key")
         if not api_key:
             api_key = request.query_params.get("api_key")
@@ -109,22 +114,23 @@ async def latency_logging_middleware(request: Request, call_next):
     elapsed_ms = (_time.monotonic() - start) * 1000
     # Only log API and MCP routes
     path = request.url.path
-    if path.startswith("/api/") or path.startswith("/mcp"):
+    if path.startswith("/api/") or path.startswith("/mcp") or path.startswith("/mcp_http"):
         logger.info(
             f"[HTTP] {request.method} {path} → {response.status_code} "
             f"({elapsed_ms:.0f}ms)"
         )
     return response
 
-# Use Streamable HTTP transport (more robust than SSE for long-lived connections)
-# Falls back to SSE for clients that don't support Streamable HTTP
+# Mount SSE transport under /mcp (exposing /mcp/sse and /mcp/messages)
+app.mount("/mcp", mcp.sse_app())
+logger.info("MCP mounted with SSE transport at /mcp/sse")
+
+# Also mount Streamable HTTP transport under /mcp_http
 try:
-    app.mount("/mcp", mcp.streamable_http_app())
-    logger.info("MCP mounted with Streamable HTTP transport")
+    app.mount("/mcp_http", mcp.streamable_http_app())
+    logger.info("MCP mounted with Streamable HTTP transport at /mcp_http")
 except AttributeError:
-    # Fallback for older mcp versions that don't have streamable_http_app
-    app.mount("/mcp", mcp.sse_app())
-    logger.info("MCP mounted with SSE transport (streamable_http_app not available)")
+    pass
 
 # Import comment models
 from app.models.responses import CommentsResponse, CommentData
@@ -161,6 +167,24 @@ async def health_check(deep: bool = False):
         details=details
     )
 
+PLATFORM_API_VERSIONS = {
+    "meta_ads": "v19.0",
+    "meta_organic": "v19.0",
+    "google_ads": "v16",
+    "ga4": "v1beta",
+    "tiktok_ads": "v1.3",
+    "tiktok_organic": "v1.3",
+    "linkedin_ads": "v2",
+    "linkedin_organic": "v2",
+    "x_ads": "v2",
+    "x_organic": "v2",
+    "youtube": "v3",
+    "google_play": "v3",
+    "apple_app_store": "v1.6",
+    "apple_ads": "v5",
+    "threads": "v1.0"
+}
+
 @app.get("/api/v1/platforms", response_model=List[PlatformInfo])
 async def list_platforms(api_key: str = Depends(verify_api_key)):
     """Discovery endpoint for agents to list available platforms."""
@@ -173,6 +197,7 @@ async def list_platforms(api_key: str = Depends(verify_api_key)):
             schema = connector.get_schema()
             raw_metrics = schema.get("metrics", [])
             available = [m["name"] if isinstance(m, dict) else m for m in raw_metrics]
+            api_ver = schema.get("metadata", {}).get("api_version") or PLATFORM_API_VERSIONS.get(pval)
             
             platforms.append(PlatformInfo(
                 platform=p,
@@ -183,7 +208,8 @@ async def list_platforms(api_key: str = Depends(verify_api_key)):
                 generic_metrics=get_supported_generic_metrics(pval),
                 supports_comments=pval in COMMENT_SUPPORTED_PLATFORMS,
                 supports_batch=True,
-                description=f"Connector for {pval.replace('_', ' ').title()}"
+                description=f"Connector for {pval.replace('_', ' ').title()}",
+                api_version=api_ver
             ))
         except Exception as e:
             logger.warning(f"Could not get schema for {pval}: {e}")
@@ -196,7 +222,8 @@ async def list_platforms(api_key: str = Depends(verify_api_key)):
                 generic_metrics=get_supported_generic_metrics(pval),
                 supports_comments=pval in COMMENT_SUPPORTED_PLATFORMS,
                 supports_batch=True,
-                description=f"Connector for {pval.replace('_', ' ').title()} (failed to load schema)"
+                description=f"Connector for {pval.replace('_', ' ').title()} (failed to load schema)",
+                api_version=PLATFORM_API_VERSIONS.get(pval)
             ))
     return platforms
 
@@ -344,8 +371,13 @@ async def get_campaign_data(
     api_key: str = Depends(verify_api_key)
 ):
     """Fetch data for a single platform with multi-tenant support."""
+    logger.info(f"AUDIT LOG: client_id='{request.client_id}' user_id='{request.user_id}' platform='{request.platform.value}'")
     logger.info(f"Request for platform: {request.platform.value}, client: {request.client_id}")
     
+    # Reset rate limit tracker for this thread
+    from app.connectors.base import rate_limit_ctx
+    rate_limit_ctx.set(None)
+
     if request.dry_run:
         return DataResponse(
             status="success",
@@ -387,20 +419,64 @@ async def get_campaign_data(
                 {"request_id": str(datetime.now(timezone.utc).timestamp())}
             )
 
+        # Unified pagination
+        total_count = len(data)
+        limit = request.limit
+        offset = 0
+        if request.next_page_token:
+            try:
+                offset = int(request.next_page_token)
+            except ValueError:
+                pass
+                
+        if limit is not None:
+            sliced_data = data[offset : offset + limit]
+            has_next = (offset + limit) < total_count
+            next_token = str(offset + limit) if has_next else None
+            page_size = limit
+        else:
+            sliced_data = data
+            has_next = False
+            next_token = None
+            page_size = total_count
+
+        from app.models.responses import PaginationInfo
+        pagination = PaginationInfo(
+            page=(offset // limit) + 1 if (limit and limit > 0) else 1,
+            page_size=page_size,
+            total_count=total_count,
+            has_next=has_next,
+            next_page_token=next_token
+        )
+
+        from app.connectors.base import request_rate_limits, request_rate_limits_lock
+        with request_rate_limits_lock:
+            rl_remaining = request_rate_limits.pop(id(request), None)
+        if rl_remaining is None:
+            rl_remaining = rate_limit_ctx.get()
+
         return DataResponse(
             status="success",
             platform=request.platform,
             date_range={"start": str(request.start_date), "end": str(request.end_date)},
-            data=data
+            data=sliced_data,
+            pagination=pagination,
+            rate_limit_remaining=rl_remaining
         )
     except Exception as e:
         logger.error(f"Connector error: {e}")
         err_detail = connector.handle_error(e)
+        from app.connectors.base import request_rate_limits, request_rate_limits_lock
+        with request_rate_limits_lock:
+            rl_remaining = request_rate_limits.pop(id(request), None)
+        if rl_remaining is None:
+            rl_remaining = rate_limit_ctx.get() or err_detail.rate_limit_remaining
         return DataResponse(
             status="error",
             platform=request.platform,
             date_range={"start": str(request.start_date), "end": str(request.end_date)},
-            errors=[err_detail]
+            errors=[err_detail],
+            rate_limit_remaining=rl_remaining
         )
 
 
@@ -414,53 +490,56 @@ async def get_comments(
     Supported platforms: meta_ads, meta_organic (FB Pages + Instagram),
     threads, youtube, x_organic.
     """
+    logger.info(f"AUDIT LOG: client_id='{request.client_id}' user_id='{request.user_id}' platform='{request.platform.value}'")
     logger.info(f"Comment request for platform: {request.platform.value}, post: {request.post_id}")
+
+    from app.connectors.base import rate_limit_ctx
+    rate_limit_ctx.set(None)
 
     # Resolve credentials
     creds = await credential_store.resolve_credentials(request.client_id, request.platform.value, request.account_id)
     if not creds:
         creds = {}
 
+    def fetch_comments_in_thread():
+        from app.connectors.base import thread_local_storage
+        thread_local_storage.current_request = request
+        try:
+            if request.platform == Platform.THREADS:
+                access_token = creds.get("access_token") or settings.threads_access_token
+                from app.connectors.threads import ThreadsConnector
+                connector = ThreadsConnector()
+                return connector.fetch_comments(request.post_id, access_token)
+            elif request.platform == Platform.META_ADS:
+                access_token = creds.get("access_token") or settings.meta_access_token
+                from app.connectors.meta import MetaAdsConnector
+                connector = MetaAdsConnector()
+                return connector.fetch_comments(request.post_id, access_token)
+            elif request.platform == Platform.META_ORGANIC:
+                access_token = creds.get("access_token") or settings.meta_access_token
+                is_instagram = creds.get("is_instagram", False)
+                from app.connectors.meta import MetaOrganicConnector
+                connector = MetaOrganicConnector()
+                return connector.fetch_comments(request.post_id, access_token, is_instagram)
+            elif request.platform == Platform.YOUTUBE:
+                api_key_or_token = creds.get("access_token") or settings.youtube_api_key
+                is_oauth = bool(creds.get("access_token"))
+                from app.connectors.youtube import YouTubeConnector
+                connector = YouTubeConnector()
+                return connector.fetch_comments(request.post_id, api_key_or_token, is_oauth)
+            elif request.platform == Platform.X_ORGANIC:
+                bearer_token = creds.get("bearer_token") or settings.x_bearer_token
+                from app.connectors.x_twitter import XOrganicConnector
+                connector = XOrganicConnector()
+                return connector.fetch_comments(request.post_id, bearer_token)
+            else:
+                raise ValueError(f"Unsupported platform {request.platform.value}")
+        finally:
+            if hasattr(thread_local_storage, "current_request"):
+                del thread_local_storage.current_request
+
     try:
-        if request.platform == Platform.THREADS:
-            access_token = creds.get("access_token") or settings.threads_access_token
-            from app.connectors.threads import ThreadsConnector
-            connector = ThreadsConnector()
-            comments = await asyncio.to_thread(
-                connector.fetch_comments, request.post_id, access_token
-            )
-        elif request.platform == Platform.META_ADS:
-            access_token = creds.get("access_token") or settings.meta_access_token
-            from app.connectors.meta import MetaAdsConnector
-            connector = MetaAdsConnector()
-            comments = await asyncio.to_thread(
-                connector.fetch_comments, request.post_id, access_token
-            )
-        elif request.platform == Platform.META_ORGANIC:
-            access_token = creds.get("access_token") or settings.meta_access_token
-            is_instagram = creds.get("is_instagram", False)
-            from app.connectors.meta import MetaOrganicConnector
-            connector = MetaOrganicConnector()
-            comments = await asyncio.to_thread(
-                connector.fetch_comments, request.post_id, access_token, is_instagram
-            )
-        elif request.platform == Platform.YOUTUBE:
-            # YouTube comments use API key or OAuth token
-            api_key_or_token = creds.get("access_token") or settings.youtube_api_key
-            is_oauth = bool(creds.get("access_token"))
-            from app.connectors.youtube import YouTubeConnector
-            connector = YouTubeConnector()
-            comments = await asyncio.to_thread(
-                connector.fetch_comments, request.post_id, api_key_or_token, is_oauth
-            )
-        elif request.platform == Platform.X_ORGANIC:
-            bearer_token = creds.get("bearer_token") or settings.x_bearer_token
-            from app.connectors.x_twitter import XOrganicConnector
-            connector = XOrganicConnector()
-            comments = await asyncio.to_thread(
-                connector.fetch_comments, request.post_id, bearer_token
-            )
-        else:
+        if request.platform not in (Platform.THREADS, Platform.META_ADS, Platform.META_ORGANIC, Platform.YOUTUBE, Platform.X_ORGANIC):
             return CommentsResponse(
                 status="error",
                 platform=request.platform,
@@ -473,15 +552,49 @@ async def get_comments(
                 )]
             )
 
+        comments = await asyncio.to_thread(fetch_comments_in_thread)
+
+        # Slicing pagination for comments
+        total_comments = len(comments)
+        limit = request.limit
+        offset = 0
+        if request.next_page_token:
+            try:
+                offset = int(request.next_page_token)
+            except ValueError:
+                pass
+                
+        if limit is not None:
+            sliced_comments = comments[offset : offset + limit]
+            has_next = (offset + limit) < total_comments
+            next_token = str(offset + limit) if has_next else None
+        else:
+            sliced_comments = comments
+            has_next = False
+            next_token = None
+
+        from app.connectors.base import request_rate_limits, request_rate_limits_lock
+        with request_rate_limits_lock:
+            rl_remaining = request_rate_limits.pop(id(request), None)
+        if rl_remaining is None:
+            rl_remaining = rate_limit_ctx.get()
+
         return CommentsResponse(
             status="success",
             platform=request.platform,
             post_id=request.post_id,
-            total_comments=len(comments),
-            comments=comments,
+            total_comments=total_comments,
+            comments=sliced_comments,
+            next_page_token=next_token,
+            rate_limit_remaining=rl_remaining
         )
     except Exception as e:
         logger.error(f"Error fetching comments: {e}")
+        from app.connectors.base import request_rate_limits, request_rate_limits_lock
+        with request_rate_limits_lock:
+            rl_remaining = request_rate_limits.pop(id(request), None)
+        if rl_remaining is None:
+            rl_remaining = rate_limit_ctx.get()
         return CommentsResponse(
             status="error",
             platform=request.platform,
@@ -490,8 +603,10 @@ async def get_comments(
                 code="COMMENT_FETCH_ERROR",
                 message=str(e),
                 retryable=True
-            )]
+            )],
+            rate_limit_remaining=rl_remaining
         )
+
 
 @app.post("/api/v1/batch", response_model=BatchDataResponse)
 async def get_batch_data(
@@ -500,7 +615,14 @@ async def get_batch_data(
     api_key: str = Depends(verify_api_key)
 ):
     """Fetch data from multiple platforms concurrently with robust error handling."""
-    
+    client_id = request.requests[0].client_id if request.requests else "unknown"
+    user_id = request.requests[0].user_id if request.requests else "unknown"
+    logger.info(f"AUDIT LOG: client_id='{client_id}' user_id='{user_id}' platform='batch'")
+
+    # Reset rate limit tracker
+    from app.connectors.base import rate_limit_ctx
+    rate_limit_ctx.set(None)
+
     async def fetch_wrapper(req: DataRequest):
         try:
             return await get_campaign_data(req, background_tasks, api_key)
@@ -522,10 +644,13 @@ async def get_batch_data(
     if failed > 0:
         status = "partial" if successful > 0 else "error"
 
+    rl_remaining = rate_limit_ctx.get()
+
     return BatchDataResponse(
         status=status,
         results=results,
         total_platforms=len(request.requests),
         successful_platforms=successful,
-        failed_platforms=failed
+        failed_platforms=failed,
+        rate_limit_remaining=rl_remaining
     )

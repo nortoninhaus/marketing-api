@@ -857,7 +857,7 @@ class _QueryScreenState extends ConsumerState<QueryScreen> {
 
   Widget _buildConnectedAccountsSection() {
     final oauthPlatforms = _selectedPlatforms.where((p) => 
-        const ['meta_ads', 'meta_organic', 'google_ads', 'ga4', 'youtube', 'threads'].contains(p)
+        const ['meta_ads', 'meta_organic', 'google_ads', 'ga4', 'youtube', 'threads', 'tiktok_ads', 'tiktok_organic'].contains(p)
     ).toList();
     if (oauthPlatforms.isEmpty) return const SizedBox.shrink();
 
@@ -887,7 +887,8 @@ class _QueryScreenState extends ConsumerState<QueryScreen> {
 
               String label = platform == 'meta_ads' 
                   ? 'Meta Ads:' 
-                  : (platform == 'meta_organic' ? 'Meta Pages:' : (platform == 'google_ads' ? 'Google:' : (platform == 'ga4' ? 'GA4:' : (platform == 'youtube' ? 'YouTube:' : 'Threads:'))));
+                  : (platform == 'meta_organic' ? 'Meta Pages:' : (platform == 'google_ads' ? 'Google:' : (platform == 'ga4' ? 'GA4:' : (platform == 'youtube' ? 'YouTube:' : (platform == 'threads' ? 'Threads:' : (platform == 'tiktok_ads' ? 'TikTok Ads:' : 'TikTok Organic:'))))));
+
 
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8.0),
