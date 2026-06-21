@@ -69,6 +69,8 @@ class DataRequest(BaseModel):
     dry_run: bool = Field(False, description="If true, only validate parameters/metrics without fetching upstream data")
     limit: Optional[int] = Field(None, description="Maximum number of items to return")
     next_page_token: Optional[str] = Field(None, description="Cursor for the next page of results")
+    filters: Optional[Dict[str, Any]] = Field(None, description="Dynamic key-value filters or expressions")
+    action_attribution_windows: Optional[List[str]] = Field(None, description="Attribution windows for Meta Ads (e.g. ['7d_click', '1d_view'])")
 
     @model_validator(mode="after")
     def validate_date_range(self) -> "DataRequest":
@@ -118,5 +120,16 @@ class ValidationRequest(BaseModel):
     post_id: Optional[str] = Field(None, description="Specific post/content ID")
     video_id: Optional[str] = Field(None, description="Specific video ID")
     app_id: Optional[str] = Field(None, description="App store ID or package name")
+
+
+class TikTokProxyRequest(BaseModel):
+    """Generic proxy request model for executing any TikTok Marketing API endpoint."""
+    client_id: str = Field(..., description="ID of the client/agency")
+    account_id: str = Field(..., description="Advertiser ID (account_id)")
+    path: str = Field(..., description="The TikTok API path (e.g. campaign/get/)")
+    method: str = Field("GET", description="HTTP method: GET or POST")
+    params: Optional[Dict[str, Any]] = Field(None, description="Query parameters")
+    json_body: Optional[Dict[str, Any]] = Field(None, description="JSON body for POST requests")
+
 
 

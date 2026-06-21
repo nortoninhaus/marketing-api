@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
     # Shutdown (cleanup if needed)
 
 from app.config import settings
-from app.models.requests import DataRequest, Platform, BatchDataRequest, CommentsRequest
+from app.models.requests import DataRequest, Platform, BatchDataRequest, CommentsRequest, TikTokProxyRequest
 from app.models.responses import DataResponse, BatchDataResponse, HealthResponse, ErrorDetail, PlatformInfo, SchemaResponse
 from app.middleware.auth import verify_api_key
 from app.services.dispatcher import dispatcher
@@ -654,3 +654,63 @@ async def get_batch_data(
         failed_platforms=failed,
         rate_limit_remaining=rl_remaining
     )
+
+
+import requests as _requests
+
+@app.post("/api/v1/tiktok-proxy")
+async def tiktok_proxy(
+    request: TikTokProxyRequest,
+    api_key: str = Depends(verify_api_key)
+):
+    """Generic authenticated proxy for executing any TikTok Marketing API endpoint."""
+    logger.info(f"TikTok API Proxy Request: path='{request.path}' client_id='{request.client_id}' account_id='{request.account_id}' method='{request.method}'")
+    
+    # 1. Resolve credentials
+    creds = await credential_store.resolve_credentials(
+        request.client_id, "tiktok_ads", request.account_id
+    )
+    if not creds or not creds.get("access_token"):
+        raise HTTPException(
+            status_code=401,
+            detail=f"Credentials not found for client '{request.client_id}' and advertiser '{request.account_id}' on platform 'tiktok_ads'."
+        )
+        
+    access_token = creds["access_token"]
+    
+    # 2. Normalize path (must start with /open_api/v1.3/)
+    path = request.path.lstrip("/")
+    if not path.startswith("open_api/"):
+        path = f"open_api/v1.3/{path}"
+        
+    url = f"https://business-api.tiktok.com/{path}"
+    headers = {
+        "Access-Token": access_token,
+        "Content-Type": "application/json"
+    }
+    
+    # 3. Execute HTTP request
+    try:
+        method = request.method.upper()
+        if method == "GET":
+            response = await asyncio.to_thread(
+                _requests.get, url, params=request.params, headers=headers, timeout=30
+            )
+        elif method == "POST":
+            response = await asyncio.to_thread(
+                _requests.post, url, json=request.json_body, params=request.params, headers=headers, timeout=30
+            )
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported method '{method}' for TikTok API Proxy.")
+            
+        response.raise_for_status()
+        return response.json()
+    except _requests.RequestException as e:
+        logger.error(f"TikTok API Proxy Call failed: {e}")
+        if e.response is not None:
+            try:
+                return JSONResponse(status_code=e.response.status_code, content=e.response.json())
+            except Exception:
+                raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
+        raise HTTPException(status_code=502, detail=f"Failed to communicate with TikTok API: {e}")
+

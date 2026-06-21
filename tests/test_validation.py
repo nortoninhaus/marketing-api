@@ -350,3 +350,96 @@ def test_audit_logging(client, auth_headers, caplog):
     assert any("AUDIT LOG: client_id='audit_client_123' user_id='audit_user_456' platform='batch'" in record.message for record in caplog.records)
 
 
+def test_meta_ads_filters_and_attribution():
+    from app.connectors.meta import MetaAdsConnector
+    from app.models.requests import DataRequest
+    from datetime import date
+    
+    connector = MetaAdsConnector()
+    request = DataRequest(
+        platform="meta_ads",
+        start_date=date(2026, 6, 1),
+        end_date=date(2026, 6, 5),
+        metrics=["impressions"],
+        client_id="c_1",
+        user_id="u_1",
+        account_id="act_12345",
+        action_attribution_windows=["7d_click", "1d_view"],
+        filters={"campaign.name": "BlackFriday"}
+    )
+    
+    with patch("facebook_business.adobjects.adaccount.AdAccount.get_insights") as mock_get_insights:
+        mock_get_insights.return_value = []
+        connector.fetch_data(request)
+        
+        args, kwargs = mock_get_insights.call_args
+        params = kwargs.get("params", {})
+        assert params.get("action_attribution_windows") == ["7d_click", "1d_view"]
+        assert params.get("filtering") == [{"field": "campaign.name", "operator": "EQUAL", "value": ["BlackFriday"]}]
+
+
+def test_google_ads_filters_and_ad_level():
+    from app.connectors.google_ads import GoogleAdsConnector
+    from app.models.requests import DataRequest
+    from datetime import date
+    
+    connector = GoogleAdsConnector()
+    request = DataRequest(
+        platform="google_ads",
+        start_date=date(2026, 6, 1),
+        end_date=date(2026, 6, 5),
+        metrics=["impressions"],
+        client_id="c_1",
+        user_id="u_1",
+        account_id="123-456-7890",
+        dimensions=["ad_group_ad.ad.name"],
+        filters={"campaign.status": "ENABLED"}
+    )
+    
+    with patch.object(GoogleAdsConnector, "_build_client") as mock_build_client:
+        mock_client = MagicMock()
+        mock_build_client.return_value = mock_client
+        mock_service = mock_client.get_service.return_value
+        mock_service.search_stream.return_value = []
+        
+        connector.fetch_data(request)
+        
+        args, kwargs = mock_service.search_stream.call_args
+        query = kwargs.get("query", "")
+        # GAQL should contain FROM ad_group_ad and campaign.status = 'ENABLED'
+        assert "FROM ad_group_ad" in query
+        assert "campaign.status = 'ENABLED'" in query
+
+
+def test_ga4_filters():
+    from app.connectors.ga4 import GA4Connector
+    from app.models.requests import DataRequest
+    from datetime import date
+    
+    connector = GA4Connector()
+    request = DataRequest(
+        platform="ga4",
+        start_date=date(2026, 6, 1),
+        end_date=date(2026, 6, 5),
+        metrics=["sessions"],
+        client_id="c_1",
+        user_id="u_1",
+        account_id="properties/12345",
+        filters={"country": "US"}
+    )
+    
+    with patch.object(GA4Connector, "_build_client") as mock_build_client:
+        mock_client = MagicMock()
+        mock_build_client.return_value = mock_client
+        mock_client.run_report.return_value.rows = []
+        
+        connector.fetch_data(request)
+        
+        args, kwargs = mock_client.run_report.call_args
+        req_arg = args[0]
+        # Should have a dimension_filter for country with matching value US
+        assert req_arg.dimension_filter.filter.field_name == "country"
+        assert req_arg.dimension_filter.filter.string_filter.value == "US"
+
+
+
