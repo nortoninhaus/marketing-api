@@ -313,6 +313,15 @@ class MetaOrganicConnector(BaseConnector):
             "is_instagram": is_instagram
         }
 
+    # Categorization constants for metrics
+    IG_ACCOUNT_DAILY_METRICS = {"views", "reach", "profile_views", "follower_count", "accounts_engaged", "total_interactions", "website_clicks"}
+    IG_ACCOUNT_DEMO_METRICS = {"audience_gender_age", "audience_country", "audience_city", "audience_locale"}
+    IG_MEDIA_METRICS = {"views", "reach", "saved", "shares", "likes", "comments", "total_interactions", "plays", "replays", "carousel_album_saves", "carousel_album_impressions"}
+
+    PAGE_DAILY_METRICS = {"page_views_total", "page_post_engagements", "page_follows", "page_fans", "page_actions_post_reactions_total", "page_media_view", "page_total_media_view_unique"}
+    PAGE_DEMO_METRICS = {"page_fans_gender_age", "page_fans_country", "page_fans_city", "page_fans_locale"}
+    PAGE_POST_METRICS = {"post_clicks", "post_media_view", "post_total_media_view_unique"}
+
     # ─── Instagram Organic ─────────────────────────────────────────────
 
     def _fetch_instagram_data(self, request: DataRequest, creds: Dict[str, Any]) -> List[CampaignData]:
@@ -326,10 +335,13 @@ class MetaOrganicConnector(BaseConnector):
         since_ts = int(since_dt.replace(tzinfo=timezone.utc).timestamp())
         until_ts = int(until_dt.replace(tzinfo=timezone.utc).timestamp())
 
-        # Check if demographic metrics are requested (they require period=lifetime and don't accept date range)
-        has_demographics = any("audience_" in m for m in request.metrics)
+        # Check if demographics are requested
+        has_demographics = any(m in self.IG_ACCOUNT_DEMO_METRICS or "audience_" in m for m in request.metrics)
         if has_demographics:
-            demo_metrics = [m for m in request.metrics if "audience_" in m]
+            # Filter demographics metrics
+            demo_metrics = [m for m in request.metrics if m in self.IG_ACCOUNT_DEMO_METRICS or "audience_" in m]
+            if not demo_metrics:
+                demo_metrics = list(self.IG_ACCOUNT_DEMO_METRICS)
             demo_url = f"{GRAPH_BASE}/{ig_account_id}/insights"
             with httpx.Client() as client:
                 res = client.get(
@@ -361,6 +373,7 @@ class MetaOrganicConnector(BaseConnector):
 
         # If post_id is "all" or dimension post_id is requested (fetch all media with nested insights in one batch API request)
         if request.post_id == "all" or (not request.post_id and request.dimensions and "post_id" in request.dimensions):
+            # Filter for valid Instagram Media metrics
             media_metrics = []
             for m in request.metrics:
                 if m in ("views", "impressions"):
@@ -377,7 +390,7 @@ class MetaOrganicConnector(BaseConnector):
                     media_metrics.append("likes")
                 elif "comment" in m:
                     media_metrics.append("comments")
-                elif m in ("plays", "replays", "carousel_album_saves", "carousel_album_impressions"):
+                elif m in self.IG_MEDIA_METRICS:
                     media_metrics.append(m)
             if not media_metrics:
                 media_metrics = ["views", "reach", "total_interactions", "saved", "shares", "likes", "comments"]
@@ -423,12 +436,11 @@ class MetaOrganicConnector(BaseConnector):
         if request.post_id:
             media_id = request.post_id
             url = f"{GRAPH_BASE}/{media_id}/insights"
-            # Map request metrics to IG Media insights metrics
-            # Updated: impressions → views, added new metrics
+            # Map and filter for valid Instagram Media metrics
             media_metrics = []
             for m in request.metrics:
                 if m in ("views", "impressions"):
-                    media_metrics.append("views")  # Use views (impressions deprecated)
+                    media_metrics.append("views")
                 elif "reach" in m:
                     media_metrics.append("reach")
                 elif "save" in m:
@@ -441,7 +453,7 @@ class MetaOrganicConnector(BaseConnector):
                     media_metrics.append("likes")
                 elif "comment" in m:
                     media_metrics.append("comments")
-                elif m in ("plays", "replays", "carousel_album_saves", "carousel_album_impressions"):
+                elif m in self.IG_MEDIA_METRICS:
                     media_metrics.append(m)
                 elif "view" in m or "play" in m:
                     media_metrics.append("views")
@@ -449,7 +461,6 @@ class MetaOrganicConnector(BaseConnector):
             if not media_metrics:
                 media_metrics = ["views", "reach", "total_interactions", "saved", "shares", "likes", "comments"]
 
-            # Deduplicate
             media_metrics = list(dict.fromkeys(media_metrics))
 
             with httpx.Client() as client:
@@ -482,12 +493,11 @@ class MetaOrganicConnector(BaseConnector):
 
         # Otherwise, fetch Account/Profile level Insights
         url = f"{GRAPH_BASE}/{ig_account_id}/insights"
-        # Map requested metrics to standard daily IG account metrics
-        # Updated: impressions → views, added new account-level metrics
+        # Map and filter for valid Instagram Account daily metrics
         ig_metrics = []
         for m in request.metrics:
             if m in ("views", "impressions"):
-                ig_metrics.append("views")  # Use views (impressions deprecated)
+                ig_metrics.append("views")
             elif "reach" in m:
                 ig_metrics.append("reach")
             elif "profile_views" in m:
@@ -500,11 +510,12 @@ class MetaOrganicConnector(BaseConnector):
                 ig_metrics.append("total_interactions")
             elif "website_clicks" in m:
                 ig_metrics.append("website_clicks")
+            elif m in self.IG_ACCOUNT_DAILY_METRICS:
+                ig_metrics.append(m)
 
         if not ig_metrics:
             ig_metrics = ["views", "reach", "profile_views", "accounts_engaged", "total_interactions"]
 
-        # Deduplicate
         ig_metrics = list(dict.fromkeys(ig_metrics))
 
         daily_data: Dict[str, Dict[str, Any]] = {}
@@ -656,18 +667,53 @@ class MetaOrganicConnector(BaseConnector):
         since_str = request.start_date.strftime("%Y-%m-%d")
         until_str = request.end_date.strftime("%Y-%m-%d")
 
-        # Check if page demographics are requested (they are lifetime metrics)
-        has_page_demographics = any("page_fans_" in m for m in request.metrics)
+        # 1. Filter demographic metrics if requested
+        has_page_demographics = any(m in self.PAGE_DEMO_METRICS or "page_fans_" in m for m in request.metrics)
+        if has_page_demographics:
+            demo_metrics = [m for m in request.metrics if m in self.PAGE_DEMO_METRICS or "page_fans_" in m]
+            if not demo_metrics:
+                demo_metrics = list(self.PAGE_DEMO_METRICS)
+            
+            insights = page.get_insights(params={
+                "metric": ",".join(demo_metrics),
+                "period": "lifetime"
+            })
+            campaign_name = "Page_Demographics"
+            
+            daily_data: Dict[str, Dict[str, Any]] = {}
+            for insight in insights:
+                metric_name = insight.get("name", "unknown")
+                values_list = insight.get("values", [])
+                for val_entry in values_list:
+                    end_time = val_entry.get("end_time", since_str)
+                    day = end_time[:10] if end_time else since_str
+                    if day not in daily_data:
+                        daily_data[day] = {}
+                    daily_data[day][metric_name] = val_entry.get("value", {})
+                    
+            return [
+                CampaignData(
+                    campaign_name=campaign_name,
+                    date=day,
+                    metrics=metrics_dict
+                ) for day, metrics_dict in sorted(daily_data.items())
+            ]
 
-        # If post_id is "all" or dimension post_id is requested (fetch all posts with nested insights in one batch request)
+        # 2. If post_id is "all" or dimension post_id is requested (fetch all posts with nested insights in one batch request)
         if request.post_id == "all" or (not request.post_id and request.dimensions and "post_id" in request.dimensions):
+            # Filter for valid Facebook Post metrics
+            post_metrics = [m for m in request.metrics if m in self.PAGE_POST_METRICS]
+            if not post_metrics:
+                post_metrics = ["post_clicks", "post_media_view", "post_total_media_view_unique"]
+            post_metrics = list(dict.fromkeys(post_metrics))
+            
             url = f"{GRAPH_BASE}/{creds['page_id']}/posts"
             results = []
             with httpx.Client() as client:
                 res = client.get(
                     url,
                     params={
-                        "fields": f"id,message,created_time,insights.metric({','.join(request.metrics)}){{name,values}}",
+                        "fields": f"id,message,created_time,insights.metric({','.join(post_metrics)}){{name,values}}",
                         "limit": request.limit or 50,
                         "access_token": creds["access_token"]
                     }
@@ -700,23 +746,30 @@ class MetaOrganicConnector(BaseConnector):
             if not posts:
                 return []
             post = posts[0]
+            # Filter for valid Facebook Post metrics
+            post_metrics = [m for m in request.metrics if m in self.PAGE_POST_METRICS]
+            if not post_metrics:
+                post_metrics = ["post_clicks", "post_media_view", "post_total_media_view_unique"]
+            post_metrics = list(dict.fromkeys(post_metrics))
+            
             insights = post.get_insights(params={
-                "metric": ",".join(request.metrics),
+                "metric": ",".join(post_metrics),
                 "since": since_str,
                 "until": until_str
             })
             campaign_name = f"Post_{request.post_id}"
         else:
+            # Filter for valid Page daily metrics
+            page_metrics = [m for m in request.metrics if m in self.PAGE_DAILY_METRICS]
+            if not page_metrics:
+                page_metrics = ["page_views_total", "page_post_engagements", "page_follows", "page_fans", "page_actions_post_reactions_total"]
+            page_metrics = list(dict.fromkeys(page_metrics))
+
             params = {
-                "metric": ",".join(request.metrics),
+                "metric": ",".join(page_metrics),
                 "since": since_str,
                 "until": until_str
             }
-            if has_page_demographics:
-                params = {
-                    "metric": ",".join(request.metrics),
-                    "period": "lifetime"
-                }
             insights = page.get_insights(params=params)
             campaign_name = "Page_Insights"
 
