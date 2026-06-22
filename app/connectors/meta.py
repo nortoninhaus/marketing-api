@@ -670,7 +670,7 @@ class MetaOrganicConnector(BaseConnector):
         if demo_metrics and not request.post_id:
             try:
                 insights = page.get_insights(params={
-                    "metric": ",".join(demo_metrics),
+                    "metric": demo_metrics,
                     "period": "lifetime"
                 })
                 for insight in insights:
@@ -741,7 +741,7 @@ class MetaOrganicConnector(BaseConnector):
                     post_metrics = list(dict.fromkeys(post_metrics))
                     
                     insights = post.get_insights(params={
-                        "metric": ",".join(post_metrics),
+                        "metric": post_metrics,
                         "since": since_str,
                         "until": until_str
                     })
@@ -768,7 +768,7 @@ class MetaOrganicConnector(BaseConnector):
                 page_metrics = list(dict.fromkeys(page_metrics))
                 try:
                     insights = page.get_insights(params={
-                        "metric": ",".join(page_metrics),
+                        "metric": page_metrics,
                         "since": since_str,
                         "until": until_str
                     })
