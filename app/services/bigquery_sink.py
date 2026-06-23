@@ -5,7 +5,7 @@ BigQuery Sink Service — Dual-write marketing data to BigQuery.
 import logging
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from google.cloud import bigquery
@@ -44,7 +44,7 @@ class BigQuerySink:
             return
 
         # Prepare rows
-        timestamp = datetime.utcnow().isoformat()
+        timestamp = datetime.now(timezone.utc).isoformat()
         rows_to_insert = []
         for item in data:
             row = {

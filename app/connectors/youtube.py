@@ -53,17 +53,39 @@ class YouTubeConnector(BaseConnector):
                 youtube_analytics = build("youtubeAnalytics", "v2", credentials=token_credentials)
                 channel_id = creds["channel_id"]
                 
-                # Default channel filter query format is channel==CHANNEL_ID
+                # Default/fallback dimension is day
+                yt_dims = []
+                if request.dimensions:
+                    supported_dims = {"day", "country", "deviceType", "operatingSystem", "sharingService", "trafficSourceType", "gender", "ageGroup"}
+                    for d in request.dimensions:
+                        if d in supported_dims:
+                            yt_dims.append(d)
+                if not yt_dims:
+                    yt_dims = ["day"]
+
+                # Parse and build filters
+                filter_parts = []
+                if request.video_id:
+                    filter_parts.append(f"video=={request.video_id}")
+                if request.filters:
+                    supported_filters = {"video", "country", "province", "continent", "subContinent", "deviceType", "operatingSystem", "trafficSourceType"}
+                    for k, v in request.filters.items():
+                        if k in supported_filters:
+                            if isinstance(v, list):
+                                v_str = ",".join(str(item) for item in v)
+                            else:
+                                v_str = str(v)
+                            filter_parts.append(f"{k}=={v_str}")
+
                 params = {
                     "ids": f"channel=={channel_id}",
                     "startDate": start_str,
                     "endDate": end_str,
                     "metrics": ",".join(request.metrics),
-                    "dimensions": "day"
+                    "dimensions": ",".join(yt_dims)
                 }
-                
-                if request.video_id:
-                    params["filters"] = f"video=={request.video_id}"
+                if filter_parts:
+                    params["filters"] = ";".join(filter_parts)
 
                 logger.info(f"Querying YouTube Analytics API: {params}")
                 response = youtube_analytics.reports().query(**params).execute()
@@ -76,6 +98,16 @@ class YouTubeConnector(BaseConnector):
                     row_dict = dict(zip(headers, row))
                     date_val = row_dict.get("day", start_str)
                     
+                    other_dim_vals = []
+                    for d in yt_dims:
+                        if d != "day" and d in row_dict:
+                            other_dim_vals.append(str(row_dict[d]))
+                            
+                    if request.video_id:
+                        other_dim_vals.append(request.video_id)
+                        
+                    campaign_name = " | ".join(other_dim_vals) if other_dim_vals else "YouTube_Channel"
+                    
                     metrics_dict = {}
                     for m in request.metrics:
                         val = row_dict.get(m, 0)
@@ -84,7 +116,6 @@ class YouTubeConnector(BaseConnector):
                         except Exception:
                             metrics_dict[m] = 0
                             
-                    campaign_name = f"YT_Video_{request.video_id}" if request.video_id else "YouTube_Channel"
                     results.append(CampaignData(
                         campaign_name=campaign_name,
                         date=date_val,

@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional
 import logging
 import contextvars
 
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, stop_after_attempt, wait_exponential, RetryError
 
 from app.models.requests import DataRequest
 from app.models.responses import CampaignData, ErrorDetail
@@ -89,10 +89,60 @@ class BaseConnector(ABC):
         """Map raw exceptions to structured ErrorDetail for agents."""
         import requests as _requests
 
+        # Unwrap tenacity.RetryError if it wraps the exception
+        if isinstance(e, RetryError):
+            e = e.last_attempt.exception() or e
+
         code = "API_ERROR"
         retryable = True
         message = str(e)
         rate_limit_remaining = None
+
+        # Try to handle FacebookRequestError specifically
+        try:
+            from facebook_business.exceptions import FacebookRequestError
+            if isinstance(e, FacebookRequestError):
+                status = e.http_status()
+                api_code = e.api_error_code()
+                api_subcode = e.api_error_subcode()
+                api_msg = e.api_error_message() or str(e)
+
+                # Check for token issues or administrative permission errors
+                if status in (401, 403) or api_code in (102, 190) or (200 <= (api_code or 0) <= 299) or api_code == 10:
+                    code = "AUTH_ERROR"
+                    retryable = False
+                elif status == 429 or api_code in (4, 17, 32, 613):
+                    code = "RATE_LIMIT"
+                    retryable = True
+                elif status >= 500:
+                    code = "API_ERROR"
+                    retryable = True
+                else:
+                    code = "INVALID_REQUEST"
+                    retryable = False
+
+                message = f"Meta API Error ({api_code}:{api_subcode}) [HTTP {status}]: {api_msg}"
+                
+                # Get rate limit from headers if available
+                headers = e.http_headers() or {}
+                headers_lower = {k.lower(): v for k, v in headers.items()}
+                for k in ("x-rate-limit-remaining", "rate-limit-remaining", "x-ratelimit-remaining"):
+                    if k in headers_lower:
+                        try:
+                            rate_limit_remaining = int(headers_lower[k])
+                            break
+                        except (ValueError, TypeError):
+                            pass
+                
+                return ErrorDetail(
+                    code=code,
+                    message=message,
+                    platform=self.platform_name,
+                    retryable=retryable,
+                    rate_limit_remaining=rate_limit_remaining
+                )
+        except ImportError:
+            pass
 
         # Classify by HTTP status code
         if isinstance(e, _requests.exceptions.HTTPError) and e.response is not None:

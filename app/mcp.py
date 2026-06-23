@@ -48,7 +48,7 @@ mcp = FastMCP(
     "Inhaus Marketing API",
     instructions=(
         "You are connected to the Inhaus Marketing Data API — a unified, "
-        "multi-tenant gateway to 15 marketing and analytics platforms "
+        "multi-tenant gateway to 16 marketing and analytics platforms "
         "(Meta Ads, Google Ads, TikTok, LinkedIn, YouTube, GA4, and more). "
         "Use the tools below to discover platforms, inspect schemas, "
         "fetch campaign/organic data, and run cross-platform comparisons. "
@@ -73,7 +73,7 @@ VALID_PLATFORMS = [
     "meta_ads", "meta_organic", "google_ads", "ga4",
     "tiktok_ads", "tiktok_organic", "linkedin_ads", "linkedin_organic",
     "x_ads", "x_organic", "youtube", "google_play",
-    "apple_app_store", "apple_ads", "threads",
+    "apple_app_store", "apple_ads", "threads", "spotify_ads",
 ]
 
 # ---------------------------------------------------------------------------
@@ -242,7 +242,8 @@ async def get_platform_schema(platform: str) -> dict:
                   meta_ads, meta_organic, google_ads, ga4,
                   tiktok_ads, tiktok_organic, linkedin_ads,
                   linkedin_organic, x_ads, x_organic, youtube,
-                  google_play, apple_app_store, apple_ads, threads.
+                  google_play, apple_app_store, apple_ads, threads,
+                  spotify_ads.
 
     Returns:
         A dict with keys: platform, metrics (list), dimensions (list),
@@ -276,6 +277,8 @@ async def get_marketing_data(
     app_id: str | None = None,
     limit: int | None = None,
     next_page_token: str | None = None,
+    filters: dict | None = None,
+    action_attribution_windows: list[str] | None = None,
 ) -> dict:
     """
     Fetch campaign or content performance data from a single platform.
@@ -306,6 +309,8 @@ async def get_marketing_data(
                     Only relevant for Google Play / Apple App Store.
         limit:      (Optional) Maximum number of items to return.
         next_page_token: (Optional) Cursor for the next page of results.
+        filters:    (Optional) Dynamic key-value filters or expressions.
+        action_attribution_windows: (Optional) Attribution windows for Meta Ads (e.g. ['7d_click', '1d_view'])
 
     Returns:
         A dict with keys: status, request_id, timestamp, platform,
@@ -345,6 +350,10 @@ async def get_marketing_data(
         payload["limit"] = limit
     if next_page_token:
         payload["next_page_token"] = next_page_token
+    if filters:
+        payload["filters"] = filters
+    if action_attribution_windows:
+        payload["action_attribution_windows"] = action_attribution_windows
 
     return await _post("/api/v1/campaign-data", payload)
 
@@ -375,7 +384,7 @@ async def get_batch_marketing_data(requests: list[dict]) -> dict:
             - video_id (str, optional)
             - app_id (str, optional)
 
-        Maximum 15 sub-requests per batch (one per platform).
+        Maximum 16 sub-requests per batch (one per platform).
 
     Returns:
         A dict with keys: status, request_id, timestamp, results
@@ -835,7 +844,97 @@ async def get_credential_status(client_id: str) -> dict:
     return await _get("/api/v1/credentials/status", params={"client_id": client_id})
 
 
+# ===================================================================
+# TOOL 13 — Execute TikTok API Call
+# ===================================================================
+@mcp.tool()
+@_track_latency("execute_tiktok_api_call")
+async def execute_tiktok_api_call(
+    client_id: str,
+    account_id: str,
+    path: str,
+    method: str = "GET",
+    params: dict | None = None,
+    json_body: dict | None = None,
+) -> dict:
+    """
+    Execute any arbitrary TikTok Marketing API method/endpoint dynamically.
+
+    This tool acts as a secure proxy to forward calls to the TikTok Marketing API (v1.3),
+    automatically resolving the active OAuth access token for the specified client and account.
+
+    Args:
+        client_id:  Unique ID of the client/tenant.
+        account_id: The advertiser account ID (account_id).
+        path:       The API path, e.g. "campaign/get/" or "campaign/create/".
+        method:     HTTP method to use (GET or POST). Default is GET.
+        params:     (Optional) Query parameters.
+        json_body:  (Optional) JSON body for POST requests.
+
+    Returns:
+        The raw JSON response from the TikTok Marketing API.
+    """
+    payload = {
+        "client_id": client_id,
+        "account_id": account_id,
+        "path": path,
+        "method": method,
+    }
+    if params:
+        payload["params"] = params
+    if json_body:
+        payload["json_body"] = json_body
+
+    return await _post("/api/v1/tiktok-proxy", payload)
+
+
+# ===================================================================
+# TOOL 14 — Execute TikTok Organic API Call
+# ===================================================================
+@mcp.tool()
+@_track_latency("execute_tiktok_organic_api_call")
+async def execute_tiktok_organic_api_call(
+    client_id: str,
+    account_id: str,
+    path: str,
+    method: str = "GET",
+    params: dict | None = None,
+    json_body: dict | None = None,
+) -> dict:
+    """
+    Execute any arbitrary TikTok Organic/Display API method/endpoint dynamically.
+
+    This tool acts as a secure proxy to forward calls to either the TikTok Business Organic API
+    (for Business Center Brand Assets) or the legacy Creator/Display API (for personal profiles),
+    automatically resolving the active OAuth tokens.
+
+    Args:
+        client_id:  Unique ID of the client/tenant.
+        account_id: The organic profile account ID (open_id or BC asset ID).
+        path:       The API path, e.g. "business/video/list/" or "v2/video/list/".
+        method:     HTTP method to use (GET or POST). Default is GET.
+        params:     (Optional) Query parameters.
+        json_body:  (Optional) JSON body for POST requests.
+
+    Returns:
+        The raw JSON response from the TikTok Organic/Display API.
+    """
+    payload = {
+        "client_id": client_id,
+        "account_id": account_id,
+        "path": path,
+        "method": method,
+    }
+    if params:
+        payload["params"] = params
+    if json_body:
+        payload["json_body"] = json_body
+
+    return await _post("/api/v1/tiktok-organic-proxy", payload)
+
+
 # ---------------------------------------------------------------------------
+
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":

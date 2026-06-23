@@ -5,6 +5,8 @@ Supports: Meta Ads, Meta Organic, Google Ads, GA4, YouTube.
 
 import asyncio
 import base64
+import hashlib
+import hmac
 import json
 import logging
 from datetime import datetime, timezone, timedelta
@@ -18,6 +20,25 @@ from app.services.credential_store import credential_store
 from app.middleware.auth import verify_api_key
 
 logger = logging.getLogger(__name__)
+
+
+def _sign_state(data: dict) -> str:
+    """Encode and HMAC-sign an OAuth state parameter."""
+    payload = base64.urlsafe_b64encode(json.dumps(data).encode()).decode()
+    sig = hmac.new(settings.api_key.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return f"{payload}.{sig}"
+
+
+def _verify_state(state: str) -> dict:
+    """Verify HMAC signature and decode an OAuth state parameter.
+    Raises ValueError on invalid or tampered state."""
+    if "." not in state:
+        raise ValueError("Missing signature in state parameter")
+    payload, sig = state.rsplit(".", 1)
+    expected = hmac.new(settings.api_key.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig, expected):
+        raise ValueError("Invalid signature on state parameter")
+    return json.loads(base64.urlsafe_b64decode(payload.encode()).decode())
 
 router = APIRouter(
     prefix="/api/v1/oauth",
@@ -91,13 +112,13 @@ async def get_authorize_url(
             detail=f"Platform '{platform}' is not supported for OAuth connections. Supported: {', '.join(SUPPORTED_PLATFORMS)}"
         )
 
-    # Encode state containing client_id, platform and final redirect_url
+    # Encode state containing client_id, platform and final redirect_url (HMAC-signed)
     state_data = {
         "client_id": client_id,
         "platform": platform,
         "redirect_url": redirect_url
     }
-    state = base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
+    state = _sign_state(state_data)
 
     # ─── Meta Platforms ────────────────────────────────────────────
     if platform in ("meta_ads", "meta_organic"):
@@ -234,14 +255,13 @@ async def oauth_callback(
         raise HTTPException(status_code=400, detail="Missing required parameters code or state.")
 
     try:
-        state_bytes = base64.urlsafe_b64decode(state.encode())
-        state_data = json.loads(state_bytes.decode())
+        state_data = _verify_state(state)
         client_id = state_data.get("client_id", "client_1")
         platform = state_data.get("platform")
         redirect_url = state_data.get("redirect_url", "http://127.0.0.1:5000")
     except Exception as e:
-        logger.error(f"Failed to decode OAuth state parameter: {e}")
-        raise HTTPException(status_code=400, detail="Invalid state parameter.")
+        logger.error(f"Failed to verify OAuth state parameter: {e}")
+        raise HTTPException(status_code=400, detail="Invalid or tampered state parameter.")
 
     backend_redirect_uri = _build_meta_redirect_uri(request)
 
@@ -612,14 +632,13 @@ async def google_oauth_callback(
         raise HTTPException(status_code=400, detail="Missing required parameters code or state.")
 
     try:
-        state_bytes = base64.urlsafe_b64decode(state.encode())
-        state_data = json.loads(state_bytes.decode())
+        state_data = _verify_state(state)
         client_id = state_data.get("client_id", "client_1")
         platform = state_data.get("platform")
         redirect_url = state_data.get("redirect_url", "http://127.0.0.1:5000")
     except Exception as e:
-        logger.error(f"Failed to decode Google OAuth state parameter: {e}")
-        raise HTTPException(status_code=400, detail="Invalid state parameter.")
+        logger.error(f"Failed to verify Google OAuth state parameter: {e}")
+        raise HTTPException(status_code=400, detail="Invalid or tampered state parameter.")
 
     backend_redirect_uri = _build_google_redirect_uri(request)
 

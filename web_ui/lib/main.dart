@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'theme/app_theme.dart';
 import 'screens/settings_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/query_screen.dart';
+import 'screens/tabs/social_media_tab.dart';
+import 'screens/tabs/ads_ide_tab.dart';
+import 'screens/tabs/machine_relations_tab.dart';
+import 'screens/tabs/white_label_tab.dart';
+import 'screens/tabs/modo_ia_tab.dart';
 import 'core/providers.dart';
 
 void main() {
@@ -21,7 +27,9 @@ class InhausMarketingApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp(
       title: 'Inhaus Marketing API',
-      theme: AppTheme.darkTheme,
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: ThemeMode.system,
       home: const AuthWrapper(),
       debugShowCheckedModeBanner: false,
     );
@@ -66,13 +74,29 @@ class _MainScreenState extends State<MainScreen> {
   final List<Widget> _screens = const [
     DashboardScreen(),
     QueryScreen(),
+    SocialMediaTab(),
+    AdsIdeTab(),
+    MachineRelationsTab(),
+    WhiteLabelTab(),
+    ModoIaTab(),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Inhaus Marketing API'),
+        title: Row(
+          children: [
+            SvgPicture.network(
+              Theme.of(context).brightness == Brightness.dark
+                  ? 'https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/69691ca0d848087449f86454.svg'
+                  : 'https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/69697a2c4e42b97e53146bd6.svg',
+              height: 28,
+            ),
+            const SizedBox(width: 12),
+            const Text('Inhaus Marketing API'),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
@@ -111,6 +135,31 @@ class _MainScreenState extends State<MainScreen> {
                 icon: Icon(Icons.analytics_outlined),
                 selectedIcon: Icon(Icons.analytics),
                 label: Text('Query'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.trending_up_outlined),
+                selectedIcon: Icon(Icons.trending_up),
+                label: Text('Social SOTA'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.campaign_outlined),
+                selectedIcon: Icon(Icons.campaign),
+                label: Text('Ads IDE'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.hub_outlined),
+                selectedIcon: Icon(Icons.hub),
+                label: Text('SEO/ASO'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.palette_outlined),
+                selectedIcon: Icon(Icons.palette),
+                label: Text('Brand Portal'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.smart_toy_outlined),
+                selectedIcon: Icon(Icons.smart_toy),
+                label: Text('Modo IA'),
               ),
             ],
           ),

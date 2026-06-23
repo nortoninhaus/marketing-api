@@ -133,6 +133,24 @@ METRIC_TRANSLATION_MAP: dict[str, dict[str, str | None]] = {
         "downloads": None,
         "ratings": None,
     },
+    "spotify_ads": {
+        "impressions": "impressions",
+        "clicks": "clicks",
+        "spend": "spend",
+        "conversions": None,
+        "reach": "reach",
+        "ctr": None,
+        "cpc": None,
+        "cpm": None,
+        "engagement": None,
+        "followers": None,
+        "sessions": None,
+        "users": None,
+        "pageviews": None,
+        "bounce_rate": None,
+        "downloads": None,
+        "ratings": None,
+    },
 
     # ── Organic platforms ──────────────────────────────────────────────
     "meta_organic": {
@@ -340,6 +358,7 @@ PLATFORM_TYPES: dict[str, str] = {
     "ga4": "analytics",
     "google_play": "app_store",
     "apple_app_store": "app_store",
+    "spotify_ads": "ads",
 }
 
 # ---------------------------------------------------------------------------
@@ -523,6 +542,7 @@ def validate_platform_params(
         "apple_app_store": {"app_id"},
         "apple_ads": set(),
         "threads": {"post_id"},
+        "spotify_ads": set(),
     }
 
     supported = allowed_params.get(platform, set())

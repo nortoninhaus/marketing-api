@@ -88,13 +88,28 @@ class GoogleAdsConnector(BaseConnector):
         select_dims = ["campaign.name", "segments.date"]
         
         if request.dimensions:
-            if any("ad_group.name" in d or "ad_group" in d for d in request.dimensions):
-                resource = "ad_group"
+            if any("ad_group_ad" in d or "ad.name" in d or "ad_name" in d for d in request.dimensions):
+                resource = "ad_group_ad"
                 select_dims.append("ad_group.name")
+                select_dims.append("ad_group_ad.ad.name")
+            elif any("search_term" in d or "campaign_search_term_view" in d for d in request.dimensions):
+                resource = "campaign_search_term_view"
+                select_dims.append("campaign_search_term_view.search_term")
+            elif any("geographic" in d or "country" in d or "location" in d for d in request.dimensions):
+                resource = "geographic_view"
+                select_dims.append("geographic_view.country_criterion_id")
             elif any("keyword" in d or "ad_group_criterion" in d for d in request.dimensions):
                 resource = "keyword_view"
                 select_dims.append("ad_group.name")
                 select_dims.append("ad_group_criterion.keyword.text")
+            elif any("ad_group.name" in d or "ad_group" in d for d in request.dimensions):
+                resource = "ad_group"
+                select_dims.append("ad_group.name")
+
+            # Collect any custom segment dimensions requested
+            for d in request.dimensions:
+                if d.startswith("segments.") and d not in select_dims:
+                    select_dims.append(d)
 
         MAP_METRICS = {
             "video_views": "video_trueview_views",
@@ -110,10 +125,30 @@ class GoogleAdsConnector(BaseConnector):
         metric_fields = [f"metrics.{m}" for m in query_metrics]
         query_fields = select_dims + metric_fields
         
+        # Build GAQL filters if request.filters is provided
+        filter_clauses = []
+        if hasattr(request, "filters") and request.filters:
+            for field, val in request.filters.items():
+                # Automatically add table prefix if not specified
+                if not "." in field and not field.startswith("metrics."):
+                    field = f"{resource}.{field}"
+                
+                if isinstance(val, list):
+                    items_str = ", ".join([f"'{v}'" if isinstance(v, str) else str(v) for v in val])
+                    filter_clauses.append(f"{field} IN ({items_str})")
+                elif isinstance(val, str):
+                    filter_clauses.append(f"{field} = '{val}'")
+                else:
+                    filter_clauses.append(f"{field} = {val}")
+
+        where_clause = f"segments.date BETWEEN '{start_str}' AND '{end_str}'"
+        if filter_clauses:
+            where_clause += " AND " + " AND ".join(filter_clauses)
+            
         query = f"""
             SELECT {', '.join(query_fields)} 
             FROM {resource} 
-            WHERE segments.date BETWEEN '{start_str}' AND '{end_str}'
+            WHERE {where_clause}
         """
         
         # Use search_stream to fetch records in dynamic chunks
@@ -131,15 +166,33 @@ class GoogleAdsConnector(BaseConnector):
                         metrics_dict[m] = 0
 
                 # Reconstruct descriptive campaign_name based on level
-                name = row.campaign.name
+                name = row.campaign.name if hasattr(row, "campaign") and hasattr(row.campaign, "name") else "Campaign"
                 if resource == "ad_group" and hasattr(row, "ad_group") and hasattr(row.ad_group, "name"):
                     name = f"{name} | {row.ad_group.name}"
+                elif resource == "ad_group_ad" and hasattr(row, "ad_group_ad") and hasattr(row.ad_group_ad, "ad") and hasattr(row.ad_group_ad.ad, "name"):
+                    name = f"{name} | {row.ad_group.name} | Ad: {row.ad_group_ad.ad.name}"
+                elif resource == "campaign_search_term_view" and hasattr(row, "campaign_search_term_view") and hasattr(row.campaign_search_term_view, "search_term"):
+                    name = f"{name} | Search: {row.campaign_search_term_view.search_term}"
+                elif resource == "geographic_view" and hasattr(row, "geographic_view") and hasattr(row.geographic_view, "country_criterion_id"):
+                    name = f"{name} | Geo: {row.geographic_view.country_criterion_id}"
                 elif resource == "keyword_view":
                     kw_part = ""
                     if hasattr(row, "ad_group_criterion") and hasattr(row.ad_group_criterion, "keyword") and hasattr(row.ad_group_criterion.keyword, "text"):
                         kw_part = f" | KW: {row.ad_group_criterion.keyword.text}"
                     ag_part = f" | {row.ad_group.name}" if hasattr(row, "ad_group") and hasattr(row.ad_group, "name") else ""
                     name = f"{name}{ag_part}{kw_part}"
+
+                # Append segment names to campaign_name to differentiate rows if requested
+                if request.dimensions:
+                    for d in request.dimensions:
+                        if d.startswith("segments.") and d != "segments.date":
+                            seg_field = d.split(".", 1)[1]
+                            seg_obj = getattr(row, "segments", None)
+                            if seg_obj:
+                                val = getattr(seg_obj, seg_field, None)
+                                if val is not None:
+                                    val_str = str(val.name) if hasattr(val, "name") else str(val)
+                                    name += f"_{val_str}"
 
                 date_val = str(row.segments.date) if hasattr(row.segments, "date") else start_str
                 
@@ -185,7 +238,11 @@ class GoogleAdsConnector(BaseConnector):
                 "active_view_cpm",
                 "active_view_ctr"
             ],
-            "dimensions": ["campaign.name", "segments.date", "ad_group.name", "ad_group_criterion.keyword.text"]
+            "dimensions": [
+                "campaign.name", "segments.date", "ad_group.name", "ad_group_criterion.keyword.text",
+                "ad_group_ad.ad.name", "campaign_search_term_view.search_term", "geographic_view.country_criterion_id",
+                "segments.device", "segments.ad_network_type"
+            ]
         }
 
     def ping(self) -> bool:

@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
     # Shutdown (cleanup if needed)
 
 from app.config import settings
-from app.models.requests import DataRequest, Platform, BatchDataRequest, CommentsRequest
+from app.models.requests import DataRequest, Platform, BatchDataRequest, CommentsRequest, TikTokProxyRequest, TikTokOrganicProxyRequest
 from app.models.responses import DataResponse, BatchDataResponse, HealthResponse, ErrorDetail, PlatformInfo, SchemaResponse
 from app.middleware.auth import verify_api_key
 from app.services.dispatcher import dispatcher
@@ -43,6 +43,7 @@ from app.connectors.youtube import YouTubeConnector
 from app.connectors.google_play import GooglePlayConnector
 from app.connectors.apple import AppleAppStoreConnector, AppleAdsConnector
 from app.connectors.threads import ThreadsConnector
+from app.connectors.spotify import SpotifyAdsConnector
 
 # Configure root logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -64,6 +65,7 @@ dispatcher.register(Platform.GOOGLE_PLAY, GooglePlayConnector())
 dispatcher.register(Platform.APPLE_APP_STORE, AppleAppStoreConnector())
 dispatcher.register(Platform.APPLE_ADS, AppleAdsConnector())
 dispatcher.register(Platform.THREADS, ThreadsConnector())
+dispatcher.register(Platform.SPOTIFY_ADS, SpotifyAdsConnector())
 # Future connectors to register here...
 
 app = FastAPI(
@@ -73,9 +75,23 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Allowed CORS origins — add your dashboard / frontend domains here
+_cors_origins = [
+    "https://inhaus-marketing-api-btdf7nijqa-uc.a.run.app",
+    "https://inhaus-marketing-api.web.app",
+    "https://inhaus-marketing-api.firebaseapp.com",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5000",
+    "http://127.0.0.1:5000",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?|https://inhaus-marketing-api--[a-z0-9-]+\.web\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -84,6 +100,10 @@ app.add_middleware(
 # Register OAuth router
 from app.routers.oauth import router as oauth_router
 app.include_router(oauth_router)
+
+# Register SOTA router
+from app.routers.sota import router as sota_router
+app.include_router(sota_router)
 
 # Mount FastMCP server and protect it with middleware
 from fastapi import Request
@@ -174,15 +194,16 @@ PLATFORM_API_VERSIONS = {
     "ga4": "v1beta",
     "tiktok_ads": "v1.3",
     "tiktok_organic": "v1.3",
-    "linkedin_ads": "v2",
-    "linkedin_organic": "v2",
-    "x_ads": "v2",
+    "linkedin_ads": "202405",
+    "linkedin_organic": "202405",
+    "x_ads": "v12",
     "x_organic": "v2",
     "youtube": "v3",
     "google_play": "v3",
     "apple_app_store": "v1.6",
     "apple_ads": "v5",
-    "threads": "v1.0"
+    "threads": "v1.0",
+    "spotify_ads": "v3"
 }
 
 @app.get("/api/v1/platforms", response_model=List[PlatformInfo])
@@ -654,3 +675,131 @@ async def get_batch_data(
         failed_platforms=failed,
         rate_limit_remaining=rl_remaining
     )
+
+
+import requests as _requests
+
+@app.post("/api/v1/tiktok-proxy")
+async def tiktok_proxy(
+    request: TikTokProxyRequest,
+    api_key: str = Depends(verify_api_key)
+):
+    """Generic authenticated proxy for executing any TikTok Marketing API endpoint."""
+    logger.info(f"TikTok API Proxy Request: path='{request.path}' client_id='{request.client_id}' account_id='{request.account_id}' method='{request.method}'")
+    
+    # 1. Resolve credentials
+    creds = await credential_store.resolve_credentials(
+        request.client_id, "tiktok_ads", request.account_id
+    )
+    if not creds or not creds.get("access_token"):
+        raise HTTPException(
+            status_code=401,
+            detail=f"Credentials not found for client '{request.client_id}' and advertiser '{request.account_id}' on platform 'tiktok_ads'."
+        )
+        
+    access_token = creds["access_token"]
+    
+    # 2. Normalize path (must start with /open_api/v1.3/)
+    path = request.path.lstrip("/")
+    if not path.startswith("open_api/"):
+        path = f"open_api/v1.3/{path}"
+        
+    url = f"https://business-api.tiktok.com/{path}"
+    headers = {
+        "Access-Token": access_token,
+        "Content-Type": "application/json"
+    }
+    
+    # 3. Execute HTTP request
+    try:
+        method = request.method.upper()
+        if method == "GET":
+            response = await asyncio.to_thread(
+                _requests.get, url, params=request.params, headers=headers, timeout=30
+            )
+        elif method == "POST":
+            response = await asyncio.to_thread(
+                _requests.post, url, json=request.json_body, params=request.params, headers=headers, timeout=30
+            )
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported method '{method}' for TikTok API Proxy.")
+            
+        response.raise_for_status()
+        return response.json()
+    except _requests.RequestException as e:
+        logger.error(f"TikTok API Proxy Call failed: {e}")
+        if e.response is not None:
+            try:
+                return JSONResponse(status_code=e.response.status_code, content=e.response.json())
+            except Exception:
+                raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
+        raise HTTPException(status_code=502, detail=f"Failed to communicate with TikTok API: {e}")
+
+
+@app.post("/api/v1/tiktok-organic-proxy")
+async def tiktok_organic_proxy(
+    request: TikTokOrganicProxyRequest,
+    api_key: str = Depends(verify_api_key)
+):
+    """Generic authenticated proxy for executing any TikTok Organic/Display API endpoint."""
+    logger.info(f"TikTok Organic API Proxy Request: path='{request.path}' client_id='{request.client_id}' account_id='{request.account_id}' method='{request.method}'")
+    
+    # 1. Resolve credentials
+    creds = await credential_store.resolve_credentials(
+        request.client_id, "tiktok_organic", request.account_id
+    )
+    if not creds or not creds.get("access_token"):
+        raise HTTPException(
+            status_code=401,
+            detail=f"Credentials not found for client '{request.client_id}' and account '{request.account_id}' on platform 'tiktok_organic'."
+        )
+        
+    access_token = creds["access_token"]
+    is_bc_asset = creds.get("is_bc_asset") == True
+    
+    # 2. Determine base URL and headers based on account type (BC brand asset vs personal Display API)
+    path = request.path.lstrip("/")
+    if is_bc_asset:
+        if not path.startswith("open_api/"):
+            path = f"open_api/v1.3/{path}"
+        url = f"https://business-api.tiktok.com/{path}"
+        headers = {
+            "Access-Token": access_token,
+            "Content-Type": "application/json"
+        }
+    else:
+        if not path.startswith("v2/"):
+            path = f"v2/{path}"
+        base_url = "https://open-sandbox.tiktokapis.com" if settings.use_tiktok_sandbox else "https://open.tiktokapis.com"
+        url = f"{base_url}/{path}"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json"
+        }
+        
+    # 3. Execute HTTP request
+    try:
+        method = request.method.upper()
+        if method == "GET":
+            response = await asyncio.to_thread(
+                _requests.get, url, params=request.params, headers=headers, timeout=30
+            )
+        elif method == "POST":
+            response = await asyncio.to_thread(
+                _requests.post, url, json=request.json_body, params=request.params, headers=headers, timeout=30
+            )
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported method '{method}' for TikTok Organic API Proxy.")
+            
+        response.raise_for_status()
+        return response.json()
+    except _requests.RequestException as e:
+        logger.error(f"TikTok Organic API Proxy Call failed: {e}")
+        if e.response is not None:
+            try:
+                return JSONResponse(status_code=e.response.status_code, content=e.response.json())
+            except Exception:
+                raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
+        raise HTTPException(status_code=502, detail=f"Failed to communicate with TikTok Organic API: {e}")
+
+
