@@ -33,6 +33,54 @@ class _SocialMediaTabState extends ConsumerState<SocialMediaTab> {
   int _subTabIndex = 0; // 0 = Inbox, 1 = Calendar & Creator, 2 = Listening & Brand Health
   Map<String, dynamic>? _activeTicket;
 
+  // New state variables for Inbox
+  final Map<String, String> _ticketAssignee = {};
+  final Map<String, String> _ticketPriority = {};
+  final Map<String, String> _ticketSentiment = {};
+  final Map<String, String> _ticketCategory = {};
+  final Map<String, List<String>> _ticketEscalationLogs = {};
+
+  // New state variables for Publishing Hub
+  int _publishingViewMode = 0; // 0 = Calendario Semanal, 1 = Flujo de Aprobación Kanban
+  final List<Map<String, dynamic>> _approvalPosts = [
+    {
+      'id': 'post-1',
+      'title': 'Lanzamiento de SOTA AI',
+      'content': 'Estamos emocionados de presentar la nueva suite de marketing impulsada por IA. ¡Pruébala hoy!',
+      'platform': 'instagram',
+      'status': 'Borrador',
+      'viral_time': '10:15 AM (ViralPost® Sugerido)',
+      'image': 'https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/6a18c4e6f58810f313b89b59.png'
+    },
+    {
+      'id': 'post-2',
+      'title': 'Estrategia de Presupuesto',
+      'content': 'Aprende a distribuir tus recursos publicitarios eficientemente usando reglas automáticas.',
+      'platform': 'tiktok',
+      'status': 'Pendiente de Cliente',
+      'viral_time': '02:30 PM (ViralPost® Sugerido)',
+      'image': 'https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/6a18c4e6f58810f313b89b59.png'
+    },
+    {
+      'id': 'post-3',
+      'title': 'Análisis de Retornos A/B',
+      'content': 'Comparamos el rendimiento de Veo 3 frente a Sora 2 en formatos de vídeo móvil.',
+      'platform': 'twitter',
+      'status': 'Aprobado',
+      'viral_time': '11:15 AM (ViralPost® Sugerido)',
+      'image': 'https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/6a18c4e6f58810f313b89b59.png'
+    },
+    {
+      'id': 'post-4',
+      'title': 'Caso de Éxito Inhaus',
+      'content': 'Cómo una agencia duplicó sus conversiones en retail media usando la API de AdButler.',
+      'platform': 'instagram',
+      'status': 'Borrador',
+      'viral_time': '09:00 AM (ViralPost® Sugerido)',
+      'image': 'https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/6a18c4e6f58810f313b89b59.png'
+    },
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -51,6 +99,13 @@ class _SocialMediaTabState extends ConsumerState<SocialMediaTab> {
       setState(() {
         _tickets = tickets;
         _alerts = alerts;
+        for (var t in tickets) {
+          final tid = t['id'] ?? '';
+          _ticketPriority[tid] = t['sentiment'] == 'negative' ? 'high' : 'medium';
+          _ticketSentiment[tid] = t['sentiment'] ?? 'neutral';
+          _ticketAssignee[tid] = 'AgentIA';
+          _ticketCategory[tid] = 'Soporte';
+        }
         if (tickets.isNotEmpty) {
           _activeTicket = tickets.first;
         }
@@ -63,6 +118,74 @@ class _SocialMediaTabState extends ConsumerState<SocialMediaTab> {
         _loadingAlerts = false;
       });
     }
+  }
+
+  void _escalateTicket(String service) {
+    if (_activeTicket == null) return;
+    final id = _activeTicket!['id'] ?? 'TKT-UNK';
+    final user = _activeTicket!['user'] ?? '@usuario';
+    final msg = _activeTicket!['message'] ?? '';
+    final priority = _ticketPriority[id] ?? 'medium';
+    final category = _ticketCategory[id] ?? 'Soporte';
+    final assignee = _ticketAssignee[id] ?? 'AgentIA';
+    final timestamp = DateTime.now().toIso8601String().substring(11, 19);
+
+    String url = '';
+    String payload = '';
+    String response = '';
+    String createdId = '';
+
+    if (service == 'Zendesk') {
+      url = 'POST https://inhaus.zendesk.com/api/v2/tickets.json';
+      createdId = 'ZND-${100000 + DateTime.now().millisecond}';
+      payload = '''{
+  "ticket": {
+    "subject": "Inbox Escalation: $user",
+    "priority": "$priority",
+    "tags": ["$category", "inhaus-api"],
+    "comment": {
+      "body": "Message: $msg\\n\\nEscalated by: $assignee"
+    }
+  }
+}''';
+      response = '''{
+  "ticket": {
+    "id": "$createdId",
+    "status": "new",
+    "subject": "Inbox Escalation: $user",
+    "created_at": "${DateTime.now().toIso8601String()}"
+  }
+}''';
+    } else {
+      url = 'POST https://inhaus.my.salesforce.com/services/data/v58.0/sobjects/Case';
+      createdId = '5008000000${1000 + DateTime.now().millisecond}abc';
+      payload = '''{
+  "Subject": "Social Case from $user",
+  "Priority": "${priority.toUpperCase()}",
+  "Description": "$msg",
+  "Origin": "Social Inbox ($category)",
+  "Owner": "$assignee"
+}''';
+      response = '''{
+  "id": "$createdId",
+  "success": true,
+  "errors": []
+}''';
+    }
+
+    setState(() {
+      _ticketEscalationLogs.putIfAbsent(id, () => []).addAll([
+        '[$timestamp] Initiating Sandbox escalation to $service...',
+        '[$timestamp] ENDPOINT: $url',
+        '[$timestamp] PAYLOAD:\\n$payload',
+        '[$timestamp] STATUS: 201 Created',
+        '[$timestamp] RESPONSE:\\n$response',
+        '[$timestamp] SUCCESS: Ticket $createdId created in $service.',
+      ]);
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Escalado a $service exitosamente (ID: $createdId)')),
+    );
   }
 
   Future<void> _analyzeVideo() async {
@@ -183,6 +306,7 @@ class _SocialMediaTabState extends ConsumerState<SocialMediaTab> {
                       itemCount: _tickets.length,
                       itemBuilder: (context, idx) {
                         final t = _tickets[idx];
+                        final tid = t['id'] ?? '';
                         final isSelected = _activeTicket != null && _activeTicket!['id'] == t['id'];
                         
                         IconData platformIcon = Icons.link;
@@ -193,10 +317,16 @@ class _SocialMediaTabState extends ConsumerState<SocialMediaTab> {
                         } else if (t['platform'] == 'instagram') {
                           platformIcon = Icons.camera_alt;
                           platformColor = AppTheme.neonOrange;
-                        } else if (t['platform'] == 'twitter') {
+                        } else if (t['platform'] == 'twitter' || t['platform'] == 'x') {
                           platformIcon = Icons.alternate_email;
                           platformColor = AppTheme.neonBlue;
+                        } else if (t['platform'] == 'facebook') {
+                          platformIcon = Icons.facebook;
+                          platformColor = AppTheme.neonBlue;
                         }
+
+                        final priority = _ticketPriority[tid] ?? 'medium';
+                        final priorityColor = priority == 'high' ? AppTheme.neonRed : (priority == 'medium' ? AppTheme.neonYellow : AppTheme.neonGreen);
 
                         return Card(
                           color: isSelected ? AppTheme.secondaryColor.withOpacity(0.08) : Colors.black26,
@@ -231,10 +361,13 @@ class _SocialMediaTabState extends ConsumerState<SocialMediaTab> {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: Colors.red.withOpacity(0.12),
+                                    color: priorityColor.withOpacity(0.12),
                                     borderRadius: BorderRadius.circular(4),
                                   ),
-                                  child: const Text('SLA: 12m', style: TextStyle(color: Colors.red, fontSize: 9, fontWeight: FontWeight.bold)),
+                                  child: Text(
+                                    priority.toUpperCase(),
+                                    style: TextStyle(color: priorityColor, fontSize: 9, fontWeight: FontWeight.bold),
+                                  ),
                                 ),
                               ],
                             ),
@@ -283,7 +416,7 @@ class _SocialMediaTabState extends ConsumerState<SocialMediaTab> {
                             ),
                             const Spacer(),
                             Chip(
-                              label: const Text('Asignado: AgentIA'),
+                              label: Text('Asignado: ${_ticketAssignee[_activeTicket!['id']] ?? "AgentIA"}'),
                               avatar: const Icon(Icons.smart_toy, size: 14),
                               backgroundColor: AppTheme.secondaryColor.withOpacity(0.1),
                               labelStyle: const TextStyle(fontSize: 10, color: AppTheme.secondaryColor),
@@ -301,6 +434,108 @@ class _SocialMediaTabState extends ConsumerState<SocialMediaTab> {
                             border: Border.all(color: Colors.white10),
                           ),
                           child: Text(_activeTicket!['message'], style: const TextStyle(fontSize: 13, height: 1.4)),
+                        ),
+                        const SizedBox(height: 16),
+                        // Dropdowns for parameters
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Prioridad de Tarea', style: TextStyle(fontSize: 10, color: AppTheme.mutedTextColor)),
+                                  DropdownButton<String>(
+                                    isExpanded: true,
+                                    value: _ticketPriority[_activeTicket!['id']] ?? 'medium',
+                                    onChanged: (val) {
+                                      if (val != null) {
+                                        setState(() => _ticketPriority[_activeTicket!['id']] = val);
+                                      }
+                                    },
+                                    items: const [
+                                      DropdownMenuItem(value: 'low', child: Text('Baja 🟢', style: TextStyle(fontSize: 12))),
+                                      DropdownMenuItem(value: 'medium', child: Text('Media 🟡', style: TextStyle(fontSize: 12))),
+                                      DropdownMenuItem(value: 'high', child: Text('Alta 🔴', style: TextStyle(fontSize: 12))),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Sentimiento Manual', style: TextStyle(fontSize: 10, color: AppTheme.mutedTextColor)),
+                                  DropdownButton<String>(
+                                    isExpanded: true,
+                                    value: _ticketSentiment[_activeTicket!['id']] ?? 'neutral',
+                                    onChanged: (val) {
+                                      if (val != null) {
+                                        setState(() => _ticketSentiment[_activeTicket!['id']] = val);
+                                      }
+                                    },
+                                    items: const [
+                                      DropdownMenuItem(value: 'positive', child: Text('Positivo 🙂', style: TextStyle(fontSize: 12))),
+                                      DropdownMenuItem(value: 'neutral', child: Text('Neutro 😐', style: TextStyle(fontSize: 12))),
+                                      DropdownMenuItem(value: 'negative', child: Text('Negativo 🙁', style: TextStyle(fontSize: 12))),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Operador Asignado', style: TextStyle(fontSize: 10, color: AppTheme.mutedTextColor)),
+                                  DropdownButton<String>(
+                                    isExpanded: true,
+                                    value: _ticketAssignee[_activeTicket!['id']] ?? 'AgentIA',
+                                    onChanged: (val) {
+                                      if (val != null) {
+                                        setState(() => _ticketAssignee[_activeTicket!['id']] = val);
+                                      }
+                                    },
+                                    items: const [
+                                      DropdownMenuItem(value: 'AgentIA', child: Text('👤 AgentIA', style: TextStyle(fontSize: 12))),
+                                      DropdownMenuItem(value: 'Nicolas Norton', child: Text('👤 N. Norton', style: TextStyle(fontSize: 12))),
+                                      DropdownMenuItem(value: 'Maria Silva', child: Text('👤 M. Silva', style: TextStyle(fontSize: 12))),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Categoría / Tag', style: TextStyle(fontSize: 10, color: AppTheme.mutedTextColor)),
+                                  DropdownButton<String>(
+                                    isExpanded: true,
+                                    value: _ticketCategory[_activeTicket!['id']] ?? 'Soporte',
+                                    onChanged: (val) {
+                                      if (val != null) {
+                                        setState(() => _ticketCategory[_activeTicket!['id']] = val);
+                                      }
+                                    },
+                                    items: const [
+                                      DropdownMenuItem(value: 'Soporte', child: Text('🏷️ Soporte', style: TextStyle(fontSize: 12))),
+                                      DropdownMenuItem(value: 'Feedback', child: Text('🏷️ Feedback', style: TextStyle(fontSize: 12))),
+                                      DropdownMenuItem(value: 'Venta', child: Text('🏷️ Venta', style: TextStyle(fontSize: 12))),
+                                      DropdownMenuItem(value: 'Facturación', child: Text('🏷️ Factura', style: TextStyle(fontSize: 12))),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 20),
                         const Row(
@@ -321,7 +556,9 @@ class _SocialMediaTabState extends ConsumerState<SocialMediaTab> {
                           child: Text(_activeTicket!['suggested_reply'], style: const TextStyle(fontSize: 13, height: 1.4)),
                         ),
                         const SizedBox(height: 20),
-                        Row(
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
                           children: [
                             ElevatedButton.icon(
                               onPressed: () {
@@ -329,21 +566,71 @@ class _SocialMediaTabState extends ConsumerState<SocialMediaTab> {
                                   SnackBar(content: Text('Respuesta enviada a ${_activeTicket!['user']}')),
                                 );
                               },
-                              icon: const Icon(Icons.send),
-                              label: const Text('Aprobar & Enviar'),
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              ),
+                              icon: const Icon(Icons.send, size: 16),
+                              label: const Text('Enviar', style: TextStyle(fontSize: 12)),
                             ),
-                            const SizedBox(width: 12),
                             OutlinedButton.icon(
-                              onPressed: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Abriendo editor manual de respuesta...')),
-                                );
-                              },
-                              icon: const Icon(Icons.edit_note),
-                              label: const Text('Editar Respuesta'),
+                              onPressed: () => _escalateTicket('Zendesk'),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                              ),
+                              icon: const Icon(Icons.support_agent, size: 16),
+                              label: const Text('Zendesk ↗️', style: TextStyle(fontSize: 12)),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: () => _escalateTicket('Salesforce'),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                              ),
+                              icon: const Icon(Icons.cloud_upload_outlined, size: 16),
+                              label: const Text('Salesforce ↗️', style: TextStyle(fontSize: 12)),
                             ),
                           ],
                         ),
+                        
+                        // Sandbox Escalation Trace Logs Box
+                        if (_ticketEscalationLogs[_activeTicket!['id']] != null && _ticketEscalationLogs[_activeTicket!['id']]!.isNotEmpty) ...[
+                          const SizedBox(height: 20),
+                          Row(
+                            children: const [
+                              Icon(Icons.terminal, color: AppTheme.secondaryColor, size: 14),
+                              SizedBox(width: 6),
+                              Text('Sandbox Escalation Trace Logs:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: AppTheme.secondaryColor)),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Container(
+                            height: 160,
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.black,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.white24),
+                            ),
+                            child: ListView.builder(
+                              itemCount: _ticketEscalationLogs[_activeTicket!['id']]!.length,
+                              itemBuilder: (ctx, lIdx) {
+                                final log = _ticketEscalationLogs[_activeTicket!['id']]![lIdx];
+                                Color logColor = Colors.white70;
+                                if (log.contains('ENDPOINT') || log.contains('PAYLOAD')) {
+                                  logColor = AppTheme.neonBlue;
+                                } else if (log.contains('RESPONSE') || log.contains('SUCCESS')) {
+                                  logColor = AppTheme.neonGreen;
+                                } else if (log.contains('STATUS')) {
+                                  logColor = AppTheme.neonYellow;
+                                }
+                                return Text(
+                                  log,
+                                  style: const TextStyle(fontFamily: 'monospace', fontSize: 10, height: 1.3),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -354,15 +641,16 @@ class _SocialMediaTabState extends ConsumerState<SocialMediaTab> {
   }
 
   // --- SUB TAB 1: CALENDAR & CREATOR ---
+  // --- SUB TAB 1: CALENDAR & CREATOR ---
   Widget _buildVisualCalendar() {
     final days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
     
-    // Mock scheduled items with thumbnails
+    // Mock scheduled items with thumbnails & suggested times
     final mockCalendar = [
-      {'day': 0, 'title': 'Lanzamiento de SOTA AI', 'time': '10:00 AM', 'platform': 'instagram', 'image': 'https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/6a18c4e6f58810f313b89b59.png'},
-      {'day': 1, 'title': 'Estrategia de Presupuesto', 'time': '02:30 PM', 'platform': 'tiktok', 'image': 'https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/6a18c4e6f58810f313b89b59.png'},
-      {'day': 3, 'title': 'Análisis de Retornos A/B', 'time': '11:15 AM', 'platform': 'twitter', 'image': 'https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/6a18c4e6f58810f313b89b59.png'},
-      {'day': 4, 'title': 'Caso de Éxito Inhaus', 'time': '09:00 AM', 'platform': 'instagram', 'image': 'https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/6a18c4e6f58810f313b89b59.png'},
+      {'day': 0, 'title': 'Lanzamiento de SOTA AI', 'time': '10:00 AM', 'platform': 'instagram', 'image': 'https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/6a18c4e6f58810f313b89b59.png', 'viral': '10:15 AM (ViralPost®)'},
+      {'day': 1, 'title': 'Estrategia de Presupuesto', 'time': '02:30 PM', 'platform': 'tiktok', 'image': 'https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/6a18c4e6f58810f313b89b59.png', 'viral': '02:30 PM (ViralPost®)'},
+      {'day': 3, 'title': 'Análisis de Retornos A/B', 'time': '11:15 AM', 'platform': 'twitter', 'image': 'https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/6a18c4e6f58810f313b89b59.png', 'viral': '11:00 AM (ViralPost®)'},
+      {'day': 4, 'title': 'Caso de Éxito Inhaus', 'time': '09:00 AM', 'platform': 'instagram', 'image': 'https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/6a18c4e6f58810f313b89b59.png', 'viral': '09:30 AM (ViralPost®)'},
     ];
 
     return Card(
@@ -371,83 +659,344 @@ class _SocialMediaTabState extends ConsumerState<SocialMediaTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Visual Publishing Hub (Sprout Style)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const Text('Visualiza y edita posts programados en tu calendario editorial semanal.', style: TextStyle(fontSize: 12, color: AppTheme.mutedTextColor)),
-            const SizedBox(height: 16),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 7,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
-                childAspectRatio: 0.7,
-              ),
-              itemCount: 7,
-              itemBuilder: (context, index) {
-                final dayName = days[index];
-                final items = mockCalendar.where((item) => item['day'] == index).toList();
-
-                return Container(
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    Text('Visual Publishing Hub (Sprout Style)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text('Calendario colaborativo con optimización de horarios de publicación.', style: TextStyle(fontSize: 12, color: AppTheme.mutedTextColor)),
+                  ],
+                ),
+                // Toggle view modes
+                Container(
+                  padding: const EdgeInsets.all(2),
                   decoration: BoxDecoration(
-                    color: Colors.black26,
+                    color: Colors.white10,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.white10),
                   ),
-                  padding: const EdgeInsets.all(8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
-                      Text(dayName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: AppTheme.tertiaryColor)),
-                      const Divider(color: Colors.white10, height: 12),
-                      Expanded(
-                        child: ListView.builder(
-                          itemCount: items.length,
-                          itemBuilder: (ctx, itemIdx) {
-                            final item = items[itemIdx];
-                            return Card(
-                              color: AppTheme.surfaceColor,
-                              margin: const EdgeInsets.only(bottom: 6),
-                              child: Padding(
-                                padding: const EdgeInsets.all(4.0),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(4),
-                                      child: Image.network(
-                                        item['image'] as String,
-                                        height: 50,
-                                        width: double.infinity,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (context, error, stackTrace) => Container(color: Colors.white10, height: 50),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(item['title'] as String, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
-                                    const SizedBox(height: 2),
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          item['platform'] == 'instagram' ? Icons.camera_alt : (item['platform'] == 'tiktok' ? Icons.music_note : Icons.alternate_email),
-                                          size: 10,
-                                          color: AppTheme.secondaryColor,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Text(item['time'] as String, style: const TextStyle(fontSize: 8, color: AppTheme.mutedTextColor)),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
+                      ElevatedButton(
+                        onPressed: () => setState(() => _publishingViewMode = 0),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _publishingViewMode == 0 ? AppTheme.secondaryColor : Colors.transparent,
+                          foregroundColor: _publishingViewMode == 0 ? Colors.black : Colors.white70,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          elevation: 0,
                         ),
+                        child: const Text('Calendario', style: TextStyle(fontSize: 11)),
+                      ),
+                      ElevatedButton(
+                        onPressed: () => setState(() => _publishingViewMode = 1),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _publishingViewMode == 1 ? AppTheme.secondaryColor : Colors.transparent,
+                          foregroundColor: _publishingViewMode == 1 ? Colors.black : Colors.white70,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          elevation: 0,
+                        ),
+                        child: const Text('Aprobaciones (Kanban)', style: TextStyle(fontSize: 11)),
                       ),
                     ],
                   ),
-                );
-              },
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            
+            // View Mode Rendering
+            if (_publishingViewMode == 0)
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 7,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                  childAspectRatio: 0.52,
+                ),
+                itemCount: 7,
+                itemBuilder: (context, index) {
+                  final dayName = days[index];
+                  final items = mockCalendar.where((item) => item['day'] == index).toList();
+
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: Colors.black26,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    padding: const EdgeInsets.all(8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(dayName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: AppTheme.tertiaryColor)),
+                        const Divider(color: Colors.white10, height: 12),
+                        Expanded(
+                          child: ListView.builder(
+                            itemCount: items.length,
+                            itemBuilder: (ctx, itemIdx) {
+                              final item = items[itemIdx];
+                              return Card(
+                                color: AppTheme.surfaceColor,
+                                margin: const EdgeInsets.only(bottom: 6),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(4.0),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(4),
+                                        child: Image.network(
+                                          item['image'] as String,
+                                          height: 50,
+                                          width: double.infinity,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (context, error, stackTrace) => Container(color: Colors.white10, height: 50),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(item['title'] as String, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
+                                      const SizedBox(height: 2),
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            item['platform'] == 'instagram' ? Icons.camera_alt : (item['platform'] == 'tiktok' ? Icons.music_note : Icons.alternate_email),
+                                            size: 10,
+                                            color: AppTheme.secondaryColor,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(item['time'] as String, style: const TextStyle(fontSize: 8, color: AppTheme.mutedTextColor)),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      // ViralPost suggested time label
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: AppTheme.secondaryColor.withOpacity(0.12),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            const Icon(Icons.bolt, color: AppTheme.secondaryColor, size: 8),
+                                            const SizedBox(width: 2),
+                                            Expanded(
+                                              child: Text(
+                                                item['viral'] as String,
+                                                style: const TextStyle(fontSize: 7, color: AppTheme.secondaryColor, fontWeight: FontWeight.bold),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              )
+            else
+              // Kanban Approval Flow Board
+              SizedBox(
+                height: 380,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(child: _buildKanbanColumn('Borrador', 'Borrador')),
+                    Expanded(child: _buildKanbanColumn('Pendiente de Cliente', 'Pendiente de Cliente')),
+                    Expanded(child: _buildKanbanColumn('Aprobado', 'Aprobado')),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildKanbanColumn(String title, String status) {
+    final columnPosts = _approvalPosts.where((p) => p['status'] == status).toList();
+    return DragTarget<String>(
+      onAccept: (postId) {
+        setState(() {
+          final post = _approvalPosts.firstWhere((p) => p['id'] == postId);
+          post['status'] = status;
+        });
+      },
+      onAcceptWithDetails: (details) {
+        setState(() {
+          final post = _approvalPosts.firstWhere((p) => p['id'] == details.data);
+          post['status'] = status;
+        });
+      },
+      builder: (context, candidateData, rejectedData) {
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: candidateData.isNotEmpty ? AppTheme.secondaryColor.withOpacity(0.05) : Colors.black26,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: candidateData.isNotEmpty ? AppTheme.secondaryColor : Colors.white10),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppTheme.primaryColor),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.white12,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text('${columnPosts.length}', style: const TextStyle(fontSize: 10)),
+                  ),
+                ],
+              ),
+              const Divider(color: Colors.white10, height: 16),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: columnPosts.length,
+                  itemBuilder: (ctx, idx) {
+                    final post = columnPosts[idx];
+                    return Draggable<String>(
+                      data: post['id'] as String,
+                      feedback: Material(
+                        color: Colors.transparent,
+                        child: Container(
+                          width: 200,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade900,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppTheme.secondaryColor),
+                          ),
+                          child: Text(post['title'] as String, style: const TextStyle(color: Colors.white, fontSize: 11)),
+                        ),
+                      ),
+                      childWhenDragging: Opacity(
+                        opacity: 0.4,
+                        child: _buildPostCard(post),
+                      ),
+                      child: _buildPostCard(post),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPostCard(Map<String, dynamic> post) {
+    IconData platformIcon = Icons.link;
+    if (post['platform'] == 'instagram') {
+      platformIcon = Icons.camera_alt;
+    } else if (post['platform'] == 'tiktok') {
+      platformIcon = Icons.music_note;
+    } else if (post['platform'] == 'twitter' || post['platform'] == 'x') {
+      platformIcon = Icons.alternate_email;
+    } else if (post['platform'] == 'linkedin') {
+      platformIcon = Icons.business;
+    }
+
+    return Card(
+      color: AppTheme.surfaceColor,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(platformIcon, size: 12, color: AppTheme.secondaryColor),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    post['title'] as String,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(post['content'] as String, style: const TextStyle(fontSize: 10, color: AppTheme.mutedTextColor), maxLines: 2, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                const Icon(Icons.bolt, color: AppTheme.secondaryColor, size: 8),
+                const SizedBox(width: 2),
+                Expanded(
+                  child: Text(
+                    post['viral_time'] as String,
+                    style: const TextStyle(fontSize: 7, color: AppTheme.secondaryColor, fontWeight: FontWeight.bold),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                if (post['status'] != 'Borrador')
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back, size: 12, color: AppTheme.mutedTextColor),
+                    onPressed: () {
+                      setState(() {
+                        if (post['status'] == 'Aprobado') {
+                          post['status'] = 'Pendiente de Cliente';
+                        } else if (post['status'] == 'Pendiente de Cliente') {
+                          post['status'] = 'Borrador';
+                        }
+                      });
+                    },
+                    tooltip: 'Mover al estado anterior',
+                    constraints: const BoxConstraints(),
+                    padding: EdgeInsets.zero,
+                  ),
+                if (post['status'] != 'Aprobado')
+                  IconButton(
+                    icon: const Icon(Icons.arrow_forward, size: 12, color: AppTheme.secondaryColor),
+                    onPressed: () {
+                      setState(() {
+                        if (post['status'] == 'Borrador') {
+                          post['status'] = 'Pendiente de Cliente';
+                        } else if (post['status'] == 'Pendiente de Cliente') {
+                          post['status'] = 'Aprobado';
+                        }
+                      });
+                    },
+                    tooltip: post['status'] == 'Borrador' ? 'Enviar a Cliente' : 'Aprobar Post',
+                    constraints: const BoxConstraints(),
+                    padding: EdgeInsets.zero,
+                  ),
+              ],
             ),
           ],
         ),
@@ -746,6 +1295,52 @@ class _SocialMediaTabState extends ConsumerState<SocialMediaTab> {
   Widget _buildListeningAnalytics() {
     return Column(
       children: [
+        // Message Spike Alert Banner
+        Container(
+          margin: const EdgeInsets.only(bottom: 24),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppTheme.neonOrange.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppTheme.neonOrange, width: 1.5),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.warning_amber_rounded, color: AppTheme.neonOrange, size: 28),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    Text(
+                      '⚠️ SPIKE WARNING ALERT: Menciones Anómalas Detectadas',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.neonOrange),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'El volumen de menciones para Inhaus ha superado la media diaria en un 247% en las últimas 2 horas. Posible conversación viral o crisis de reputación detectada en Reddit y X.',
+                      style: TextStyle(fontSize: 11, color: AppTheme.primaryColor),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              ElevatedButton(
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Analizando orígenes del pico de menciones en tiempo real...')),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.neonOrange,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+                child: const Text('Ver Spike', style: TextStyle(fontSize: 11)),
+              ),
+            ],
+          ),
+        ),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -797,11 +1392,11 @@ class _SocialMediaTabState extends ConsumerState<SocialMediaTab> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text('Share of Voice (SOV) & Nube de Palabras', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                      const Text('Métricas de presencia e impacto de marca.', style: TextStyle(fontSize: 12, color: AppTheme.mutedTextColor)),
+                      const Text('Métricas de presencia e impacto de marca frente a competidores.', style: TextStyle(fontSize: 12, color: AppTheme.mutedTextColor)),
                       const SizedBox(height: 16),
                       // Share of voice representation
                       Container(
-                        height: 100,
+                        height: 120,
                         decoration: BoxDecoration(
                           color: Colors.black26,
                           borderRadius: BorderRadius.circular(8),
@@ -814,22 +1409,36 @@ class _SocialMediaTabState extends ConsumerState<SocialMediaTab> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: const [
-                                Text('Share of Voice de la Marca', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                Text('SOV: 58%', style: TextStyle(fontSize: 11, color: AppTheme.secondaryColor, fontWeight: FontWeight.bold)),
+                                Text('Share of Voice Competitivo', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                Text('Inhaus (58%) vs Otros', style: TextStyle(fontSize: 11, color: AppTheme.secondaryColor, fontWeight: FontWeight.bold)),
                               ],
                             ),
-                            const SizedBox(height: 10),
+                            const SizedBox(height: 12),
+                            // Stacked SOV Bar Chart
                             ClipRRect(
-                              borderRadius: BorderRadius.circular(4),
-                              child: LinearProgressIndicator(
-                                value: 0.58,
-                                minHeight: 14,
-                                backgroundColor: Colors.white10,
-                                valueColor: AlwaysStoppedAnimation<Color>(AppTheme.secondaryColor),
+                              borderRadius: BorderRadius.circular(6),
+                              child: SizedBox(
+                                height: 16,
+                                child: Row(
+                                  children: [
+                                    Expanded(flex: 58, child: Container(color: AppTheme.secondaryColor)),
+                                    Expanded(flex: 22, child: Container(color: AppTheme.tertiaryColor)),
+                                    Expanded(flex: 12, child: Container(color: AppTheme.neonBlue)),
+                                    Expanded(flex: 8, child: Container(color: AppTheme.neonRed)),
+                                  ],
+                                ),
                               ),
                             ),
-                            const SizedBox(height: 4),
-                            const Text('Inhaus (58%) vs Competidores (42%)', style: TextStyle(fontSize: 9, color: AppTheme.mutedTextColor)),
+                            const SizedBox(height: 10),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                _buildChartLegend(AppTheme.secondaryColor, 'Inhaus (58%)'),
+                                _buildChartLegend(AppTheme.tertiaryColor, 'Brand X (22%)'),
+                                _buildChartLegend(AppTheme.neonBlue, 'Brand Y (12%)'),
+                                _buildChartLegend(AppTheme.neonRed, 'Brand Z (8%)'),
+                              ],
+                            ),
                           ],
                         ),
                       ),
