@@ -74,6 +74,7 @@ VALID_PLATFORMS = [
     "tiktok_ads", "tiktok_organic", "linkedin_ads", "linkedin_organic",
     "x_ads", "x_organic", "youtube", "google_play",
     "apple_app_store", "apple_ads", "threads", "spotify_ads",
+    "pinterest_ads", "pinterest_organic", "shopify",
 ]
 
 # ---------------------------------------------------------------------------
@@ -931,6 +932,487 @@ async def execute_tiktok_organic_api_call(
         payload["json_body"] = json_body
 
     return await _post("/api/v1/tiktok-organic-proxy", payload)
+
+
+# ===================================================================
+# TOOL 15 — Execute Meta API Call
+# ===================================================================
+@mcp.tool()
+@_track_latency("execute_meta_api_call")
+async def execute_meta_api_call(
+    client_id: str,
+    account_id: str,
+    path: str,
+    method: str = "GET",
+    params: dict | None = None,
+    json_body: dict | None = None,
+) -> dict:
+    """
+    Execute any arbitrary Meta Graph API method/endpoint dynamically.
+
+    Args:
+        client_id:  Unique ID of the client/tenant.
+        account_id: The ad account ID or page/instagram profile identifier.
+        path:       The API path, e.g. "act_12345/insights" or "me/accounts".
+        method:     HTTP method (GET, POST, etc.).
+        params:     (Optional) Query parameters.
+        json_body:  (Optional) JSON body.
+    """
+    payload = {
+        "client_id": client_id,
+        "account_id": account_id,
+        "path": path,
+        "method": method,
+    }
+    if params:
+        payload["params"] = params
+    if json_body:
+        payload["json_body"] = json_body
+    return await _post("/api/v1/meta-proxy", payload)
+
+
+# ===================================================================
+# TOOL 16 — Execute Google Ads API Call
+# ===================================================================
+@mcp.tool()
+@_track_latency("execute_google_ads_api_call")
+async def execute_google_ads_api_call(
+    client_id: str,
+    account_id: str,
+    path: str,
+    method: str = "GET",
+    params: dict | None = None,
+    json_body: dict | None = None,
+) -> dict:
+    """
+    Execute any arbitrary Google Ads REST API method/endpoint dynamically.
+
+    Args:
+        client_id:  Unique ID of the client/tenant.
+        account_id: The customer ID.
+        path:       The API path, e.g. "customers/1234567890/googleAds:search".
+        method:     HTTP method (GET, POST, etc.).
+        params:     (Optional) Query parameters.
+        json_body:  (Optional) JSON body.
+    """
+    payload = {
+        "client_id": client_id,
+        "account_id": account_id,
+        "path": path,
+        "method": method,
+    }
+    if params:
+        payload["params"] = params
+    if json_body:
+        payload["json_body"] = json_body
+    return await _post("/api/v1/google-ads-proxy", payload)
+
+
+# ===================================================================
+# TOOL 17 — Execute GA4 API Call
+# ===================================================================
+@mcp.tool()
+@_track_latency("execute_ga4_api_call")
+async def execute_ga4_api_call(
+    client_id: str,
+    account_id: str,
+    path: str,
+    method: str = "GET",
+    params: dict | None = None,
+    json_body: dict | None = None,
+) -> dict:
+    """
+    Execute any arbitrary Google Analytics 4 (GA4) API method/endpoint dynamically.
+
+    Args:
+        client_id:  Unique ID of the client/tenant.
+        account_id: The property ID.
+        path:       The API path, e.g. "properties/123456789:runReport".
+        method:     HTTP method (GET, POST, etc.).
+        params:     (Optional) Query parameters.
+        json_body:  (Optional) JSON body.
+    """
+    payload = {
+        "client_id": client_id,
+        "account_id": account_id,
+        "path": path,
+        "method": method,
+    }
+    if params:
+        payload["params"] = params
+    if json_body:
+        payload["json_body"] = json_body
+    return await _post("/api/v1/ga4-proxy", payload)
+
+
+# ===================================================================
+# TOOL 18 — Execute LinkedIn API Call
+# ===================================================================
+@mcp.tool()
+@_track_latency("execute_linkedin_api_call")
+async def execute_linkedin_api_call(
+    client_id: str,
+    account_id: str,
+    path: str,
+    method: str = "GET",
+    params: dict | None = None,
+    json_body: dict | None = None,
+) -> dict:
+    """
+    Execute any arbitrary LinkedIn REST API method/endpoint dynamically.
+
+    Args:
+        client_id:  Unique ID of the client/tenant.
+        account_id: The developer or organization account ID.
+        path:       The API path, e.g. "rest/adAccounts".
+        method:     HTTP method (GET, POST, etc.).
+        params:     (Optional) Query parameters.
+        json_body:  (Optional) JSON body.
+    """
+    payload = {
+        "client_id": client_id,
+        "account_id": account_id,
+        "path": path,
+        "method": method,
+    }
+    if params:
+        payload["params"] = params
+    if json_body:
+        payload["json_body"] = json_body
+    return await _post("/api/v1/linkedin-proxy", payload)
+
+
+# ===================================================================
+# TOOL 19 — Execute X/Twitter API Call
+# ===================================================================
+@mcp.tool()
+@_track_latency("execute_x_twitter_api_call")
+async def execute_x_twitter_api_call(
+    client_id: str,
+    account_id: str,
+    path: str,
+    method: str = "GET",
+    params: dict | None = None,
+    json_body: dict | None = None,
+) -> dict:
+    """
+    Execute any arbitrary X/Twitter API method/endpoint dynamically.
+
+    Args:
+        client_id:  Unique ID of the client/tenant.
+        account_id: Account identifier.
+        path:       The API path, e.g. "users/me" or "tweets".
+        method:     HTTP method (GET, POST, etc.).
+        params:     (Optional) Query parameters.
+        json_body:  (Optional) JSON body.
+    """
+    payload = {
+        "client_id": client_id,
+        "account_id": account_id,
+        "path": path,
+        "method": method,
+    }
+    if params:
+        payload["params"] = params
+    if json_body:
+        payload["json_body"] = json_body
+    return await _post("/api/v1/x-twitter-proxy", payload)
+
+
+# ===================================================================
+# TOOL 20 — Execute YouTube API Call
+# ===================================================================
+@mcp.tool()
+@_track_latency("execute_youtube_api_call")
+async def execute_youtube_api_call(
+    client_id: str,
+    account_id: str,
+    path: str,
+    method: str = "GET",
+    params: dict | None = None,
+    json_body: dict | None = None,
+) -> dict:
+    """
+    Execute any YouTube API endpoint dynamically.
+
+    Args:
+        client_id:  Unique ID of the client/tenant.
+        account_id: Channel or playlist identifier.
+        path:       The API path, e.g. "videos" or "channels".
+        method:     HTTP method (GET, POST, etc.).
+        params:     (Optional) Query parameters.
+        json_body:  (Optional) JSON body.
+    """
+    payload = {
+        "client_id": client_id,
+        "account_id": account_id,
+        "path": path,
+        "method": method,
+    }
+    if params:
+        payload["params"] = params
+    if json_body:
+        payload["json_body"] = json_body
+    return await _post("/api/v1/youtube-proxy", payload)
+
+
+# ===================================================================
+# TOOL 21 — Execute Google Play API Call
+# ===================================================================
+@mcp.tool()
+@_track_latency("execute_google_play_api_call")
+async def execute_google_play_api_call(
+    client_id: str,
+    account_id: str,
+    path: str,
+    method: str = "GET",
+    params: dict | None = None,
+    json_body: dict | None = None,
+) -> dict:
+    """
+    Execute any Google Play Developer API endpoint dynamically.
+
+    Args:
+        client_id:  Unique ID of the client/tenant.
+        account_id: Package name.
+        path:       The API path.
+        method:     HTTP method (GET, POST, etc.).
+        params:     (Optional) Query parameters.
+        json_body:  (Optional) JSON body.
+    """
+    payload = {
+        "client_id": client_id,
+        "account_id": account_id,
+        "path": path,
+        "method": method,
+    }
+    if params:
+        payload["params"] = params
+    if json_body:
+        payload["json_body"] = json_body
+    return await _post("/api/v1/google-play-proxy", payload)
+
+
+# ===================================================================
+# TOOL 22 — Execute Apple App Store API Call
+# ===================================================================
+@mcp.tool()
+@_track_latency("execute_apple_app_store_api_call")
+async def execute_apple_app_store_api_call(
+    client_id: str,
+    account_id: str,
+    path: str,
+    method: str = "GET",
+    params: dict | None = None,
+    json_body: dict | None = None,
+) -> dict:
+    """
+    Execute any Apple App Store Connect API endpoint dynamically.
+
+    Args:
+        client_id:  Unique ID of the client/tenant.
+        account_id: App ID identifier.
+        path:       The API path, e.g. "apps" or "salesReports".
+        method:     HTTP method (GET, POST, etc.).
+        params:     (Optional) Query parameters.
+        json_body:  (Optional) JSON body.
+    """
+    payload = {
+        "client_id": client_id,
+        "account_id": account_id,
+        "path": path,
+        "method": method,
+    }
+    if params:
+        payload["params"] = params
+    if json_body:
+        payload["json_body"] = json_body
+    return await _post("/api/v1/apple-app-store-proxy", payload)
+
+
+# ===================================================================
+# TOOL 23 — Execute Apple Ads API Call
+# ===================================================================
+@mcp.tool()
+@_track_latency("execute_apple_ads_api_call")
+async def execute_apple_ads_api_call(
+    client_id: str,
+    account_id: str,
+    path: str,
+    method: str = "GET",
+    params: dict | None = None,
+    json_body: dict | None = None,
+) -> dict:
+    """
+    Execute any Apple Search Ads API endpoint dynamically.
+
+    Args:
+        client_id:  Unique ID of the client/tenant.
+        account_id: Org ID.
+        path:       The API path, e.g. "reports/campaigns" or "campaigns".
+        method:     HTTP method (GET, POST, etc.).
+        params:     (Optional) Query parameters.
+        json_body:  (Optional) JSON body.
+    """
+    payload = {
+        "client_id": client_id,
+        "account_id": account_id,
+        "path": path,
+        "method": method,
+    }
+    if params:
+        payload["params"] = params
+    if json_body:
+        payload["json_body"] = json_body
+    return await _post("/api/v1/apple-ads-proxy", payload)
+
+
+# ===================================================================
+# TOOL 24 — Execute Threads API Call
+# ===================================================================
+@mcp.tool()
+@_track_latency("execute_threads_api_call")
+async def execute_threads_api_call(
+    client_id: str,
+    account_id: str,
+    path: str,
+    method: str = "GET",
+    params: dict | None = None,
+    json_body: dict | None = None,
+) -> dict:
+    """
+    Execute any Threads API endpoint dynamically.
+
+    Args:
+        client_id:  Unique ID of the client/tenant.
+        account_id: Threads user ID or profile identifier.
+        path:       The API path.
+        method:     HTTP method (GET, POST, etc.).
+        params:     (Optional) Query parameters.
+        json_body:  (Optional) JSON body.
+    """
+    payload = {
+        "client_id": client_id,
+        "account_id": account_id,
+        "path": path,
+        "method": method,
+    }
+    if params:
+        payload["params"] = params
+    if json_body:
+        payload["json_body"] = json_body
+    return await _post("/api/v1/threads-proxy", payload)
+
+
+# ===================================================================
+# TOOL 25 — Execute Spotify Ads API Call
+# ===================================================================
+@mcp.tool()
+@_track_latency("execute_spotify_api_call")
+async def execute_spotify_api_call(
+    client_id: str,
+    account_id: str,
+    path: str,
+    method: str = "GET",
+    params: dict | None = None,
+    json_body: dict | None = None,
+) -> dict:
+    """
+    Execute any Spotify Ads API endpoint dynamically.
+
+    Args:
+        client_id:  Unique ID of the client/tenant.
+        account_id: Spotify ad account ID.
+        path:       The API path.
+        method:     HTTP method (GET, POST, etc.).
+        params:     (Optional) Query parameters.
+        json_body:  (Optional) JSON body.
+    """
+    payload = {
+        "client_id": client_id,
+        "account_id": account_id,
+        "path": path,
+        "method": method,
+    }
+    if params:
+        payload["params"] = params
+    if json_body:
+        payload["json_body"] = json_body
+    return await _post("/api/v1/spotify-proxy", payload)
+
+
+# ===================================================================
+# TOOL 26 — Execute Pinterest API Call
+# ===================================================================
+@mcp.tool()
+@_track_latency("execute_pinterest_api_call")
+async def execute_pinterest_api_call(
+    client_id: str,
+    account_id: str,
+    path: str,
+    method: str = "GET",
+    params: dict | None = None,
+    json_body: dict | None = None,
+) -> dict:
+    """
+    Execute any Pinterest API endpoint dynamically.
+
+    Args:
+        client_id:  Unique ID of the client/tenant.
+        account_id: Pinterest advertiser or user account ID.
+        path:       The API path.
+        method:     HTTP method (GET, POST, etc.).
+        params:     (Optional) Query parameters.
+        json_body:  (Optional) JSON body.
+    """
+    payload = {
+        "client_id": client_id,
+        "account_id": account_id,
+        "path": path,
+        "method": method,
+    }
+    if params:
+        payload["params"] = params
+    if json_body:
+        payload["json_body"] = json_body
+    return await _post("/api/v1/pinterest-proxy", payload)
+
+
+# ===================================================================
+# TOOL 27 — Execute Shopify API Call
+# ===================================================================
+@mcp.tool()
+@_track_latency("execute_shopify_api_call")
+async def execute_shopify_api_call(
+    client_id: str,
+    account_id: str,
+    path: str,
+    method: str = "GET",
+    params: dict | None = None,
+    json_body: dict | None = None,
+) -> dict:
+    """
+    Execute any Shopify Admin API endpoint dynamically.
+
+    Args:
+        client_id:  Unique ID of the client/tenant.
+        account_id: Shopify shop domain or name identifier.
+        path:       The API path.
+        method:     HTTP method (GET, POST, etc.).
+        params:     (Optional) Query parameters.
+        json_body:  (Optional) JSON body.
+    """
+    payload = {
+        "client_id": client_id,
+        "account_id": account_id,
+        "path": path,
+        "method": method,
+    }
+    if params:
+        payload["params"] = params
+    if json_body:
+        payload["json_body"] = json_body
+    return await _post("/api/v1/shopify-proxy", payload)
 
 
 # ---------------------------------------------------------------------------

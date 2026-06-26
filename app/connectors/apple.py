@@ -78,7 +78,7 @@ class AppleAppStoreConnector(BaseConnector):
                             if row.get("Product Type Identifier") in ("1", "1F", "1T", "7"):
                                 downloads += units
                                 
-                    metrics_dict = {"downloads": downloads, "impressions": 0, "sessions": 0, "crashes": 0}
+                    metrics_dict = {"downloads": downloads}
                     metrics_dict = {m: metrics_dict.get(m, 0) for m in request.metrics}
                     return [CampaignData(
                         campaign_name="Apple App Store Sales",
@@ -111,8 +111,11 @@ class AppleAppStoreConnector(BaseConnector):
 
     def get_schema(self) -> Dict[str, Any]:
         return {
-            "metrics": ["downloads", "impressions", "sessions", "crashes"],
-            "dimensions": ["app_id", "country", "date"]
+            "metrics": ["downloads"],
+            "dimensions": ["app_id", "country", "date"],
+            "metadata": {
+                "unavailable_metrics_note": "impressions, sessions, and crashes require the App Store Connect Analytics Reports API which is not yet implemented."
+            }
         }
 
     def ping(self) -> bool:
@@ -179,8 +182,23 @@ class AppleAdsConnector(BaseConnector):
             for day_data in granularity_data:
                 date_str = day_data.get("date", request.start_date.strftime("%Y-%m-%d"))
                 metrics_dict = {}
+                
+                impressions = float(day_data.get("impressions", 0))
+                taps = float(day_data.get("taps", 0))
+                spend = float(day_data.get("spend", 0))
+                
                 for m in request.metrics:
-                    metrics_dict[m] = day_data.get(m, 0)
+                    if m == "ctr":
+                        metrics_dict["ctr"] = taps / impressions if impressions > 0 else 0.0
+                    elif m == "cpc":
+                        metrics_dict["cpc"] = spend / taps if taps > 0 else 0.0
+                    elif m == "cpm":
+                        metrics_dict["cpm"] = (spend / impressions) * 1000.0 if impressions > 0 else 0.0
+                    elif m == "roas":
+                        # Apple Search Ads does not provide conversion value data for ROAS calculation
+                        metrics_dict["roas"] = None
+                    else:
+                        metrics_dict[m] = day_data.get(m, 0)
                 
                 results.append(CampaignData(
                     campaign_name=campaign_name,
@@ -192,7 +210,7 @@ class AppleAdsConnector(BaseConnector):
 
     def get_schema(self) -> Dict[str, Any]:
         return {
-            "metrics": ["impressions", "taps", "installs", "spend", "avgCPA"],
+            "metrics": ["impressions", "taps", "installs", "spend", "avgCPA", "ctr", "cpc", "cpm", "roas"],
             "dimensions": ["campaignId", "campaignName", "date"]
         }
 

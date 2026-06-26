@@ -127,7 +127,7 @@ class HealthResponse(BaseModel):
     status: str
     version: str
     platforms_configured: int
-    platforms_total: int = 16  # 16 platforms (including spotify_ads)
+    platforms_total: int = 19  # 19 platforms (including pinterest/shopify)
     details: Dict[str, str] = Field(default_factory=dict)
 
 

@@ -84,6 +84,14 @@ class Settings(BaseSettings):
     # --- Apple Search Ads ---
     apple_ads_access_token: str = ""
 
+    # --- Pinterest ---
+    pinterest_access_token: str = ""
+    pinterest_ad_account_id: str = ""
+
+    # --- Shopify ---
+    shopify_access_token: str = ""
+    shopify_shop_name: str = ""
+
     # --- BigQuery Sink ---
     bigquery_project_id: str = ""
     bigquery_dataset_id: str = "marketing_data"
