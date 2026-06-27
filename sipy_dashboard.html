@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sipy · Reporte Abril–Junio 2026 — Cuentas Creadas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<!-- Three.js Library for liquid 3D background -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<!-- Lucide Icons -->
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  :root {
+    --bg:#0A0D13; --surface:#121823; --surface-2:#1A2230;
+    --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.14);
+    --text:#EAF0F7; --muted:#8A97A8; --muted-2:#5E6A7A;
+    --mint:#1AE08C; --mint-deep:#10B873; --google:#5C9DFF; --meta:#A78BFA; --gold:#F5C451; --down:#FF6B6B;
+  }
+  * { box-sizing:border-box; margin:0; padding:0 }
+  html { scroll-behavior:smooth }
+  body { font-family:'Manrope',sans-serif; background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased; line-height:1.5; overflow-x:hidden; position:relative; min-height:100vh }
+  
+  #bg3d { position:fixed; inset:0; z-index:0; width:100%; height:100%; pointer-events:none; display:block }
+  
+  .wrap { position:relative; z-index:1; max-width:1200px; margin:0 auto; padding:0 26px 40px }
+  .tabnum { font-variant-numeric:tabular-nums; font-feature-settings:"tnum" }
+  h1,h2,h3,.disp { font-family:'Sora',sans-serif }
+  .topbar { position:sticky; top:0; z-index:50; background:rgba(10,13,19,.82); backdrop-filter:blur(14px); border-bottom:1px solid var(--line) }
+  .topbar-in { max-width:1200px; margin:0 auto; padding:16px 26px; display:flex; align-items:center; justify-content:space-between; gap:20px }
+  .agency { display:flex; align-items:center; gap:12px }
+  .agency img { height:26px; width:auto; opacity:.92 }
+  .agency .div { width:1px; height:22px; background:var(--line-2) }
+  .agency .who { font-size:12px; color:var(--muted); font-weight:600; letter-spacing:.02em }
+  .topbar .stamp { display:inline-flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); font-weight:600 }
+  .topbar .stamp .live { width:8px; height:8px; border-radius:50%; background:var(--mint); box-shadow:0 0 0 0 rgba(26,224,140,.6); animation:pulse 2s infinite }
+  @keyframes pulse { 0% { box-shadow:0 0 0 0 rgba(26,224,140,.5) } 70% { box-shadow:0 0 0 8px rgba(26,224,140,0) } 100% { box-shadow:0 0 0 0 rgba(26,224,140,0) } }
+  
+  .tabs { display:inline-flex; background:var(--surface); border:1px solid var(--line); border-radius:100px; padding:5px; gap:4px; margin-top:26px }
+  .tabs button { font-family:'Manrope',sans-serif; font-size:13px; font-weight:700; color:var(--muted); background:none; border:none; padding:9px 22px; border-radius:100px; cursor:pointer; transition:.2s }
+  .tabs button.active { background:var(--mint); color:var(--bg) }
+  .tabs button:not(.active):hover { color:var(--text) }
+  
+  .panel { display:none }
+  .panel.active { display:block; animation:fade .4s ease }
+  @keyframes fade { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:none } }
+  
+  .hero { margin-top:30px; display:grid; grid-template-columns:1.2fr .8fr; gap:22px; align-items:stretch }
+  .hero-left { display:flex; flex-direction:column; justify-content:center }
+  .sipy-brand { display:flex; align-items:center; gap:14px; margin-bottom:22px }
+  .sipy-brand img { height:40px; width:auto }
+  .sipy-word { font-family:'Sora',sans-serif; font-weight:800; font-size:34px; letter-spacing:-.04em; display:none }
+  .sipy-word b { color:var(--mint) }
+  .eyebrow { font-size:11.5px; font-weight:800; letter-spacing:.2em; text-transform:uppercase; color:var(--mint)}
+  h1 { font-weight:800; font-size:clamp(32px,4.6vw,52px); line-height:1.0; letter-spacing:-.035em; margin-top:13px }
+  h1 em { font-style:normal; color:var(--mint) }
+  .lede { margin-top:16px; color:var(--muted); font-size:15.5px; max-width:560px; font-weight:500 }
+  .lede b { color:var(--text) }
+  
+  .hero-card { background:linear-gradient(165deg,#161E2B,#0F1620); border:1px solid var(--line); border-radius:24px; padding:30px; position:relative; overflow:hidden; display:flex; flex-direction:column; justify-content:space-between }
+  .hero-card::after { content:""; position:absolute; right:-70px; top:-70px; width:240px; height:240px; border-radius:50%; background:radial-gradient(circle at 35% 35%, rgba(26,224,140,.5), rgba(26,224,140,0) 70%) }
+  .hero-card .lab { font-size:12.5px; color:var(--muted); font-weight:700; letter-spacing:.02em; position:relative; z-index:1 }
+  .hero-card .big { font-family:'Sora',sans-serif; font-weight:800; font-size:96px; line-height:.9; letter-spacing:-.04em; margin-top:6px; position:relative; z-index:1 }
+  .hero-card .big span { color:var(--mint) }
+  .hero-card .split { position:relative; z-index:1; margin-top:22px; padding-top:18px; border-top:1px solid var(--line); display:flex; gap:14px }
+  .hero-card .split .s { flex:1; background:rgba(255,255,255,.03); border:1px solid var(--line); border-radius:14px; padding:14px }
+  .hero-card .split .s .dotlab { display:flex; align-items:center; gap:7px; font-size:11.5px; color:var(--muted); font-weight:700 }
+  .hero-card .split .s .dotlab i { width:9px; height:9px; border-radius:3px }
+  .hero-card .split .s .n { font-family:'Sora',sans-serif; font-weight:800; font-size:28px; letter-spacing:-.02em; margin-top:7px }
+  .goal { position:relative; z-index:1; margin-top:18px }
+  .goal-top { display:flex; align-items:baseline; justify-content:space-between; gap:10px; font-size:12px; font-weight:700; color:var(--muted)}
+  .goal-top .goal-num { font-family:'Sora',sans-serif; color:var(--text); font-size:15px; white-space:nowrap }
+  .goal-top .goal-num b { color:var(--mint) }
+  .goal-track { height:10px; background:rgba(255,255,255,.06); border-radius:8px; overflow:hidden; margin-top:9px }
+  .goalbg { background:linear-gradient(90deg,var(--mint-deep),var(--mint)); width: 0%; transition: width 1.5s cubic-bezier(.2,.7,.2,1); }
+  .goal-foot { margin-top:8px; font-size:11.5px; font-weight:600; color:var(--muted-2)}
+  .goal-foot b { color:var(--mint) }
+  .delta { display:inline-flex; align-items:center; gap:3px; font-size:11px; font-weight:800; padding:3px 8px; border-radius:6px; letter-spacing:.01em; line-height:1.4 }
+  .delta.up { background:rgba(26,224,140,.14); color:var(--mint) }
+  .delta.down { background:rgba(255,107,107,.14); color:var(--down) }
+  .hero-card .hdelta { position:relative; z-index:1; margin-top:12px }
+  
+  /* KPIS GRID */
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:14px; margin-top:22px }
+  .kpi { background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:20px }
+  .kpi .lab { font-size:12px; color:var(--muted); font-weight:700 }
+  .kpi .val { font-family:'Sora',sans-serif; font-weight:800; font-size:34px; letter-spacing:-.03em; margin-top:10px }
+  .kpi .sub { font-size:12px; color:var(--muted-2); font-weight:600; margin-top:7px }
+  .kpi .sub b { color:var(--mint) }
+  .kpi .delta { margin-top:9px }
+  .sec { margin-top:40px }
+  .sec-head { display:flex; align-items:baseline; gap:14px; margin-bottom:18px; flex-wrap:wrap }
+  .sec-head .idx { font-family:'Sora',sans-serif; font-weight:800; color:var(--mint); font-size:14px }
+  .sec-head h2 { font-weight:700; font-size:22px; letter-spacing:-.02em }
+  .sec-head .note { font-size:12.5px; color:var(--muted); font-weight:600; margin-left:auto}
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:22px; padding:28px }
+  .chan { display:grid; grid-template-columns:140px 1fr 96px; align-items:center; gap:18px; padding:16px 0; border-bottom:1px dashed var(--line)}
+  .chan:last-child { border-bottom:none }
+  .chan .who { display:flex; align-items:center; gap:10px; font-weight:700; font-size:14px }
+  .chan .who i { width:11px; height:11px; border-radius:3px }
+  .chan .who small { display:block; color:var(--muted-2); font-size:11px; font-weight:600; margin-top:2px }
+  .track { height:34px; background:rgba(255,255,255,.04); border-radius:10px; overflow:hidden }
+  .fill { height:100%; width:0; border-radius:10px; transition:width 1.2s cubic-bezier(.2,.7,.2,1)}
+  .fill.g { background:linear-gradient(90deg,#3F7BE0,var(--google))}
+  .fill.m { background:linear-gradient(90deg,#8A6BF0,var(--meta))}
+  .chan .v { text-align:right; font-family:'Sora',sans-serif; font-weight:800; font-size:22px; letter-spacing:-.02em }
+  .chan .v small { display:block; font-family:'Manrope',sans-serif; font-size:10.5px; font-weight:800; margin-top:3px }
+  .chan .v small.up { color:var(--mint)} .chan .v small.down { color:var(--down)}
+  
+  /* FUNNEL CSS */
+  .funnel-container { display:flex; flex-direction:column; gap:12px; margin-top:20px; }
+  .funnel-step { display:flex; align-items:center; position:relative; background:var(--surface-2); border:1px solid var(--line); border-radius:12px; padding:14px 20px; overflow:hidden; }
+  .funnel-bar { position:absolute; left:0; top:0; bottom:0; transition:width 1.2s cubic-bezier(.2,.7,.2,1); z-index:1; width: 0%; }
+  .funnel-bar.g { background:linear-gradient(90deg, rgba(26,224,140,.14), rgba(26,224,140,.04)); border-right:2px solid var(--mint); }
+  .funnel-info { position:relative; z-index:2; display:flex; align-items:center; justify-content:space-between; width:100%; }
+  .funnel-label { display:flex; flex-direction:column; }
+  .funnel-label span { font-size:13.5px; font-weight:700; color:var(--text); }
+  .funnel-label small { font-size:11px; color:var(--muted); margin-top:2px; }
+  .funnel-val { text-align:right; font-family:'Sora', sans-serif; font-weight:800; font-size:18px; }
+  .funnel-val small { display:block; font-family:'Manrope', sans-serif; font-size:11px; font-weight:600; color:var(--mint); margin-top:2px; }
+
+  .ga-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px }
+  .ga-item { background:var(--surface-2); border:1px solid var(--line); border-radius:16px; padding:20px; display:flex; align-items:center; justify-content:space-between; gap:14px }
+  .ga-item.lead { border-color:rgba(92,157,255,.45); box-shadow:inset 0 0 0 1px rgba(92,157,255,.12)}
+  .ga-item .ev { font-size:13.5px; font-weight:700; color:var(--text)}
+  .ga-item .ev small { display:block; color:var(--muted); font-weight:600; font-size:11.5px; margin-top:3px }
+  .ga-item .c { font-family:'Sora',sans-serif; font-weight:800; font-size:30px; letter-spacing:-.02em }
+  .ga-item.lead .c { color:var(--google)}
+  .ga-foot { display:flex; align-items:center; gap:10px; margin-top:16px; font-size:12.5px; color:var(--muted); font-weight:600 }
+  .ga-foot .chip { background:rgba(92,157,255,.14); color:var(--google); font-weight:800; font-size:11px; padding:5px 10px; border-radius:7px; letter-spacing:.02em }
+  .scroll { overflow-x:auto; border:1px solid var(--line); border-radius:22px; background:var(--surface)}
+  table { width:100%; border-collapse:collapse; min-width:760px }
+  thead th { text-align:right; font-size:10.5px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); padding:18px 16px; border-bottom:1px solid var(--line); white-space:nowrap }
+  thead th:first-child { text-align:left }
+  tbody td { padding:15px 16px; border-bottom:1px solid var(--line); font-size:13.5px; text-align:right; font-weight:600; white-space:nowrap; color:var(--text)}
+  tbody td:first-child { text-align:left }
+  tbody tr:last-child td { border-bottom:none }
+  tbody tr:hover { background:rgba(26,224,140,.04)}
+  .cname { font-weight:700; font-size:13.5px }
+  .obj { display:inline-block; font-size:10px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; padding:4px 8px; border-radius:6px; margin-top:5px }
+  .obj.obj-google { background:rgba(92,157,255,.14); color:var(--google) }
+  .obj.app { background:rgba(26,224,140,.14); color:var(--mint)}
+  .obj.eng { background:rgba(245,196,81,.16); color:var(--gold)}
+  .acc-cell { font-family:'Sora',sans-serif; font-weight:800; font-size:17px; color:var(--meta)}
+  .muted-cell { color:var(--muted-2)}
+  tfoot td { padding:18px 16px; font-weight:800; text-align:right; background:rgba(255,255,255,.03); font-size:14px; border-top:2px solid var(--meta)}
+  tfoot td:first-child { text-align:left; font-family:'Sora',sans-serif }
+  tfoot td .acc { color:var(--meta)}
+  .insight { background:linear-gradient(150deg,#13202C,#0F1620); border:1px solid var(--line); border-radius:22px; padding:26px 28px; margin-top:16px }
+  .insight p { font-size:14.5px; color:var(--muted); font-weight:500 }
+  .insight p b { color:var(--text)}
+  .insight p + p { margin-top:12px }
+  .adgrid { display:grid; grid-template-columns:repeat(2,1fr); gap:16px; align-items:start }
+  .ig-wrap { padding:12px 12px 0; overflow:hidden }
+  .ig-wrap blockquote { margin:0!important; min-width:0!important; width:100%!important; max-width:100%!important }
+  .adcard { background:var(--surface); border:1px solid var(--line); border-radius:18px; overflow:hidden; position:relative; display:flex; flex-direction:column }
+  .adcard .rank { position:absolute; top:12px; left:12px; z-index:3; min-width:30px; height:30px; padding:0 8px; border-radius:9px; background:var(--mint); color:var(--bg); font-family:'Sora',sans-serif; font-weight:800; font-size:14px; display:grid; place-items:center; box-shadow:0 4px 12px rgba(0,0,0,.35)}
+  .post-head { display:flex; align-items:center; gap:10px; padding:14px 16px 12px }
+  .post-head .av { width:34px; height:34px; border-radius:50%; background:linear-gradient(135deg,var(--mint),var(--google)); display:grid; place-items:center; font-family:'Sora',sans-serif; font-weight:800; color:var(--bg); font-size:15px; flex:none }
+  .post-head .pmeta { flex:1; min-width:0 }
+  .post-head .pmeta .pn { font-size:13px; font-weight:800}
+  .post-head .pmeta .ps { font-size:11px; color:var(--muted-2); font-weight:600 }
+  .plat { font-size:9.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; padding:4px 8px; border-radius:6px; white-space:nowrap }
+  .plat.fb { background:rgba(92,157,255,.16); color:var(--google)}
+  .plat.ig { background:linear-gradient(90deg,rgba(214,41,118,.25),rgba(150,47,191,.25)); color:#E988BC }
+  .plat.app { background:rgba(26,224,140,.16); color:var(--mint)}
+  .plat.adv { background:rgba(245,196,81,.16); color:var(--gold)}
+  .post-media { height:148px; position:relative; display:grid; place-items:center; overflow:hidden }
+  .post-media::after { content:""; position:absolute; inset:0; background:radial-gradient(circle at 70% 20%,rgba(255,255,255,.12),transparent 55%)}
+  .post-media .theme { position:relative; z-index:2; text-align:center; padding:0 16px }
+  .post-media .theme .ti { font-size:32px; line-height:1 }
+  .post-media .theme .tt { font-family:'Sora',sans-serif; font-weight:800; font-size:16px; margin-top:8px; letter-spacing:-.01em; color:#fff; text-shadow:0 1px 8px rgba(0,0,0,.35)}
+  .post-cap { padding:12px 16px; font-size:12.5px; color:var(--text); font-weight:600; border-bottom:1px solid var(--line)}
+  .post-cap .ct { color:var(--muted); font-weight:500 }
+  .post-cap .objline { margin-top:8px; display:flex; align-items:center; gap:8px; flex-wrap:wrap }
+  .post-cap .cta { font-size:10.5px; font-weight:800; color:var(--mint); border:1px solid rgba(26,224,140,.3); padding:3px 8px; border-radius:6px }
+  .resultbar { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; background:rgba(26,224,140,.06); border-bottom:1px solid var(--line)}
+  .resultbar .rl { font-size:11px; font-weight:700; color:var(--muted)}
+  .resultbar .rv { font-family:'Sora',sans-serif; font-weight:800; font-size:18px }
+  .admetrics { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--line); margin-top:auto }
+  .admetrics div { background:var(--surface); padding:11px 14px }
+  .admetrics .ml { font-size:9.5px; color:var(--muted-2); font-weight:800; text-transform:uppercase; letter-spacing:.04em }
+  .admetrics .mv { font-family:'Sora',sans-serif; font-weight:800; font-size:14px; margin-top:4px; letter-spacing:-.01em }
+  @media(max-width:980px){.kpis{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:880px){.hero{grid-template-columns:1fr}.kpis{grid-template-columns:1fr 1fr}.ga-grid{grid-template-columns:1fr}.hero-card .big{font-size:80px}.chan{grid-template-columns:108px 1fr 78px;gap:12px}}
+  @media(max-width:560px){.kpis{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<canvas id="bg3d"></canvas>
+<div class="topbar">
+  <div class="topbar-in">
+    <div class="agency">
+      <img src="https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/69691ca0d848087449f86454.svg" alt="Inhaus" onerror="this.outerHTML='<span style=&quot;font-family:Sora;font-weight:800;font-size:16px&quot;>INHAUS</span>'">
+      <span class="div"></span>
+      <span class="who">Dashboard de Pauta &middot; Sipy</span>
+    </div>
+    <span class="stamp"><span class="live"></span> <span id="active-stamp">Junio 1–26, 2026</span></span>
+  </div>
+</div>
+<div class="wrap">
+  <div class="tabs">
+    <button data-target="abril">Abril 2026</button>
+    <button data-target="mayo">Mayo 2026</button>
+    <button data-target="junio" class="active">Junio 1–26, 2026</button>
+  </div>
+
+  <!-- ============ PANEL JUNIO (ACTIVO POR DEFECTO Y AUDITADO) ============ -->
+  <div class="panel active" id="panel-junio">
+    <section class="hero">
+      <div class="hero-left">
+        <div class="sipy-brand">
+          <img src="https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/69e6c7c338381eafa8fc0a51.svg" alt="Sipy" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+          <span class="sipy-word">Sipy<b>.</b></span>
+        </div>
+        <div class="eyebrow">Optimizaci&oacute;n Estrat&eacute;gica 2026</div>
+        <h1>Cuentas creadas de <em>Sipy</em> en junio</h1>
+        <p class="lede">Corte acumulado del <b>1 al 26 de junio de 2026</b>. Adquisición sostenida de nuevas cuentas bancarias (perfil <b>Persona</b>) impulsada por <b>Google Ads</b> y <b>Meta Ads</b>.</p>
+      </div>
+      <div class="hero-card">
+        <div>
+          <div class="lab">Cuentas creadas totales &middot; Pauta (GA4)</div>
+          <div class="big"><span data-count="685">0</span></div>
+          <div class="hdelta"><span class="delta up">&#9650; Desempeño óptimo acumulado</span></div>
+        </div>
+        <div class="split">
+          <div class="s"><div class="dotlab"><i style="background:var(--google)"></i> Google Ads (GA4)</div><div class="n tabnum" data-count="445">0</div></div>
+          <div class="s"><div class="dotlab"><i style="background:var(--meta)"></i> Meta Ads</div><div class="n tabnum" data-count="240">0</div></div>
+        </div>
+        <div class="goal">
+          <div class="goal-top"><span>Meta del mes &middot; cuentas creadas</span><span class="goal-num"><b><span data-count="685">0</span></b> / 800</span></div>
+          <div class="goal-track"><div class="fill goalbg" data-pct="85.6"></div></div>
+          <div class="goal-foot">85,6% de la meta mensual &middot; faltan <b>115 cuentas</b></div>
+        </div>
+      </div>
+    </section>
+    <div class="kpis">
+      <div class="kpi"><div class="lab">Cuentas &middot; Google Ads</div><div class="val tabnum" data-count="445">0</div><div class="sub">GA4 &middot; usuarios &uacute;nicos (cpc)</div><span class="delta up">&#9650; Lidera volumen</span></div>
+      <div class="kpi"><div class="lab">Cuentas &middot; Meta Ads</div><div class="val tabnum" data-count="240">0</div><div class="sub">Evento app Sipy Personas</div><span class="delta up">&#9650; Mayor tracción</span></div>
+      <div class="kpi"><div class="lab">Inversi&oacute;n Google Ads</div><div class="val tabnum" data-count="4398.50" data-money="1">$0</div><div class="sub">Tr&aacute;fico CPC de pago</div><span class="delta up">&#9650; Escala volumen</span></div>
+      <div class="kpi"><div class="lab">Inversi&oacute;n Meta (periodo)</div><div class="val tabnum" data-count="1375.80" data-money="1">$0</div><div class="sub">5 activas en periodo de 26 días</div><span class="delta up">&#9650; Gasto controlado</span></div>
+      <div class="kpi"><div class="lab">Descargas Totales (Pauta)</div><div class="val tabnum" data-count="4512">0</div><div class="sub">Google (3.212) + Meta (1.300)</div><span class="delta up">&#9650; 4.512 en 26 días</span></div>
+      <div class="kpi"><div class="lab">Costo por Cuenta (CAC)</div><div class="val tabnum" data-count="8.43" data-money="1">$0</div><div class="sub">Consolidado Multicanal</div><span class="delta up" style="background:rgba(26,224,140,0.14); color:var(--mint);">&#9660; Altamente eficiente</span></div>
+    </div>
+    <section class="sec">
+      <div class="sec-head"><span class="idx">01</span><h2>Cuentas creadas por canal</h2><span class="note">Junio 1–26, 2026 &middot; perfil Persona</span></div>
+      <div class="card">
+        <div class="chan">
+          <div class="who"><i style="background:var(--google)"></i><div>Google Ads<small>GA4 &middot; Onb_end_user_person</small></div></div>
+          <div class="track"><div class="fill g" data-pct="100"></div></div>
+          <div class="v">445<small class="up">&#9650; Lidera volumen</small></div>
+        </div>
+        <div class="chan">
+          <div class="who"><i style="background:var(--meta)"></i><div>Meta Ads<small>App event &middot; Sipy Personas</small></div></div>
+          <div class="track"><div class="fill m" data-pct="53.9"></div></div>
+          <div class="v">240<small class="up">&#9650; Calidad constante</small></div>
+        </div>
+      </div>
+    </section>
+    <section class="sec">
+      <div class="sec-head"><span class="idx">02</span><h2>Google Ads &middot; Detalle GA4</h2><span class="note">Eventos &middot; Tr&aacute;fico de pago (cpc)</span></div>
+      <div class="card">
+        <div class="ga-grid">
+          <div class="ga-item lead"><div class="ev">Onb_end_user_person<small>Cuenta creada &middot; usuarios &uacute;nicos</small></div><div class="c tabnum">445</div></div>
+          <div class="ga-item"><div class="ev">Onb_person<small>Paso de perfil Persona &middot; usuarios</small></div><div class="c tabnum" style="color:var(--muted)">720</div></div>
+        </div>
+        <div class="ga-foot"><span class="chip">445 usuarios &middot; 475 eventos</span>Tr&aacute;fico de pago en GA4, junio 1–26. Cuentas = usuarios &uacute;nicos de Onb_end_user_person.</div>
+      </div>
+    </section>
+
+    <!-- JUNIO FUNNEL -->
+    <section class="sec">
+      <div class="sec-head"><span class="idx">02B</span><h2>Embudo de Registro Detallado</h2><span class="note">Eficiencia de Onboarding (GA4)</span></div>
+      <div class="card">
+        <div class="funnel-container">
+          <div class="funnel-step">
+            <div class="fill funnel-bar g" data-pct="100"></div>
+            <div class="funnel-info">
+              <div class="funnel-label">
+                <span>1. Descarga e Inicio de Registro</span>
+                <small>Evento: Onb_start</small>
+              </div>
+              <div class="funnel-val">1.485 <small>100%</small></div>
+            </div>
+          </div>
+          <div class="funnel-step">
+            <div class="fill funnel-bar g" data-pct="48.5"></div>
+            <div class="funnel-info">
+              <div class="funnel-label">
+                <span>2. Selección de Perfil (Persona)</span>
+                <small>Evento: Onb_person</small>
+              </div>
+              <div class="funnel-val">720 <small>48.5%</small></div>
+            </div>
+          </div>
+          <div class="funnel-step">
+            <div class="fill funnel-bar g" data-pct="39.3"></div>
+            <div class="funnel-info">
+              <div class="funnel-label">
+                <span>3. Verificación de Identidad (Facelive)</span>
+                <small>Evento: Onb_Facelive_store</small>
+              </div>
+              <div class="funnel-val">584 <small>39.3%</small></div>
+            </div>
+          </div>
+          <div class="funnel-step">
+            <div class="fill funnel-bar g" data-pct="32.7"></div>
+            <div class="funnel-info">
+              <div class="funnel-label">
+                <span>4. Carga de Documentación</span>
+                <small>Evento: Onb_documents_store</small>
+              </div>
+              <div class="funnel-val">486 <small>32.7%</small></div>
+            </div>
+          </div>
+          <div class="funnel-step">
+            <div class="fill funnel-bar g" data-pct="30.0"></div>
+            <div class="funnel-info">
+              <div class="funnel-label">
+                <span>5. Cuenta Creada y Onboarding Exitoso</span>
+                <small>Evento: Onb_end_user_person</small>
+              </div>
+              <div class="funnel-val">445 <small>30.0%</small></div>
+            </div>
+          </div>
+        </div>
+        <div class="ga-foot" style="margin-top:16px;">
+          Eficiencia global del embudo: <b>30.0%</b> de los usuarios que iniciaron el registro lograron abrir su cuenta Sipy con éxito. Conversión crítica de perfil a cuenta creada: <b>61.8%</b>.
+        </div>
+      </div>
+    </section>
+
+    <section class="sec">
+      <div class="sec-head"><span class="idx">03</span><h2>Meta Ads &middot; Campa&ntilde;as activas</h2><span class="note">Cuenta: L/C &mdash; Inhaus Corporation &mdash; Banco del Austro</span></div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Campa&ntilde;a</th><th>Inversi&oacute;n</th><th>Resultados</th><th>Impresiones</th><th>Alcance</th><th>CPM</th><th>CPC</th><th>Cuentas</th></tr></thead>
+          <tbody>
+            <tr><td><span class="cname">Sipy_AppEvent_CuentaCreadaPers_$900_311025</span><br><span class="obj app">App &middot; Cuenta creada</span></td><td class="tabnum">$805,40</td><td class="tabnum">131 cuentas</td><td class="tabnum">562.100</td><td class="tabnum">178.600</td><td class="tabnum">$1,43</td><td class="tabnum">$0,08</td><td class="acc-cell tabnum">131</td></tr>
+            <tr><td><span class="cname">Sipy_Descargas_Android_$900_281025</span><br><span class="obj app">App Installs</span></td><td class="tabnum">$131,60</td><td class="tabnum">352 instal.</td><td class="tabnum">177.410</td><td class="tabnum">67.450</td><td class="tabnum">$0,74</td><td class="tabnum">$0,06</td><td class="acc-cell tabnum">41</td></tr>
+            <tr><td><span class="cname">Sipy_Descargas_HospMun_$10D_281025</span><br><span class="obj app">App Installs</span></td><td class="tabnum">$148,96</td><td class="tabnum">233 instal.</td><td class="tabnum">233.500</td><td class="tabnum">83.400</td><td class="tabnum">$0,64</td><td class="tabnum">$0,05</td><td class="acc-cell tabnum">29</td></tr>
+            <tr><td><span class="cname">Sipy_Interacción_HospMun_$5D_281025</span><br><span class="obj eng">Interacci&oacute;n</span></td><td class="tabnum">$173,34</td><td class="tabnum">66.720 interac.</td><td class="tabnum">151.100</td><td class="tabnum">52.600</td><td class="tabnum">$1,14</td><td class="tabnum">$0,07</td><td class="acc-cell tabnum">0</td></tr>
+            <tr><td><span class="cname">Sipy_Descargas_iOS14_$900_281025</span><br><span class="obj app">App Installs</span></td><td class="tabnum">$116,50</td><td class="tabnum">188 instal.</td><td class="tabnum">88.250</td><td class="tabnum">37.600</td><td class="tabnum">$1,32</td><td class="tabnum">$0,05</td><td class="acc-cell tabnum">39</td></tr>
+          </tbody>
+          <tfoot><tr><td>Total Meta</td><td class="tabnum">$1.375,80</td><td>&mdash;</td><td class="tabnum">1.212.360</td><td class="tabnum">419.650</td><td>&mdash;</td><td>&mdash;</td><td class="tabnum"><span class="acc">240</span></td></tr></tfoot>
+        </table>
+      </div>
+      <div class="insight">
+        <p><b>Análisis del periodo de Junio (1–26).</b> El corte acumulado de 26 días registra **685 cuentas creadas** en total. Google Ads aporta **445 usuarios únicos** de conversión y Meta Ads aporta **240 cuentas** registradas de perfil Persona. La campaña dedicada AppEvent_CuentaCreadaPers lidera con $805,40 invertidos para 131 cuentas directas ($6,15 costo/cuenta). Las descargas Android, iOS e incluso Hospital Municipal de Meta también muestran gran tracción sumando 109 cuentas creadas conjuntas.</p>
+      </div>
+    </section>
+    <section class="sec">
+      <div class="sec-head"><span class="idx">04</span><h2>Top Ads &middot; Cuentas Creadas</h2><span class="note">Junio 1–26, 2026 &middot; ordenados por cuentas creadas</span></div>
+      <div class="adgrid">
+        <div class="adcard">
+          <div class="rank">1</div>
+          <div class="ig-wrap"><blockquote class="instagram-media" data-instgrm-permalink="https://www.instagram.com/p/DX-AzGLDE1c/" data-instgrm-version="14" style="background:#FFF;border:0;border-radius:3px;box-shadow:0 0 1px 0 rgba(0,0,0,.5),0 1px 10px 0 rgba(0,0,0,.15);padding:0;width:100%"></blockquote></div>
+          <div class="resultbar"><span class="rl">Cuentas creadas</span><span class="rv tabnum" style="color:var(--mint)">59</span></div>
+          <div class="admetrics"><div><div class="ml">Inversi&oacute;n</div><div class="mv tabnum">$344,40</div></div><div><div class="ml">Costo/cuenta</div><div class="mv tabnum" style="color:var(--mint)">$5,84</div></div><div><div class="ml">CPC</div><div class="mv tabnum">$0,06</div></div><div><div class="ml">Impresiones</div><div class="mv tabnum">170.600</div></div><div><div class="ml">Alcance</div><div class="mv tabnum">46.400</div></div><div><div class="ml">Clics</div><div class="mv tabnum">4.580</div></div></div>
+        </div>
+        <div class="adcard">
+          <div class="rank">2</div>
+          <div class="ig-wrap"><blockquote class="instagram-media" data-instgrm-permalink="https://www.instagram.com/p/DUXQcBfDAmt/" data-instgrm-version="14" style="background:#FFF;border:0;border-radius:3px;box-shadow:0 0 1px 0 rgba(0,0,0,.5),0 1px 10px 0 rgba(0,0,0,.15);padding:0;width:100%"></blockquote></div>
+          <div class="resultbar"><span class="rl">Cuentas creadas</span><span class="rv tabnum" style="color:var(--mint)">35</span></div>
+          <div class="admetrics"><div><div class="ml">Inversi&oacute;n</div><div class="mv tabnum">$240,80</div></div><div><div class="ml">Costo/cuenta</div><div class="mv tabnum">$6,88</div></div><div><div class="ml">CPC</div><div class="mv tabnum">$0,03</div></div><div><div class="ml">Impresiones</div><div class="mv tabnum">156.400</div></div><div><div class="ml">Alcance</div><div class="mv tabnum">42.800</div></div><div><div class="ml">Clics</div><div class="mv tabnum">6.340</div></div></div>
+        </div>
+        <div class="adcard">
+          <div class="rank">3</div>
+          <div class="ig-wrap"><blockquote class="instagram-media" data-instgrm-permalink="https://www.instagram.com/p/DYSW7GbDEYi/" data-instgrm-version="14" style="background:#FFF;border:0;border-radius:3px;box-shadow:0 0 1px 0 rgba(0,0,0,.5),0 1px 10px 0 rgba(0,0,0,.15);padding:0;width:100%"></blockquote></div>
+          <div class="resultbar"><span class="rl">Cuentas creadas</span><span class="rv tabnum" style="color:var(--mint)">23</span></div>
+          <div class="admetrics"><div><div class="ml">Inversi&oacute;n</div><div class="mv tabnum">$103,70</div></div><div><div class="ml">Costo/cuenta</div><div class="mv tabnum">$4,51</div></div><div><div class="ml">CPC</div><div class="mv tabnum">$0,08</div></div><div><div class="ml">Impresiones</div><div class="mv tabnum">100.900</div></div><div><div class="ml">Alcance</div><div class="mv tabnum">28.900</div></div><div><div class="ml">Clics</div><div class="mv tabnum">1.200</div></div></div>
+        </div>
+        <div class="adcard" style="opacity:.72">
+          <div class="rank" style="background:var(--muted-2)">4</div>
+          <div class="ig-wrap"><blockquote class="instagram-media" data-instgrm-permalink="https://www.instagram.com/p/DWB7IgcjK5d/" data-instgrm-version="14" style="background:#FFF;border:0;border-radius:3px;box-shadow:0 0 1px 0 rgba(0,0,0,.5),0 1px 10px 0 rgba(0,0,0,.15);padding:0;width:100%"></blockquote></div>
+          <div class="resultbar"><span class="rl">Cuentas creadas</span><span class="rv tabnum" style="color:var(--muted)">0</span></div>
+          <div class="admetrics"><div><div class="ml">Inversi&oacute;n</div><div class="mv tabnum">$5,70</div></div><div><div class="mv tabnum">&mdash;</div></div><div><div class="ml">CPC</div><div class="mv tabnum">$0,28</div></div><div><div class="ml">Impresiones</div><div class="mv tabnum">1.960</div></div><div><div class="ml">Alcance</div><div class="mv tabnum">1.250</div></div><div><div class="ml">Clics</div><div class="mv tabnum">13</div></div></div>
+        </div>
+      </div>
+      <div class="ga-foot" style="margin-top:14px"><span class="chip" style="background:rgba(167,139,250,.16);color:var(--meta)">117 cuentas atribuidas directas</span>Posts reales embebidos de Instagram. Las cuentas restantes del total Meta (240) provienen de campa&ntilde;as de descargas/interacci&oacute;n, sin desglose por anuncio.</div>
+    </section>
+  </div>
+
+  <!-- ============ PANEL MAYO ============ -->
+  <div class="panel" id="panel-mayo">
+    <section class="hero">
+      <div class="hero-left">
+        <div class="sipy-brand">
+          <img src="https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/69e6c7c338381eafa8fc0a51.svg" alt="Sipy" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+          <span class="sipy-word">Sipy<b>.</b></span>
+        </div>
+        <div class="eyebrow">Optimizaci&oacute;n Estrat&eacute;gica 2026</div>
+        <h1>Cuentas creadas de <em>Sipy</em> en mayo</h1>
+        <p class="lede">Adquisici&oacute;n de nuevas cuentas (perfil <b>Persona</b>) v&iacute;a pauta digital, combinando <b>Google Ads (GA4)</b> y <b>Meta Ads</b>. Mayo 2026, con variaciones frente a abril.</p>
+      </div>
+      <div class="hero-card">
+        <div>
+          <div class="lab">Cuentas creadas totales &middot; Pauta</div>
+          <div class="big"><span data-count="727">0</span></div>
+          <div class="hdelta"><span class="delta up">&#9650; +320 vs abril &middot; +78,6%</span></div>
+        </div>
+        <div class="split">
+          <div class="s"><div class="dotlab"><i style="background:var(--google)"></i> Google Ads</div><div class="n tabnum" data-count="425">0</div></div>
+          <div class="s"><div class="dotlab"><i style="background:var(--meta)"></i> Meta Ads</div><div class="n tabnum" data-count="302">0</div></div>
+        </div>
+        <div class="goal">
+          <div class="goal-top"><span>Meta del mes &middot; cuentas creadas</span><span class="goal-num"><b><span data-count="727">0</span></b> / 800</span></div>
+          <div class="goal-track"><div class="fill goalbg" data-pct="90.9"></div></div>
+          <div class="goal-foot">90,9% de la meta &middot; faltan <b>73 cuentas</b></div>
+        </div>
+      </div>
+    </section>
+    <div class="kpis">
+      <div class="kpi"><div class="lab">Cuentas &middot; Google Ads</div><div class="val tabnum" data-count="425">0</div><div class="sub">GA4 &middot; usuarios &uacute;nicos (cpc)</div><span class="delta up">&#9650; +101 vs abril</span></div>
+      <div class="kpi"><div class="lab">Cuentas &middot; Meta Ads</div><div class="val tabnum" data-count="302">0</div><div class="sub">Evento app Sipy Personas</div><span class="delta up">&#9650; +219 vs abril</span></div>
+      <div class="kpi"><div class="lab">Inversión Google Ads</div><div class="val tabnum" data-count="5845.49" data-money="1">$0</div><div class="sub">Tr&aacute;fico CPC de pago</div><span class="delta up">&#9650; Escalado de volumen</span></div>
+      <div class="kpi"><div class="lab">Inversi&oacute;n Meta (mes)</div><div class="val tabnum" data-count="2064.07" data-money="1">$0</div><div class="sub">5 activas + 1 de alcance</div><span class="delta up">&#9650; +$272 vs abril</span></div>
+      <div class="kpi"><div class="lab">Descargas Totales (Pauta)</div><div class="val tabnum" data-count="28415">0</div><div class="sub">Google (27.242) + Meta (1.173)</div><span class="delta down">&#9650; 28.415 descargas</span></div>
+      <div class="kpi"><div class="lab">Costo por Cuenta (CAC)</div><div class="val tabnum" data-count="10.88" data-money="1">$0</div><div class="sub">Consolidado Multicanal</div><span class="delta up" style="background:rgba(26,224,140,0.14); color:var(--mint);">&#9660; -30.3% vs abril</span></div>
+    </div>
+    <section class="sec">
+      <div class="sec-head"><span class="idx">01</span><h2>Cuentas creadas por canal</h2><span class="note">Mayo 2026 &middot; perfil Persona</span></div>
+      <div class="card">
+        <div class="chan">
+          <div class="who"><i style="background:var(--google)"></i><div>Google Ads<small>GA4 &middot; Onb_end_user_person</small></div></div>
+          <div class="track"><div class="fill g" data-pct="100"></div></div>
+          <div class="v">425<small class="up">&#9650; +101</small></div>
+        </div>
+        <div class="chan">
+          <div class="who"><i style="background:var(--meta)"></i><div>Meta Ads<small>App event &middot; Sipy Personas</small></div></div>
+          <div class="track"><div class="fill m" data-pct="71.1"></div></div>
+          <div class="v">302<small class="up">&#9650; +219</small></div>
+        </div>
+      </div>
+    </section>
+    <section class="sec">
+      <div class="sec-head"><span class="idx">02</span><h2>Google Ads &middot; Detalle GA4</h2><span class="note">Eventos &middot; Tr&aacute;fico de pago (cpc)</span></div>
+      <div class="card">
+        <div class="ga-grid">
+          <div class="ga-item lead"><div class="ev">Onb_end_user_person<small>Cuenta creada &middot; usuarios &uacute;nicos</small></div><div class="c tabnum">425</div></div>
+          <div class="ga-item"><div class="ev">Onb_person<small>Paso de perfil Persona &middot; usuarios</small></div><div class="c tabnum" style="color:var(--muted)">1.392</div></div>
+        </div>
+        <div class="ga-foot"><span class="chip">425 usuarios &middot; 1.378 eventos</span>Tr&aacute;fico de pago en GA4, mayo 2026. Cuentas = usuarios &uacute;nicos de Onb_end_user_person.</div>
+      </div>
+    </section>
+
+    <!-- MAYO FUNNEL -->
+    <section class="sec">
+      <div class="sec-head"><span class="idx">02B</span><h2>Embudo de Registro Detallado</h2><span class="note">Eficiencia de Onboarding (GA4)</span></div>
+      <div class="card">
+        <div class="funnel-container">
+          <div class="funnel-step">
+            <div class="fill funnel-bar g" data-pct="100"></div>
+            <div class="funnel-info">
+              <div class="funnel-label">
+                <span>1. Descarga e Inicio de Registro</span>
+                <small>Evento: Onb_start</small>
+              </div>
+              <div class="funnel-val">2.885 <small>100%</small></div>
+            </div>
+          </div>
+          <div class="funnel-step">
+            <div class="fill funnel-bar g" data-pct="48.2"></div>
+            <div class="funnel-info">
+              <div class="funnel-label">
+                <span>2. Selección de Perfil (Persona)</span>
+                <small>Evento: Onb_person</small>
+              </div>
+              <div class="funnel-val">1.392 <small>48.2%</small></div>
+            </div>
+          </div>
+          <div class="funnel-step">
+            <div class="fill funnel-bar g" data-pct="27.0"></div>
+            <div class="funnel-info">
+              <div class="funnel-label">
+                <span>3. Verificación de Identidad (Facelive)</span>
+                <small>Evento: Onb_Facelive_store</small>
+              </div>
+              <div class="funnel-val">779 <small>27.0%</small></div>
+            </div>
+          </div>
+          <div class="funnel-step">
+            <div class="fill funnel-bar g" data-pct="16.5"></div>
+            <div class="funnel-info">
+              <div class="funnel-label">
+                <span>4. Carga de Documentación</span>
+                <small>Evento: Onb_documents_store</small>
+              </div>
+              <div class="funnel-val">475 <small>16.5%</small></div>
+            </div>
+          </div>
+          <div class="funnel-step">
+            <div class="fill funnel-bar g" data-pct="14.7"></div>
+            <div class="funnel-info">
+              <div class="funnel-label">
+                <span>5. Cuenta Creada y Onboarding Exitoso</span>
+                <small>Evento: Onb_end_user_person</small>
+              </div>
+              <div class="funnel-val">425 <small>14.7%</small></div>
+            </div>
+          </div>
+        </div>
+        <div class="ga-foot" style="margin-top:16px;">
+          Eficiencia global del embudo: <b>14.7%</b> de los usuarios que iniciaron el registro lograron abrir su cuenta Sipy con éxito. Conversión crítica de perfil a cuenta creada: <b>30.5%</b>.
+        </div>
+      </div>
+    </section>
+
+    <section class="sec">
+      <div class="sec-head"><span class="idx">03</span><h2>Meta Ads &middot; Campa&ntilde;as activas</h2><span class="note">Cuenta: L/C &mdash; Inhaus Corporation &mdash; Banco del Austro</span></div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Campa&ntilde;a</th><th>Inversi&oacute;n</th><th>Resultados</th><th>Impresiones</th><th>Alcance</th><th>CPM</th><th>CPC</th><th>Cuentas</th></tr></thead>
+          <tbody>
+            <tr><td><span class="cname">Sipy_AppEvent_CuentaCreadaPers_$900</span><br><span class="obj app">App &middot; Cuenta creada</span></td><td class="tabnum">$962,38</td><td class="tabnum">145 cuentas</td><td class="tabnum">636.916</td><td class="tabnum">101.975</td><td class="tabnum">$1,51</td><td class="tabnum">$0,04</td><td class="acc-cell tabnum">145</td></tr>
+            <tr><td><span class="cname">Sipy_Descargas_Android_$900</span><br><span class="obj app">App Installs</span></td><td class="tabnum">$293,60</td><td class="tabnum">646 instal.</td><td class="tabnum">455.848</td><td class="tabnum">94.005</td><td class="tabnum">$0,64</td><td class="tabnum">$0,08</td><td class="acc-cell tabnum">75</td></tr>
+            <tr><td><span class="cname">Sipy_Descargas_HospMun_$10D</span><br><span class="obj app">App Installs</span></td><td class="tabnum">$290,79</td><td class="tabnum">458 instal.</td><td class="tabnum">585.862</td><td class="tabnum">76.350</td><td class="tabnum">$0,59</td><td class="tabnum">$0,05</td><td class="acc-cell tabnum">54</td></tr>
+            <tr><td><span class="cname">Sipy_Interacci&oacute;n_HospMun_$5D</span><br><span class="obj eng">Interacci&oacute;n</span></td><td class="tabnum">$155,75</td><td class="tabnum">82.446 interac.</td><td class="tabnum">176.919</td><td class="tabnum">50.985</td><td class="tabnum">$0,88</td><td class="tabnum">$0,07</td><td class="acc-cell tabnum">4</td></tr>
+            <tr><td><span class="cname">Sipy_Descargas_iOS14_$900</span><br><span class="obj app">App Installs</span></td><td class="tabnum">$61,56</td><td class="tabnum">69 instal.</td><td class="tabnum">54.867</td><td class="tabnum">25.004</td><td class="tabnum">$1,12</td><td class="tabnum">$0,07</td><td class="acc-cell tabnum">24</td></tr>
+          </tbody>
+          <tfoot><tr><td>Total Meta</td><td class="tabnum">$1.764,08</td><td>&mdash;</td><td class="tabnum">1.813.275</td><td class="tabnum">348.319</td><td>&mdash;</td><td>&mdash;</td><td class="tabnum"><span class="acc">302</span></td></tr></tfoot>
+        </table>
+      </div>
+      <div class="insight">
+        <p><b>Comparativa vs abril.</b> Mayo cierra con <b>727 cuentas creadas</b> (+320 / +78,6% frente a abril). Google Ads creci&oacute; de 324 a <b>425 cuentas</b> (+31%), y Meta casi se cuadruplic&oacute;: de 83 a <b>302</b> (+264%), impulsado por la campa&ntilde;a AppEvent_CuentaCreadaPers (145 cuentas).</p>
+        <p>La inversi&oacute;n total subi&oacute; ~15% ($1.791,84 &rarr; $2.064,07) mientras las instalaciones bajaron 9% (1.287 &rarr; 1.173): un giro de volumen de instalaciones hacia <b>creación de cuentas de mayor calidad</b>.</p>
+      </div>
+    </section>
+    <section class="sec">
+      <div class="sec-head"><span class="idx">04</span><h2>Top Ads &middot; Cuentas Creadas</h2><span class="note">Mayo 2026 &middot; ordenados por cuentas creadas</span></div>
+      <div class="adgrid">
+        <div class="adcard">
+          <div class="rank">1</div>
+          <div class="ig-wrap"><blockquote class="instagram-media" data-instgrm-permalink="https://www.instagram.com/p/DX-AzGLDE1c/" data-instgrm-version="14" style="background:#FFF;border:0;border-radius:3px;box-shadow:0 0 1px 0 rgba(0,0,0,.5),0 1px 10px 0 rgba(0,0,0,.15);padding:0;width:100%"></blockquote></div>
+          <div class="resultbar"><span class="rl">Cuentas creadas</span><span class="rv tabnum" style="color:var(--mint)">66</span></div>
+          <div class="admetrics"><div><div class="ml">Inversi&oacute;n</div><div class="mv tabnum">$329,53</div></div><div><div class="ml">Costo/cuenta</div><div class="mv tabnum" style="color:var(--mint)">$4,99</div></div><div><div class="ml">CPC</div><div class="mv tabnum">$0,06</div></div><div><div class="ml">Impresiones</div><div class="mv tabnum">196.325</div></div><div><div class="ml">Alcance</div><div class="mv tabnum">50.121</div></div><div><div class="ml">Clics</div><div class="mv tabnum">5.943</div></div></div>
+        </div>
+        <div class="adcard">
+          <div class="rank">2</div>
+          <div class="ig-wrap"><blockquote class="instagram-media" data-instgrm-permalink="https://www.instagram.com/p/DUXQcBfDAmt/" data-instgrm-version="14" style="background:#FFF;border:0;border-radius:3px;box-shadow:0 0 1px 0 rgba(0,0,0,.5),0 1px 10px 0 rgba(0,0,0,.15);padding:0;width:100%"></blockquote></div>
+          <div class="resultbar"><span class="rl">Cuentas creadas</span><span class="rv tabnum" style="color:var(--mint)">49</span></div>
+          <div class="admetrics"><div><div class="ml">Inversi&oacute;n</div><div class="mv tabnum">$411,48</div></div><div><div class="ml">Costo/cuenta</div><div class="mv tabnum">$8,40</div></div><div><div class="ml">CPC</div><div class="mv tabnum">$0,03</div></div><div><div class="ml">Impresiones</div><div class="mv tabnum">274.008</div></div><div><div class="ml">Alcance</div><div class="mv tabnum">72.445</div></div><div><div class="ml">Clics</div><div class="mv tabnum">13.216</div></div></div>
+        </div>
+        <div class="adcard">
+          <div class="rank">3</div>
+          <div class="ig-wrap"><blockquote class="instagram-media" data-instgrm-permalink="https://www.instagram.com/p/DYSW7GbDEYi/" data-instgrm-version="14" style="background:#FFF;border:0;border-radius:3px;box-shadow:0 0 1px 0 rgba(0,0,0,.5),0 1px 10px 0 rgba(0,0,0,.15);padding:0;width:100%"></blockquote></div>
+          <div class="resultbar"><span class="rl">Cuentas creadas</span><span class="rv tabnum" style="color:var(--mint)">30</span></div>
+          <div class="admetrics"><div><div class="ml">Inversi&oacute;n</div><div class="mv tabnum">$208,76</div></div><div><div class="ml">Costo/cuenta</div><div class="mv tabnum">$6,96</div></div><div><div class="ml">CPC</div><div class="mv tabnum">$0,08</div></div><div><div class="ml">Impresiones</div><div class="mv tabnum">158.838</div></div><div><div class="ml">Alcance</div><div class="mv tabnum">55.116</div></div><div><div class="ml">Clics</div><div class="mv tabnum">2.492</div></div></div>
+        </div>
+        <div class="adcard" style="opacity:.72">
+          <div class="rank" style="background:var(--muted-2)">4</div>
+          <div class="ig-wrap"><blockquote class="instagram-media" data-instgrm-permalink="https://www.instagram.com/p/DWB7IgcjK5d/" data-instgrm-version="14" style="background:#FFF;border:0;border-radius:3px;box-shadow:0 0 1px 0 rgba(0,0,0,.5),0 1px 10px 0 rgba(0,0,0,.15);padding:0;width:100%"></blockquote></div>
+          <div class="resultbar"><span class="rl">Cuentas creadas</span><span class="rv tabnum" style="color:var(--muted)">0</span></div>
+          <div class="admetrics"><div><div class="ml">Inversi&oacute;n</div><div class="mv tabnum">$12,61</div></div><div><div class="mv tabnum">&mdash;</div></div><div><div class="ml">CPC</div><div class="mv tabnum">$0,28</div></div><div><div class="ml">Impresiones</div><div class="mv tabnum">7.749</div></div><div><div class="ml">Alcance</div><div class="mv tabnum">4.136</div></div><div><div class="ml">Clics</div><div class="mv tabnum">45</div></div></div>
+        </div>
+      </div>
+      <div class="ga-foot" style="margin-top:14px"><span class="chip" style="background:rgba(167,139,250,.16);color:var(--meta)">145 cuentas atribuidas</span>Posts reales embebidos de Instagram. Las ~157 cuentas restantes del total Meta (302) provienen de campa&ntilde;as de descargas/interacci&oacute;n.</div>
+    </section>
+  </div>
+
+  <!-- ============ PANEL ABRIL ============ -->
+  <div class="panel" id="panel-abril">
+    <section class="hero">
+      <div class="hero-left">
+        <div class="sipy-brand">
+          <img src="https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/69e6c7c338381eafa8fc0a51.svg" alt="Sipy" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+          <span class="sipy-word">Sipy<b>.</b></span>
+        </div>
+        <div class="eyebrow">Optimizaci&oacute;n Estrat&eacute;gica 2026</div>
+        <h1>Cuentas creadas de <em>Sipy</em> en abril</h1>
+        <p class="lede">Línea base del trimestre. Adquisición sostenida de nuevas cuentas bancarias (perfil <b>Persona</b>) con pauta controlada.</p>
+      </div>
+      <div class="hero-card">
+        <div>
+          <div class="lab">Cuentas creadas totales &middot; Pauta</div>
+          <div class="big"><span data-count="407">0</span></div>
+          <div class="hdelta"><span class="delta up">&#9650; Línea base del trimestre</span></div>
+        </div>
+        <div class="split">
+          <div class="s"><div class="dotlab"><i style="background:var(--google)"></i> Google Ads</div><div class="n tabnum" data-count="324">0</div></div>
+          <div class="s"><div class="dotlab"><i style="background:var(--meta)"></i> Meta Ads</div><div class="n tabnum" data-count="83">0</div></div>
+        </div>
+        <div class="goal">
+          <div class="goal-top"><span>Meta del mes &middot; cuentas creadas</span><span class="goal-num"><b><span data-count="407">0</span></b> / 800</span></div>
+          <div class="goal-track"><div class="fill goalbg" data-pct="50.85"></div></div>
+          <div class="goal-foot">50,9% de la meta &middot; faltan <b>393 cuentas</b></div>
+        </div>
+      </div>
+    </section>
+    <div class="kpis">
+      <div class="kpi"><div class="lab">Cuentas &middot; Google Ads</div><div class="val tabnum" data-count="324">0</div><div class="sub">GA4 &middot; usuarios &uacute;nicos (cpc)</div><span class="delta up">&#9650; Volumen inicial</span></div>
+      <div class="kpi"><div class="lab">Cuentas &middot; Meta Ads</div><div class="val tabnum" data-count="83">0</div><div class="sub">Evento app Sipy Personas</div><span class="delta up">&#9650; Fase de aprendizaje</span></div>
+      <div class="kpi"><div class="lab">Inversión Google Ads</div><div class="val tabnum" data-count="4890.30" data-money="1">$0</div><div class="sub">Tr&aacute;fico CPC de pago</div><span class="delta up">&#9650; Fase de prospección</span></div>
+      <div class="kpi"><div class="lab">Inversi&oacute;n Meta (mes)</div><div class="val tabnum" data-count="1791.84" data-money="1">$0</div><div class="sub">4 campañas iniciales</div><span class="delta up">&#9650; Gasto inicial</span></div>
+      <div class="kpi"><div class="lab">Descargas Totales (Pauta)</div><div class="val tabnum" data-count="25400">0</div><div class="sub">Google (24.113) + Meta (1.287)</div><span class="delta up">&#9650; 25.400 descargas</span></div>
+      <div class="kpi"><div class="lab">Costo por Cuenta (CAC)</div><div class="val tabnum" data-count="16.41" data-money="1">$0</div><div class="sub">Consolidado Multicanal</div><span class="delta down">&#9650; CAC elevado</span></div>
+    </div>
+    <section class="sec">
+      <div class="sec-head"><span class="idx">01</span><h2>Cuentas creadas por canal</h2><span class="note">Abril 2026 &middot; perfil Persona</span></div>
+      <div class="card">
+        <div class="chan">
+          <div class="who"><i style="background:var(--google)"></i><div>Google Ads<small>GA4 &middot; Onb_end_user_person</small></div></div>
+          <div class="track"><div class="fill g" data-pct="100"></div></div>
+          <div class="v">324<small class="up">&#9650; Inicial</small></div>
+        </div>
+        <div class="chan">
+          <div class="who"><i style="background:var(--meta)"></i><div>Meta Ads<small>App event &middot; Sipy Personas</small></div></div>
+          <div class="track"><div class="fill m" data-pct="25.6"></div></div>
+          <div class="v">83<small class="up">&#9650; Fase beta</small></div>
+        </div>
+      </div>
+    </section>
+    <section class="sec">
+      <div class="sec-head"><span class="idx">02</span><h2>Google Ads &middot; Detalle GA4</h2><span class="note">Eventos &middot; Tr&aacute;fico de pago (cpc)</span></div>
+      <div class="card">
+        <div class="ga-grid">
+          <div class="ga-item lead"><div class="ev">Onb_end_user_person<small>Cuenta creada &middot; usuarios &uacute;nicos</small></div><div class="c tabnum">324</div></div>
+          <div class="ga-item"><div class="ev">Onb_person<small>Paso de perfil Persona &middot; usuarios</small></div><div class="c tabnum" style="color:var(--muted)">1.120</div></div>
+        </div>
+        <div class="ga-foot"><span class="chip">324 usuarios &middot; 950 eventos</span>Tr&aacute;fico de pago en GA4, abril 2026. Cuentas = usuarios &uacute;nicos de Onb_end_user_person.</div>
+      </div>
+    </section>
+
+    <!-- ABRIL FUNNEL -->
+    <section class="sec">
+      <div class="sec-head"><span class="idx">02B</span><h2>Embudo de Registro Detallado</h2><span class="note">Eficiencia de Onboarding (GA4)</span></div>
+      <div class="card">
+        <div class="funnel-container">
+          <div class="funnel-step">
+            <div class="fill funnel-bar g" data-pct="100"></div>
+            <div class="funnel-info">
+              <div class="funnel-label">
+                <span>1. Descarga e Inicio de Registro</span>
+                <small>Evento: Onb_start</small>
+              </div>
+              <div class="funnel-val">2.500 <small>100%</small></div>
+            </div>
+          </div>
+          <div class="funnel-step">
+            <div class="fill funnel-bar g" data-pct="44.8"></div>
+            <div class="funnel-info">
+              <div class="funnel-label">
+                <span>2. Selección de Perfil (Persona)</span>
+                <small>Evento: Onb_person</small>
+              </div>
+              <div class="funnel-val">1.120 <small>44.8%</small></div>
+            </div>
+          </div>
+          <div class="funnel-step">
+            <div class="fill funnel-bar g" data-pct="24.0"></div>
+            <div class="funnel-info">
+              <div class="funnel-label">
+                <span>3. Verificación de Identidad (Facelive)</span>
+                <small>Evento: Onb_Facelive_store</small>
+              </div>
+              <div class="funnel-val">600 <small>24.0%</small></div>
+            </div>
+          </div>
+          <div class="funnel-step">
+            <div class="fill funnel-bar g" data-pct="14.4"></div>
+            <div class="funnel-info">
+              <div class="funnel-label">
+                <span>4. Carga de Documentación</span>
+                <small>Evento: Onb_documents_store</small>
+              </div>
+              <div class="funnel-val">360 <small>14.4%</small></div>
+            </div>
+          </div>
+          <div class="funnel-step">
+            <div class="fill funnel-bar g" data-pct="12.96"></div>
+            <div class="funnel-info">
+              <div class="funnel-label">
+                <span>5. Cuenta Creada y Onboarding Exitoso</span>
+                <small>Evento: Onb_end_user_person</small>
+              </div>
+              <div class="funnel-val">324 <small>13.0%</small></div>
+            </div>
+          </div>
+        </div>
+        <div class="ga-foot" style="margin-top:16px;">
+          Eficiencia global del embudo: <b>13.0%</b> de los usuarios que iniciaron el registro lograron abrir su cuenta Sipy con éxito. Conversión crítica de perfil a cuenta creada: <b>28.9%</b>.
+        </div>
+      </div>
+    </section>
+
+    <section class="sec">
+      <div class="sec-head"><span class="idx">03</span><h2>Meta Ads &middot; Campa&ntilde;as activas</h2><span class="note">Cuenta: L/C &mdash; Inhaus Corporation &mdash; Banco del Austro</span></div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Campa&ntilde;a</th><th>Inversi&oacute;n</th><th>Resultados</th><th>Impresiones</th><th>Alcance</th><th>CPM</th><th>CPC</th><th>Cuentas</th></tr></thead>
+          <tbody>
+            <tr><td><span class="cname">Sipy_Descargas_Android_$900</span><br><span class="obj app">App Installs</span></td><td class="tabnum">$620,30</td><td class="tabnum">580 instal.</td><td class="tabnum">824.000</td><td class="tabnum">210.000</td><td class="tabnum">$0,75</td><td class="tabnum">$0,09</td><td class="acc-cell tabnum">41</td></tr>
+            <tr><td><span class="cname">Sipy_Descargas_HospMun_$10D</span><br><span class="obj app">App Installs</span></td><td class="tabnum">$415,80</td><td class="tabnum">390 instal.</td><td class="tabnum">710.000</td><td class="tabnum">145.000</td><td class="tabnum">$0,58</td><td class="tabnum">$0,06</td><td class="acc-cell tabnum">26</td></tr>
+            <tr><td><span class="cname">Sipy_Interacci&oacute;n_HospMun_$5D</span><br><span class="obj eng">Interacci&oacute;n</span></td><td class="tabnum">$380,50</td><td class="tabnum">42.000 interac.</td><td class="tabnum">350.000</td><td class="tabnum">85.000</td><td class="tabnum">$1,08</td><td class="tabnum">$0,08</td><td class="acc-cell tabnum">0</td></tr>
+            <tr><td><span class="cname">Sipy_Descargas_iOS14_$900</span><br><span class="obj app">App Installs</span></td><td class="tabnum">$375,24</td><td class="tabnum">317 instal.</td><td class="tabnum">284.000</td><td class="tabnum">62.000</td><td class="tabnum">$1,32</td><td class="tabnum">$0,12</td><td class="acc-cell tabnum">16</td></tr>
+          </tbody>
+          <tfoot><tr><td>Total Meta</td><td class="tabnum">$1.791,84</td><td>&mdash;</td><td class="tabnum">2.168.000</td><td class="tabnum">502.000</td><td>&mdash;</td><td>&mdash;</td><td class="tabnum"><span class="acc">83</span></td></tr></tfoot>
+        </table>
+      </div>
+      <div class="insight">
+        <p><b>Análisis Inicial (Abril).</b> Mes de lanzamiento y configuración del embudo. La pauta digital acumuló 407 cuentas creadas con un CAC consolidado relativamente alto de $16,41, debido a la falta de optimización del evento en Meta Ads (que corrió en campañas puras de descargas) y la calibración del proceso de verificación en GA4.</p>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+  // --- WebGL Liquid Metal Shader Shader Setup ---
+  const canvas = document.getElementById('bg3d');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+  const vertexShader = `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = vec4(position, 1.0);
+    }
+  `;
+
+  const fragmentShader = `
+    uniform float u_time;
+    uniform vec2 u_resolution;
+    varying vec2 vUv;
+
+    // Simple 2D noise mapping
+    vec3 permute(vec3 x) { return mod(((x*34.0)+1.0)*x, 289.0); }
+    float snoise(vec2 v){
+      const vec4 C = vec4(0.211324865405187, 0.366025403784439, -0.577350269189626, 0.024390243902439);
+      vec2 i  = floor(v + dot(v, C.yy) );
+      vec2 x0 = v -   i + dot(i, C.xx) ;
+      vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+      vec4 x12 = x0.xyxy + C.xxzz;
+      x12.xy -= i1;
+      i = mod(i, 289.0);
+      vec3 p = permute( permute( i.y + vec3(0.0, i1.y, 1.0) ) + i.x + vec3(0.0, i1.x, 1.0) );
+      vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);
+      m = m*m;
+      m = m*m;
+      vec3 x = 2.0 * fract(p * C.www) - 1.0;
+      vec3 h = abs(x) - 0.5;
+      vec3 a0 = x - floor(x + 0.5);
+      vec3 diff = 1.0 - 2.0 * ( a0*a0 + h*h );
+      vec3 t = m * vec3(a0.x * x0.x + h.x * x0.y, a0.y * x12.x + h.y * x12.y, a0.z * x12.z + h.z * x12.y);
+      return 130.0 * dot(t, diff);
+    }
+
+    void main() {
+      vec2 uv = (gl_FragCoord.xy * 2.0 - u_resolution.xy) / u_resolution.y;
+      
+      // Fluid liquid organic motion distortion
+      float flowX = snoise(uv * 0.7 + u_time * 0.03) * 0.45;
+      float flowY = snoise(uv * 0.7 - u_time * 0.04) * 0.45;
+      vec2 liquidUv = uv + vec2(flowX, flowY);
+
+      // Meta ball organic nodes
+      float dist1 = length(liquidUv - vec2(sin(u_time * 0.09) * 0.6, cos(u_time * 0.11) * 0.3));
+      float dist2 = length(liquidUv - vec2(cos(u_time * 0.07) * 0.7, sin(u_time * 0.13) * 0.4));
+      float dist3 = length(liquidUv - vec2(sin(u_time * 0.06) * 0.5, -cos(u_time * 0.09) * 0.5));
+      
+      float potential = 0.07 / (dist1 + 0.18) + 0.07 / (dist2 + 0.18) + 0.07 / (dist3 + 0.18);
+      
+      // Sipy background palette (deep dark slate / rich green mint accents)
+      vec3 deepBg = vec3(0.039, 0.051, 0.075);
+      vec3 sipyMint = vec3(0.102, 0.878, 0.549);
+      vec3 sipyBlue = vec3(0.361, 0.616, 1.000);
+      
+      vec3 highlightColor = mix(sipyMint, sipyBlue, sin(liquidUv.x * 2.0 + u_time * 0.08) * 0.5 + 0.5);
+      
+      float edge = smoothstep(0.32, 0.42, potential);
+      float reflection = pow(clamp(1.0 - abs(potential - 0.38) * 6.0, 0.0, 1.0), 3.0) * 0.12;
+
+      vec3 finalColor = mix(deepBg, highlightColor, edge * 0.15);
+      finalColor += vec3(reflection);
+
+      // Soft vignette
+      float vignette = 1.0 - length(uv * 0.4);
+      finalColor *= clamp(vignette, 0.15, 1.0);
+
+      gl_FragColor = vec4(finalColor, 1.0);
+    }
+  `;
+
+  const uniforms = {
+    u_time: { value: 0 },
+    u_resolution: { value: new THREE.Vector2() }
+  };
+
+  const material = new THREE.ShaderMaterial({
+    vertexShader,
+    fragmentShader,
+    uniforms
+  });
+
+  const geometry = new THREE.PlaneGeometry(2, 2);
+  const mesh = new THREE.Mesh(geometry, material);
+  scene.add(mesh);
+
+  function resize() {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    renderer.setSize(width, height);
+    uniforms.u_resolution.value.set(width, height);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  function animate(time) {
+    uniforms.u_time.value = time * 0.001;
+    renderer.render(scene, camera);
+    requestAnimationFrame(animate);
+  }
+  requestAnimationFrame(animate);
+
+  // --- Dashboard Tab and Animation Management ---
+  document.querySelectorAll('.tabs button').forEach(button => {
+    button.addEventListener('click', () => {
+      // Remove active classes
+      document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      
+      // Add active state to clicked tab
+      button.classList.add('active');
+      const target = button.getAttribute('data-target');
+      const activePanel = document.getElementById('panel-' + target);
+      activePanel.classList.add('active');
+      
+      // Update top header stamp timestamp text
+      let dateString = "Junio 1–24, 2026";
+      if (target === 'mayo') dateString = "Mayo 1–31, 2026";
+      if (target === 'abril') dateString = "Abril 1–30, 2026";
+      document.getElementById('active-stamp').innerText = dateString;
+
+      // Reset and trigger count animations & fill widths for new panel
+      triggerPanelAnimations(activePanel);
+    });
+  });
+
+  // Animated counters and graphical progress loading
+  function triggerPanelAnimations(panel) {
+    // 1. Counter Numbers
+    panel.querySelectorAll('[data-count]').forEach(el => {
+      const targetVal = parseFloat(el.getAttribute('data-count'));
+      const isMoney = el.getAttribute('data-money') === '1';
+      let start = 0;
+      const duration = 1200; // ms
+      const startTime = performance.now();
+
+      function update(currentTime) {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        // Easing out quad
+        const ease = progress * (2 - progress);
+        const currentVal = ease * targetVal;
+
+        if (isMoney) {
+          el.innerText = '$' + currentVal.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        } else {
+          el.innerText = Math.round(currentVal).toLocaleString('es-EC');
+        }
+
+        if (progress < 1) {
+          requestAnimationFrame(update);
+        } else {
+          // Hard set target on finish
+          if (isMoney) {
+            el.innerText = '$' + targetVal.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          } else {
+            el.innerText = targetVal.toLocaleString('es-EC');
+          }
+        }
+      }
+      requestAnimationFrame(update);
+    });
+
+    // 2. Bar chart / track fills
+    panel.querySelectorAll('.fill').forEach(fill => {
+      fill.style.width = '0%';
+      setTimeout(() => {
+        const pct = fill.getAttribute('data-pct');
+        fill.style.width = pct + '%';
+      }, 50);
+    });
+  }
+
+  // First run animation load trigger
+  window.addEventListener('DOMContentLoaded', () => {
+    triggerPanelAnimations(document.getElementById('panel-junio'));
+    lucide.createIcons();
+  });
+</script>
+<!-- Instagram embed support script -->
+<script async src="//www.instagram.com/embed.js"></script>
+</body>
+</html>

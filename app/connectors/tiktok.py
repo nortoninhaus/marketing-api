@@ -42,41 +42,56 @@ class TikTokAdsConnector(BaseConnector):
         errors = []
         
         for data_level in ["AUCTION_CAMPAIGN", "RESERVATION_CAMPAIGN"]:
-            params = {
-                "advertiser_id": advertiser_id,
-                "report_type": "BASIC",
-                "data_level": data_level,
-                "dimensions": '["campaign_id", "stat_time_day"]',
-                "metrics": json.dumps(request.metrics),
-                "start_date": request.start_date.strftime("%Y-%m-%d"),
-                "end_date": request.end_date.strftime("%Y-%m-%d")
-            }
-            try:
-                response = requests.get(url, params=params, headers=headers, timeout=30)
-                response.raise_for_status()
-                data = response.json()
-                
-                if data.get("code", 0) != 0:
-                    msg = data.get("message", "Unknown error")
-                    code = data.get("code")
-                    # Check if this is just an unsupported data level error
-                    if code == 40002 and "Unsupported data_level" in msg:
-                        logger.info(f"TikTok Ads data level {data_level} not supported for advertiser {advertiser_id}.")
-                        continue
+            page = 1
+            page_size = 1000
+            while True:
+                params = {
+                    "advertiser_id": advertiser_id,
+                    "report_type": "BASIC",
+                    "data_level": data_level,
+                    "dimensions": '["campaign_id", "stat_time_day"]',
+                    "metrics": json.dumps(request.metrics),
+                    "start_date": request.start_date.strftime("%Y-%m-%d"),
+                    "end_date": request.end_date.strftime("%Y-%m-%d"),
+                    "page": page,
+                    "page_size": page_size
+                }
+                try:
+                    response = requests.get(url, params=params, headers=headers, timeout=30)
+                    self._record_rate_limit(response.headers)
+                    response.raise_for_status()
+                    data = response.json()
                     
-                    logger.warning(f"TikTok Ads API error for level {data_level}: code={code}, message={msg}")
-                    errors.append(f"{data_level} API error: {msg} (code {code})")
-                else:
-                    success_count += 1
-                    for item in data.get("data", {}).get("list", []):
-                        results.append(CampaignData(
-                            campaign_name=item.get("metrics", {}).get("campaign_name", item.get("dimensions", {}).get("campaign_id")),
-                            date=item.get("dimensions", {}).get("stat_time_day"),
-                            metrics=item.get("metrics", {})
-                        ))
-            except Exception as e:
-                logger.warning(f"TikTok Ads query failed for level {data_level}: {e}")
-                errors.append(f"{data_level} query failed: {e}")
+                    if data.get("code", 0) != 0:
+                        msg = data.get("message", "Unknown error")
+                        code = data.get("code")
+                        # Check if this is just an unsupported data level error
+                        if code == 40002 and "Unsupported data_level" in msg:
+                            logger.info(f"TikTok Ads data level {data_level} not supported for advertiser {advertiser_id}.")
+                            break
+                        
+                        logger.warning(f"TikTok Ads API error for level {data_level}: code={code}, message={msg}")
+                        errors.append(f"{data_level} API error: {msg} (code {code})")
+                        break
+                    else:
+                        success_count += 1
+                        page_items = data.get("data", {}).get("list", [])
+                        for item in page_items:
+                            results.append(CampaignData(
+                                campaign_name=item.get("metrics", {}).get("campaign_name", item.get("dimensions", {}).get("campaign_id")),
+                                date=item.get("dimensions", {}).get("stat_time_day"),
+                                metrics=item.get("metrics", {})
+                            ))
+                        # Check if there are more pages
+                        page_info = data.get("data", {}).get("page_info", {})
+                        total_page = page_info.get("total_page", 1)
+                        if page >= total_page or not page_items:
+                            break
+                        page += 1
+                except Exception as e:
+                    logger.warning(f"TikTok Ads query failed for level {data_level}: {e}")
+                    errors.append(f"{data_level} query failed: {e}")
+                    break
                 
         if success_count == 0 and errors:
             raise ValueError(f"TikTok Ads query failed: {'; '.join(errors)}")
@@ -149,19 +164,39 @@ class TikTokOrganicConnector(BaseConnector):
         
         if wants_profile_only:
             if is_bc_asset:
+                # Fetch real profile data from the Business API
+                bc_profile_url = "https://business-api.tiktok.com/open_api/v1.3/business/get/"
+                bc_headers = {"Access-Token": access_token}
+                bc_params = {"business_id": open_id}
+                profile_metrics = {}
+                try:
+                    bc_response = requests.get(bc_profile_url, params=bc_params, headers=bc_headers, timeout=30)
+                    self._record_rate_limit(bc_response.headers)
+                    bc_response.raise_for_status()
+                    bc_data = bc_response.json()
+                    if bc_data.get("code", 0) == 0:
+                        bc_info = bc_data.get("data", {})
+                        profile_metrics["follower_count"] = bc_info.get("follower_count")
+                        profile_metrics["profile_views"] = bc_info.get("profile_views")
+                    else:
+                        logger.warning(f"TikTok Business profile API returned code {bc_data.get('code')}: {bc_data.get('message')}")
+                        profile_metrics["follower_count"] = None
+                        profile_metrics["profile_views"] = None
+                except Exception as e:
+                    logger.warning(f"Failed to fetch TikTok Business profile metrics: {e}")
+                    profile_metrics["follower_count"] = None
+                    profile_metrics["profile_views"] = None
                 return [CampaignData(
                     campaign_name=creds.get("account_name", "TikTok Brand Account"),
                     date=request.start_date.strftime("%Y-%m-%d"),
-                    metrics={
-                        "follower_count": 10500,
-                        "profile_views": 4200
-                    }
+                    metrics=profile_metrics
                 )]
             else:
                 base_url = "https://open-sandbox.tiktokapis.com" if settings.use_tiktok_sandbox else "https://open.tiktokapis.com"
                 url = f"{base_url}/v2/user/info/"
                 headers = {"Authorization": f"Bearer {access_token}"}
                 response = requests.get(url, headers=headers, params={"fields": "follower_count,display_name"}, timeout=30)
+                self._record_rate_limit(response.headers)
                 response.raise_for_status()
                 user_data = response.json().get("data", {}).get("user", {})
                 return [CampaignData(
@@ -195,6 +230,7 @@ class TikTokOrganicConnector(BaseConnector):
                 "fields": json.dumps(requested_fields)
             }
             response = requests.get(url, params=params, headers=headers, timeout=30)
+            self._record_rate_limit(response.headers)
             response.raise_for_status()
             data = response.json()
             
@@ -231,6 +267,7 @@ class TikTokOrganicConnector(BaseConnector):
             
             params = {"fields": ",".join(requested_fields)}
             response = requests.get(url, headers=headers, params=params, timeout=30)
+            self._record_rate_limit(response.headers)
             response.raise_for_status()
             data = response.json()
             

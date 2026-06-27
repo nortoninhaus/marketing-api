@@ -60,32 +60,74 @@ class LinkedInAdsConnector(BaseConnector):
             "X-Restli-Protocol-Version": "2.0.0"
         }
         
-        response = requests.get(url, headers=headers, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-        
+        # Paginate through results using start/count
         results = []
-        for item in data.get("elements", []):
-            campaign_name = item.get("campaign", item.get("creative", item.get("campaignGroup", "Unknown")))
-            date_range = item.get("dateRange", {})
-            day_start = date_range.get("start", {})
+        start = 0
+        count = 500
+        
+        while True:
+            paginated_url = f"{url}&start={start}&count={count}"
+            response = requests.get(paginated_url, headers=headers, timeout=30)
+            self._record_rate_limit(response.headers)
+            response.raise_for_status()
+            data = response.json()
             
-            if day_start and "year" in day_start and "month" in day_start and "day" in day_start:
-                date_str = f"{day_start['year']}-{day_start['month']:02d}-{day_start['day']:02d}"
-            else:
-                date_str = start_str
+            elements = data.get("elements", [])
+            for item in elements:
+                campaign_name = item.get("campaign", item.get("creative", item.get("campaignGroup", "Unknown")))
+                date_range = item.get("dateRange", {})
+                day_start = date_range.get("start", {})
                 
-            results.append(CampaignData(
-                campaign_name=str(campaign_name),
-                date=date_str,
-                metrics={m: item.get(m, 0) for m in request.metrics}
-            ))
+                if day_start and "year" in day_start and "month" in day_start and "day" in day_start:
+                    date_str = f"{day_start['year']}-{day_start['month']:02d}-{day_start['day']:02d}"
+                else:
+                    date_str = start_str
+                    
+                metrics_dict = {}
+                clicks = float(item.get("clicks", 0))
+                impressions = float(item.get("impressions", 0))
+                cost = float(item.get("costInLocalCurrency", 0))
+                
+                for m in request.metrics:
+                    if m == "ctr":
+                        metrics_dict["ctr"] = clicks / impressions if impressions > 0 else 0.0
+                    elif m == "cpc":
+                        metrics_dict["cpc"] = cost / clicks if clicks > 0 else 0.0
+                    elif m == "cpm":
+                        metrics_dict["cpm"] = (cost / impressions) * 1000.0 if impressions > 0 else 0.0
+                    elif m == "roas":
+                        # Calculate ROAS = conversion_value / cost if conversion value data is available
+                        conversion_value = item.get("conversionValueInLocalCurrency")
+                        if conversion_value is not None and cost > 0:
+                            metrics_dict["roas"] = float(conversion_value) / cost
+                        else:
+                            metrics_dict["roas"] = None
+                    elif m == "conversions":
+                        # Map to externalWebsiteConversions + oneClickLeads (not externalId)
+                        ext_conversions = float(item.get("externalWebsiteConversions", 0))
+                        one_click_leads = float(item.get("oneClickLeads", 0))
+                        metrics_dict["conversions"] = ext_conversions + one_click_leads
+                    else:
+                        metrics_dict[m] = item.get(m, 0)
+                        
+                results.append(CampaignData(
+                    campaign_name=str(campaign_name),
+                    date=date_str,
+                    metrics=metrics_dict
+                ))
+            
+            # Check if there are more pages
+            paging = data.get("paging", {})
+            total = paging.get("total", len(elements))
+            start += count
+            if start >= total or not elements:
+                break
             
         return results
 
     def get_schema(self) -> Dict[str, Any]:
         return {
-            "metrics": ["impressions", "clicks", "costInLocalCurrency", "externalId"],
+            "metrics": ["impressions", "clicks", "costInLocalCurrency", "externalWebsiteConversions", "oneClickLeads", "ctr", "cpc", "cpm", "roas", "conversions"],
             "dimensions": ["campaign", "creative", "campaign_group", "dateRange"]
         }
 
@@ -137,6 +179,7 @@ class LinkedInOrganicConnector(BaseConnector):
             post_urn = request.post_id if request.post_id.startswith("urn:li:") else f"urn:li:share:{request.post_id}"
             url = f"https://api.linkedin.com/rest/posts/{post_urn}"
             response = requests.get(url, headers=headers, timeout=30)
+            self._record_rate_limit(response.headers)
             response.raise_for_status()
             data = response.json()
             return [CampaignData(
@@ -148,6 +191,7 @@ class LinkedInOrganicConnector(BaseConnector):
             org_urn = org_id if org_id.startswith("urn:li:") else f"urn:li:organization:{org_id}"
             url = f"https://api.linkedin.com/rest/organizationalEntityShareStatistics?q=organizationalEntity&organizationalEntity={org_urn}&timeIntervals.timeGranularityType=DAY"
             response = requests.get(url, headers=headers, timeout=30)
+            self._record_rate_limit(response.headers)
             response.raise_for_status()
             data = response.json()
             

@@ -32,18 +32,22 @@ class Platform(str, Enum):
     APPLE_ADS = "apple_ads"
     THREADS = "threads"
     SPOTIFY_ADS = "spotify_ads"
+    PINTEREST_ADS = "pinterest_ads"
+    PINTEREST_ORGANIC = "pinterest_organic"
+    SHOPIFY = "shopify"
 
     @classmethod
     def ads_platforms(cls) -> list["Platform"]:
-        return [cls.META_ADS, cls.GOOGLE_ADS, cls.TIKTOK_ADS, cls.LINKEDIN_ADS, cls.X_ADS, cls.APPLE_ADS, cls.SPOTIFY_ADS]
+        return [cls.META_ADS, cls.GOOGLE_ADS, cls.TIKTOK_ADS, cls.LINKEDIN_ADS, cls.X_ADS, cls.APPLE_ADS, cls.SPOTIFY_ADS, cls.PINTEREST_ADS]
 
     @classmethod
     def organic_platforms(cls) -> list["Platform"]:
-        return [cls.META_ORGANIC, cls.TIKTOK_ORGANIC, cls.LINKEDIN_ORGANIC, cls.X_ORGANIC, cls.YOUTUBE, cls.THREADS]
+        return [cls.META_ORGANIC, cls.TIKTOK_ORGANIC, cls.LINKEDIN_ORGANIC, cls.X_ORGANIC, cls.YOUTUBE, cls.THREADS, cls.PINTEREST_ORGANIC]
 
     @classmethod
     def app_store_platforms(cls) -> list["Platform"]:
         return [cls.GOOGLE_PLAY, cls.APPLE_APP_STORE]
+
 
 
 class DataRequest(BaseModel):
@@ -141,6 +145,18 @@ class TikTokOrganicProxyRequest(BaseModel):
     method: str = Field("GET", description="HTTP method: GET or POST")
     params: Optional[Dict[str, Any]] = Field(None, description="Query parameters")
     json_body: Optional[Dict[str, Any]] = Field(None, description="JSON body for POST requests")
+
+
+class PlatformProxyRequest(BaseModel):
+    """Generic proxy request model for executing arbitrary platform API calls."""
+    client_id: str = Field(..., description="ID of the client/agency")
+    account_id: str = Field(..., description="Platform-specific account/advertiser/property/store identifier")
+    path: str = Field(..., description="The API path/endpoint to call")
+    method: str = Field("GET", description="HTTP method (e.g., GET, POST, PUT, DELETE)")
+    params: Optional[Dict[str, Any]] = Field(None, description="Query parameters")
+    json_body: Optional[Dict[str, Any]] = Field(None, description="JSON body for write requests")
+    headers: Optional[Dict[str, str]] = Field(None, description="Optional custom headers")
+
 
 
 

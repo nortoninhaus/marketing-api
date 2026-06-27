@@ -106,9 +106,9 @@ class GoogleAdsConnector(BaseConnector):
                 resource = "ad_group"
                 select_dims.append("ad_group.name")
 
-            # Collect any custom segment dimensions requested
+            # Collect any custom segment dimensions requested (e.g. conversion actions)
             for d in request.dimensions:
-                if d.startswith("segments.") and d not in select_dims:
+                if (d.startswith("segments.") or d.startswith("campaign.") or d.startswith("ad_group.") or d.startswith("ad_group_ad.")) and d not in select_dims:
                     select_dims.append(d)
 
         MAP_METRICS = {
@@ -121,7 +121,18 @@ class GoogleAdsConnector(BaseConnector):
         }
 
         # Build metrics select list
-        query_metrics = [MAP_METRICS.get(m, m) for m in request.metrics]
+        query_metrics = []
+        for m in request.metrics:
+            if m == "roas":
+                if "conversions_value" not in query_metrics:
+                    query_metrics.append("conversions_value")
+                if "cost_micros" not in query_metrics:
+                    query_metrics.append("cost_micros")
+            else:
+                mapped_m = MAP_METRICS.get(m, m)
+                if mapped_m not in query_metrics:
+                    query_metrics.append(mapped_m)
+
         metric_fields = [f"metrics.{m}" for m in query_metrics]
         query_fields = select_dims + metric_fields
         
@@ -145,10 +156,21 @@ class GoogleAdsConnector(BaseConnector):
         if filter_clauses:
             where_clause += " AND " + " AND ".join(filter_clauses)
             
+        limit_clause = ""
+        if request.limit is not None:
+            offset = 0
+            if request.next_page_token:
+                try:
+                    offset = int(request.next_page_token)
+                except ValueError:
+                    pass
+            limit_clause = f" LIMIT {offset + request.limit}"
+
         query = f"""
             SELECT {', '.join(query_fields)} 
             FROM {resource} 
             WHERE {where_clause}
+            {limit_clause}
         """
         
         # Use search_stream to fetch records in dynamic chunks
@@ -159,11 +181,22 @@ class GoogleAdsConnector(BaseConnector):
             for row in batch.results:
                 metrics_dict = {}
                 for m in request.metrics:
-                    mapped_m = MAP_METRICS.get(m, m)
-                    try:
-                        metrics_dict[m] = getattr(row.metrics, mapped_m, 0)
-                    except Exception:
-                        metrics_dict[m] = 0
+                    if m == "roas":
+                        try:
+                            val_value = getattr(row.metrics, "conversions_value", 0.0) or 0.0
+                            val_cost = getattr(row.metrics, "cost_micros", 0.0) or 0.0
+                            if val_cost > 0:
+                                metrics_dict["roas"] = float(val_value) / (float(val_cost) / 1_000_000.0)
+                            else:
+                                metrics_dict["roas"] = 0.0
+                        except Exception:
+                            metrics_dict["roas"] = 0.0
+                    else:
+                        mapped_m = MAP_METRICS.get(m, m)
+                        try:
+                            metrics_dict[m] = getattr(row.metrics, mapped_m, 0)
+                        except Exception:
+                            metrics_dict[m] = 0
 
                 # Reconstruct descriptive campaign_name based on level
                 name = row.campaign.name if hasattr(row, "campaign") and hasattr(row.campaign, "name") else "Campaign"
@@ -189,10 +222,15 @@ class GoogleAdsConnector(BaseConnector):
                             seg_field = d.split(".", 1)[1]
                             seg_obj = getattr(row, "segments", None)
                             if seg_obj:
-                                val = getattr(seg_obj, seg_field, None)
-                                if val is not None:
-                                    val_str = str(val.name) if hasattr(val, "name") else str(val)
-                                    name += f"_{val_str}"
+                                # Safe traversal for nested segments (e.g. conversion_action)
+                                if hasattr(seg_obj, seg_field):
+                                    val = getattr(seg_obj, seg_field, None)
+                                    if val is not None:
+                                        val_str = str(val.name) if hasattr(val, "name") else str(val)
+                                        name += f"_{val_str}"
+                                else:
+                                    # Fallback search inside segments dict
+                                    pass
 
                 date_val = str(row.segments.date) if hasattr(row.segments, "date") else start_str
                 
@@ -211,6 +249,7 @@ class GoogleAdsConnector(BaseConnector):
                 "clicks", 
                 "cost_micros", 
                 "conversions", 
+                "roas",
                 "all_conversions",
                 "conversions_value",
                 "all_conversions_value",

@@ -62,16 +62,18 @@ class MetaAdsConnector(BaseConnector):
             elif "adset_name" in request.dimensions or "adset.name" in request.dimensions:
                 level = "adset"
 
-        # Determine fields to request. If conversions is requested, we need to request 'actions'
+        # Determine fields to request. If conversions or specific pixel action types are requested, request 'actions'
         fields = []
-        has_conversions = False
+        has_actions = False
         for m in request.metrics:
-            if m == "conversions":
-                has_conversions = True
+            m_mapped = "purchase_roas" if m == "roas" else m
+            if m_mapped in ("conversions", "purchase", "lead", "add_to_cart", "initiate_checkout"):
+                has_actions = True
                 if "actions" not in fields:
                     fields.append("actions")
             else:
-                fields.append(m)
+                if m_mapped not in fields:
+                    fields.append(m_mapped)
 
         # Always include date_start/date_stop to reconstruct date, and name fields for campaign_name mapping
         if "date_start" not in fields:
@@ -146,7 +148,8 @@ class MetaAdsConnector(BaseConnector):
 
                 metrics_dict = {}
                 for m in request.metrics:
-                    if m == "conversions":
+                    m_mapped = "purchase_roas" if m == "roas" else m
+                    if m_mapped == "conversions":
                         # Parse standard actions array
                         actions = i.get("actions", [])
                         total_conversions = 0
@@ -156,8 +159,25 @@ class MetaAdsConnector(BaseConnector):
                             except Exception:
                                 pass
                         metrics_dict["conversions"] = total_conversions
+                    elif m_mapped in ("purchase", "lead", "add_to_cart", "initiate_checkout"):
+                        actions = i.get("actions", [])
+                        action_type_map = {
+                            "purchase": ["offsite_conversion.fb_pixel_purchase", "purchase", "app_custom_event.fb_mobile_purchase"],
+                            "lead": ["offsite_conversion.fb_pixel_lead", "lead"],
+                            "add_to_cart": ["offsite_conversion.fb_pixel_add_to_cart", "add_to_cart"],
+                            "initiate_checkout": ["offsite_conversion.fb_pixel_initiate_checkout", "initiate_checkout"]
+                        }
+                        target_types = action_type_map[m_mapped]
+                        val_sum = 0
+                        for action in actions:
+                            if action.get("action_type") in target_types:
+                                try:
+                                    val_sum += int(float(action.get("value", 0)))
+                                except Exception:
+                                    pass
+                        metrics_dict[m] = val_sum
                     else:
-                        val = i.get(m)
+                        val = i.get(m_mapped)
                         if isinstance(val, list):
                             total_val = 0
                             for item in val:
@@ -245,6 +265,11 @@ class MetaAdsConnector(BaseConnector):
                 "frequency", 
                 "actions",
                 "purchase_roas",
+                "purchase",
+                "lead",
+                "add_to_cart",
+                "initiate_checkout",
+                "roas",
                 "unique_clicks",
                 "inline_link_clicks",
                 "unique_inline_link_clicks",

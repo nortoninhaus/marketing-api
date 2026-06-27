@@ -54,26 +54,30 @@ class SpotifyAdsConnector(BaseConnector):
         }
         
         # Map requested metrics to Spotify uppercase metrics
-        spotify_metrics = []
+        spotify_metrics = set()
         for m in request.metrics:
             if m == "impressions":
-                spotify_metrics.append("IMPRESSIONS")
+                spotify_metrics.add("IMPRESSIONS")
             elif m == "clicks":
-                spotify_metrics.append("CLICKS")
+                spotify_metrics.add("CLICKS")
             elif m == "spend":
-                spotify_metrics.append("SPEND")
+                spotify_metrics.add("SPEND")
             elif m == "reach":
-                spotify_metrics.append("REACH")
+                spotify_metrics.add("REACH")
             elif m == "frequency":
-                spotify_metrics.append("FREQUENCY")
+                spotify_metrics.add("FREQUENCY")
+            elif m in ("ctr", "cpc", "cpm", "roas"):
+                spotify_metrics.add("IMPRESSIONS")
+                spotify_metrics.add("CLICKS")
+                spotify_metrics.add("SPEND")
                 
         if not spotify_metrics:
-            spotify_metrics = ["IMPRESSIONS"]
+            spotify_metrics = {"IMPRESSIONS"}
             
         params = {
             "start_date": start_str,
             "end_date": end_str,
-            "metrics": ",".join(spotify_metrics)
+            "metrics": ",".join(sorted(spotify_metrics))
         }
         
         response = requests.get(url, headers=headers, params=params, timeout=30)
@@ -92,9 +96,23 @@ class SpotifyAdsConnector(BaseConnector):
             metrics_raw = item.get("metrics", {})
             
             metrics_dict = {}
+            impressions = float(metrics_raw.get("IMPRESSIONS", 0))
+            clicks = float(metrics_raw.get("CLICKS", 0))
+            spend = float(metrics_raw.get("SPEND", 0))
+            
             for m in request.metrics:
-                native_key = m.upper()
-                metrics_dict[m] = metrics_raw.get(native_key, 0)
+                if m == "ctr":
+                    metrics_dict["ctr"] = clicks / impressions if impressions > 0 else 0.0
+                elif m == "cpc":
+                    metrics_dict["cpc"] = spend / clicks if clicks > 0 else 0.0
+                elif m == "cpm":
+                    metrics_dict["cpm"] = (spend / impressions) * 1000.0 if impressions > 0 else 0.0
+                elif m == "roas":
+                    # Spotify Ads API does not provide conversion value data for ROAS calculation
+                    metrics_dict["roas"] = None
+                else:
+                    native_key = m.upper()
+                    metrics_dict[m] = metrics_raw.get(native_key, 0)
                 
             results.append(CampaignData(
                 campaign_name=campaign_name,
@@ -111,10 +129,10 @@ class SpotifyAdsConnector(BaseConnector):
             ))
             
         return results
-
+ 
     def get_schema(self) -> Dict[str, Any]:
         return {
-            "metrics": ["impressions", "clicks", "spend", "frequency", "reach"],
+            "metrics": ["impressions", "clicks", "spend", "frequency", "reach", "ctr", "cpc", "cpm", "roas"],
             "dimensions": ["campaign_id", "campaign_name", "date"],
             "metadata": {
                 "api_version": "v3"

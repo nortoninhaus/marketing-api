@@ -92,6 +92,14 @@ class GA4Connector(BaseConnector):
                 else:
                     dimension_filters.append(expr)
 
+        limit = request.limit
+        offset = 0
+        if request.next_page_token:
+            try:
+                offset = int(request.next_page_token)
+            except ValueError:
+                pass
+
         report_params = {
             "property": f"properties/{creds['property_id']}",
             "date_ranges": [DateRange(
@@ -101,6 +109,11 @@ class GA4Connector(BaseConnector):
             "metrics": [Metric(name=m) for m in request.metrics],
             "dimensions": [Dimension(name=d) for d in dims]
         }
+
+        if limit is not None:
+            report_params["limit"] = limit
+        if offset > 0:
+            report_params["offset"] = offset
 
         if dimension_filters:
             if len(dimension_filters) == 1:

@@ -265,10 +265,25 @@ def test_tiktok_organic_connector_fetch_data():
         "is_bc_asset": True,
         "account_name": "My Brand Profile"
     }):
-        res = connector.fetch_data(req_profile)
-        assert len(res) == 1
-        assert res[0].metrics["follower_count"] == 10500
-        assert res[0].campaign_name == "My Brand Profile"
+        with patch("requests.get") as mock_get_bc:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.headers = {"x-rate-limit-remaining": "100"}
+            mock_resp.json.return_value = {
+                "code": 0,
+                "data": {
+                    "follower_count": 10500,
+                    "profile_views": 4200
+                }
+            }
+            mock_get_bc.return_value = mock_resp
+
+            res = connector.fetch_data(req_profile)
+            assert len(res) == 1
+            assert res[0].metrics["follower_count"] == 10500
+            assert res[0].campaign_name == "My Brand Profile"
+            mock_get_bc.assert_called_once()
+
 
     # Test Business Center Organic Video Stats with dynamic mapping
     req_videos = DataRequest(

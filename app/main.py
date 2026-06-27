@@ -44,6 +44,8 @@ from app.connectors.google_play import GooglePlayConnector
 from app.connectors.apple import AppleAppStoreConnector, AppleAdsConnector
 from app.connectors.threads import ThreadsConnector
 from app.connectors.spotify import SpotifyAdsConnector
+from app.connectors.pinterest import PinterestAdsConnector, PinterestOrganicConnector
+from app.connectors.shopify import ShopifyConnector
 
 # Configure root logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -66,7 +68,9 @@ dispatcher.register(Platform.APPLE_APP_STORE, AppleAppStoreConnector())
 dispatcher.register(Platform.APPLE_ADS, AppleAdsConnector())
 dispatcher.register(Platform.THREADS, ThreadsConnector())
 dispatcher.register(Platform.SPOTIFY_ADS, SpotifyAdsConnector())
-# Future connectors to register here...
+dispatcher.register(Platform.PINTEREST_ADS, PinterestAdsConnector())
+dispatcher.register(Platform.PINTEREST_ORGANIC, PinterestOrganicConnector())
+dispatcher.register(Platform.SHOPIFY, ShopifyConnector())
 
 app = FastAPI(
     title="Inhaus Marketing Data API",
@@ -105,41 +109,78 @@ app.include_router(oauth_router)
 from app.routers.sota import router as sota_router
 app.include_router(sota_router)
 
+# Register Clients router
+from app.routers.clients import router as clients_router
+app.include_router(clients_router)
+
 # Mount FastMCP server and protect it with middleware
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from app.mcp import mcp
 
-@app.middleware("http")
-async def mcp_auth_middleware(request: Request, call_next):
-    # Match /mcp, /mcp_http, etc.
-    if request.url.path.startswith("/mcp") or request.url.path.startswith("/mcp_http"):
-        # Exclude /messages subpath from API key check since standard MCP SSE clients
-        # might not copy query parameters or custom headers on POST tool calls.
-        # The session_id itself serves as the secure authorization token for messages.
-        if "/messages" in request.url.path:
-            return await call_next(request)
-        api_key = request.headers.get("X-API-Key")
-        if not api_key:
-            api_key = request.query_params.get("api_key")
-        if api_key != settings.api_key:
-            return JSONResponse(status_code=401, content={"detail": "Invalid API Key"})
-    return await call_next(request)
+class InhausASGIMiddleware:
+    def __init__(self, app):
+        self.app = app
 
-@app.middleware("http")
-async def latency_logging_middleware(request: Request, call_next):
-    """Log structured request/response info with latency."""
-    start = _time.monotonic()
-    response = await call_next(request)
-    elapsed_ms = (_time.monotonic() - start) * 1000
-    # Only log API and MCP routes
-    path = request.url.path
-    if path.startswith("/api/") or path.startswith("/mcp") or path.startswith("/mcp_http"):
-        logger.info(
-            f"[HTTP] {request.method} {path} → {response.status_code} "
-            f"({elapsed_ms:.0f}ms)"
-        )
-    return response
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        method = scope.get("method", "")
+
+        # 1. MCP Authentication (matches /mcp or /mcp_http)
+        if path.startswith("/mcp") or path.startswith("/mcp_http"):
+            # Exclude /messages subpath from API key check since standard MCP SSE clients
+            # might not copy query parameters or custom headers on POST tool calls.
+            # The session_id itself serves as the secure authorization token for messages.
+            if "/messages" not in path:
+                headers = {k.decode("latin1").lower(): v.decode("latin1") for k, v in scope.get("headers", [])}
+                api_key = headers.get("x-api-key")
+                if not api_key:
+                    auth_header = headers.get("authorization")
+                    if auth_header and auth_header.lower().startswith("bearer "):
+                        api_key = auth_header.split(" ", 1)[1]
+                if not api_key:
+                    from urllib.parse import parse_qs
+                    query_string = scope.get("query_string", b"").decode("latin1")
+                    query_params = parse_qs(query_string)
+                    api_key = query_params.get("api_key", [None])[0]
+
+                if api_key != settings.api_key:
+                    await send({
+                        "type": "http.response.start",
+                        "status": 401,
+                        "headers": [
+                            (b"content-type", b"application/json"),
+                        ]
+                    })
+                    import json
+                    await send({
+                        "type": "http.response.body",
+                        "body": json.dumps({"detail": "Invalid API Key"}).encode("utf-8"),
+                        "more_body": False
+                    })
+                    return
+
+        # 2. Latency logging (matches /api/, /mcp, /mcp_http)
+        if path.startswith("/api/") or path.startswith("/mcp") or path.startswith("/mcp_http"):
+            import time as _time
+            start = _time.monotonic()
+            
+            async def wrapped_send(message):
+                if message["type"] == "http.response.start":
+                    elapsed_ms = (_time.monotonic() - start) * 1000
+                    status_code = message.get("status", 200)
+                    logger.info(f"[HTTP] {method} {path} → {status_code} ({elapsed_ms:.0f}ms)")
+                await send(message)
+                
+            await self.app(scope, receive, wrapped_send)
+        else:
+            await self.app(scope, receive, send)
+
+app.add_middleware(InhausASGIMiddleware)
 
 # Mount SSE transport under /mcp (exposing /mcp/sse and /mcp/messages)
 app.mount("/mcp", mcp.sse_app())
@@ -203,7 +244,10 @@ PLATFORM_API_VERSIONS = {
     "apple_app_store": "v1.6",
     "apple_ads": "v5",
     "threads": "v1.0",
-    "spotify_ads": "v3"
+    "spotify_ads": "v3",
+    "pinterest_ads": "v5",
+    "pinterest_organic": "v5",
+    "shopify": "2024-04"
 }
 
 @app.get("/api/v1/platforms", response_model=List[PlatformInfo])
@@ -553,6 +597,11 @@ async def get_comments(
                 from app.connectors.x_twitter import XOrganicConnector
                 connector = XOrganicConnector()
                 return connector.fetch_comments(request.post_id, bearer_token)
+            elif request.platform == Platform.PINTEREST_ORGANIC:
+                access_token = creds.get("access_token") or settings.pinterest_access_token
+                from app.connectors.pinterest import PinterestOrganicConnector
+                connector = PinterestOrganicConnector()
+                return connector.fetch_comments(request.post_id, access_token)
             else:
                 raise ValueError(f"Unsupported platform {request.platform.value}")
         finally:
@@ -560,7 +609,7 @@ async def get_comments(
                 del thread_local_storage.current_request
 
     try:
-        if request.platform not in (Platform.THREADS, Platform.META_ADS, Platform.META_ORGANIC, Platform.YOUTUBE, Platform.X_ORGANIC):
+        if request.platform not in (Platform.THREADS, Platform.META_ADS, Platform.META_ORGANIC, Platform.YOUTUBE, Platform.X_ORGANIC, Platform.PINTEREST_ORGANIC):
             return CommentsResponse(
                 status="error",
                 platform=request.platform,
@@ -568,7 +617,7 @@ async def get_comments(
                 errors=[ErrorDetail(
                     code="UNSUPPORTED",
                     message=f"Comments not supported for platform {request.platform.value}. "
-                            f"Supported: meta_ads, meta_organic, threads, youtube, x_organic",
+                            f"Supported: meta_ads, meta_organic, threads, youtube, x_organic, pinterest_organic",
                     retryable=False
                 )]
             )
@@ -801,5 +850,178 @@ async def tiktok_organic_proxy(
             except Exception:
                 raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
         raise HTTPException(status_code=502, detail=f"Failed to communicate with TikTok Organic API: {e}")
+
+
+# ===================================================================
+# Unified Platform Proxy Handler
+# ===================================================================
+from fastapi.responses import JSONResponse
+from app.models.requests import PlatformProxyRequest
+
+async def _execute_generic_proxy(
+    platform_name: str, 
+    request: PlatformProxyRequest, 
+    default_base_url: str, 
+    auth_type: str = "bearer", 
+    default_token: str = ""
+):
+    creds = await credential_store.resolve_credentials(
+        request.client_id, platform_name, request.account_id
+    )
+    if not creds:
+        creds = {}
+
+    access_token = creds.get("access_token") or default_token
+    
+    headers = {"Content-Type": "application/json"}
+    if request.headers:
+        headers.update(request.headers)
+
+    if auth_type == "bearer" and access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    elif auth_type == "shopify" and access_token:
+        headers["X-Shopify-Access-Token"] = access_token
+    elif auth_type == "x-ap-context" and access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+        headers["X-AP-Context"] = request.account_id
+    elif auth_type == "google_ads":
+        dev_token = creds.get("developer_token") or settings.google_ads_developer_token
+        if dev_token:
+            headers["developer-token"] = dev_token
+        login_cust_id = creds.get("login_customer_id")
+        if login_cust_id:
+            headers["login-customer-id"] = str(login_cust_id).replace("-", "")
+        if access_token:
+            headers["Authorization"] = f"Bearer {access_token}"
+    elif auth_type == "apple_app_store":
+        try:
+            key_id = creds.get("key_id") or settings.apple_key_id
+            issuer_id = creds.get("issuer_id") or settings.apple_issuer_id
+            private_key_path = creds.get("private_key_path") or settings.apple_private_key_path
+            if key_id and issuer_id and private_key_path:
+                with open(private_key_path, 'r') as f:
+                    private_key = f.read()
+                import jwt
+                import time
+                token = jwt.encode(
+                    {"iss": issuer_id, "iat": int(time.time()), "exp": int(time.time()) + 1200, "aud": "appstoreconnect-v1"},
+                    private_key, algorithm="ES256", headers={"kid": key_id}
+                )
+                headers["Authorization"] = f"Bearer {token}"
+            elif access_token:
+                headers["Authorization"] = f"Bearer {access_token}"
+        except Exception as jwt_err:
+            logger.error(f"Failed to generate JWT for Apple App Store proxy: {jwt_err}")
+            if access_token:
+                headers["Authorization"] = f"Bearer {access_token}"
+
+    base_url = default_base_url
+    if platform_name == "shopify":
+        shop_domain = request.account_id or creds.get("shop_name") or settings.shopify_shop_name
+        if shop_domain:
+            if "." not in shop_domain:
+                shop_domain = f"{shop_domain}.myshopify.com"
+            base_url = f"https://{shop_domain}/admin/api/2024-04"
+
+    path = request.path.lstrip("/")
+    url = f"{base_url}/{path}"
+    
+    try:
+        method = request.method.upper()
+        if method == "GET":
+            response = await asyncio.to_thread(
+                _requests.get, url, params=request.params, headers=headers, timeout=30
+            )
+        elif method == "POST":
+            response = await asyncio.to_thread(
+                _requests.post, url, json=request.json_body, params=request.params, headers=headers, timeout=30
+            )
+        elif method == "PUT":
+            response = await asyncio.to_thread(
+                _requests.put, url, json=request.json_body, params=request.params, headers=headers, timeout=30
+            )
+        elif method == "DELETE":
+            response = await asyncio.to_thread(
+                _requests.delete, url, params=request.params, headers=headers, timeout=30
+            )
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported method '{method}' for proxy.")
+            
+        response.raise_for_status()
+        return response.json()
+    except _requests.RequestException as e:
+        logger.error(f"Proxy Call failed for {platform_name}: {e}")
+        if e.response is not None:
+            try:
+                return JSONResponse(status_code=e.response.status_code, content=e.response.json())
+            except Exception:
+                raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
+        raise HTTPException(status_code=502, detail=f"Failed to communicate with {platform_name} API: {e}")
+
+
+@app.post("/api/v1/meta-proxy")
+async def meta_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for Meta Ads / Organic (Graph API)."""
+    return await _execute_generic_proxy("meta_ads", request, "https://graph.facebook.com/v19.0", "bearer", settings.meta_access_token)
+
+@app.post("/api/v1/google-ads-proxy")
+async def google_ads_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for Google Ads REST API."""
+    return await _execute_generic_proxy("google_ads", request, "https://googleads.googleapis.com/v16", "google_ads", settings.google_ads_refresh_token)
+
+@app.post("/api/v1/ga4-proxy")
+async def ga4_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for GA4 Analytics Data API."""
+    return await _execute_generic_proxy("ga4", request, "https://analyticsdata.googleapis.com/v1beta", "bearer")
+
+@app.post("/api/v1/linkedin-proxy")
+async def linkedin_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for LinkedIn API."""
+    return await _execute_generic_proxy("linkedin_ads", request, "https://api.linkedin.com", "bearer", settings.linkedin_access_token)
+
+@app.post("/api/v1/x-twitter-proxy")
+async def x_twitter_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for X/Twitter API v2."""
+    return await _execute_generic_proxy("x_organic", request, "https://api.twitter.com/2", "bearer", settings.x_bearer_token)
+
+@app.post("/api/v1/youtube-proxy")
+async def youtube_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for YouTube Data API v3."""
+    return await _execute_generic_proxy("youtube", request, "https://www.googleapis.com/youtube/v3", "bearer", settings.youtube_api_key)
+
+@app.post("/api/v1/google-play-proxy")
+async def google_play_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for Google Play Developer API."""
+    return await _execute_generic_proxy("google_play", request, "https://www.googleapis.com/androidpublisher/v3", "bearer")
+
+@app.post("/api/v1/apple-app-store-proxy")
+async def apple_app_store_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for Apple App Store Connect API."""
+    return await _execute_generic_proxy("apple_app_store", request, "https://api.appstoreconnect.apple.com/v1", "apple_app_store")
+
+@app.post("/api/v1/apple-ads-proxy")
+async def apple_ads_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for Apple Search Ads API v5."""
+    return await _execute_generic_proxy("apple_ads", request, "https://api.searchads.apple.com/api/v5", "x-ap-context", settings.apple_ads_access_token)
+
+@app.post("/api/v1/threads-proxy")
+async def threads_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for Threads Graph API."""
+    return await _execute_generic_proxy("threads", request, "https://graph.threads.net/v1.0", "bearer", settings.threads_access_token)
+
+@app.post("/api/v1/spotify-proxy")
+async def spotify_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for Spotify Partner Ads API."""
+    return await _execute_generic_proxy("spotify_ads", request, "https://api-partner.spotify.com/ads/v3", "bearer")
+
+@app.post("/api/v1/pinterest-proxy")
+async def pinterest_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for Pinterest API v5."""
+    return await _execute_generic_proxy("pinterest_ads", request, "https://api.pinterest.com/v5", "bearer", settings.pinterest_access_token)
+
+@app.post("/api/v1/shopify-proxy")
+async def shopify_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for Shopify Admin API."""
+    return await _execute_generic_proxy("shopify", request, "https://mock.myshopify.com/admin/api/2024-04", "shopify", settings.shopify_access_token)
 
 

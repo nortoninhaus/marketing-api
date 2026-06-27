@@ -50,6 +50,7 @@ class XAdsConnector(BaseConnector):
         list_url = f"https://ads-api.twitter.com/12/accounts/{account_id}/{list_endpoint}"
         headers = {"Authorization": f"Bearer {access_token}"}
         list_response = requests.get(list_url, headers=headers, timeout=30)
+        self._record_rate_limit(list_response.headers)
         list_response.raise_for_status()
         list_data = list_response.json().get("data", [])
         
@@ -67,22 +68,9 @@ class XAdsConnector(BaseConnector):
         if not entity_ids:
             return []
             
-        # 3. Fetch Stats
+        # 3. Fetch Stats — batch entity IDs in groups of 10 to avoid URI too long
         stats_url = f"https://ads-api.twitter.com/12/stats/accounts/{account_id}"
-        entity_ids_str = ",".join(entity_ids[:10])  # Limit to avoid URI too long
-        
-        params = {
-            "entity": entity,
-            "entity_ids": entity_ids_str,
-            "start_time": start_str,
-            "end_time": end_str,
-            "granularity": "DAY",
-            "metric_groups": "BILLING,ENGAGEMENT"
-        }
-        
-        response = requests.get(stats_url, headers=headers, params=params, timeout=30)
-        response.raise_for_status()
-        data = response.json()
+        batch_size = 10
         
         # 4. Generate Date Sequence
         from datetime import timedelta
@@ -93,53 +81,98 @@ class XAdsConnector(BaseConnector):
             curr += timedelta(days=1)
             
         results = []
-        data_items = data.get("data", {})
         
-        # Parse based on structure
-        items_list = []
-        if isinstance(data_items, dict):
-            for v in data_items.values():
-                if isinstance(v, list):
-                    items_list.extend(v)
-                elif isinstance(v, dict):
-                    items_list.append(v)
-        elif isinstance(data_items, list):
-            items_list = data_items
+        for batch_start in range(0, len(entity_ids), batch_size):
+            batch_ids = entity_ids[batch_start:batch_start + batch_size]
+            entity_ids_str = ",".join(batch_ids)
             
-        for item in items_list:
-            entity_id = item.get("id", "Unknown")
-            metrics_block = item.get("id_data", [{}])[0].get("metrics", {}) if item.get("id_data") else item.get("metrics", {})
-            if not metrics_block:
-                continue
+            params = {
+                "entity": entity,
+                "entity_ids": entity_ids_str,
+                "start_time": start_str,
+                "end_time": end_str,
+                "granularity": "DAY",
+                "metric_groups": "BILLING,ENGAGEMENT"
+            }
+            
+            response = requests.get(stats_url, headers=headers, params=params, timeout=30)
+            self._record_rate_limit(response.headers)
+            response.raise_for_status()
+            data = response.json()
+            
+            data_items = data.get("data", {})
+            
+            # Parse based on structure
+            items_list = []
+            if isinstance(data_items, dict):
+                for v in data_items.values():
+                    if isinstance(v, list):
+                        items_list.extend(v)
+                    elif isinstance(v, dict):
+                        items_list.append(v)
+            elif isinstance(data_items, list):
+                items_list = data_items
                 
-            for idx, date_str in enumerate(dates_seq):
-                metrics_dict = {}
-                for m in request.metrics:
-                    val_list = metrics_block.get(m, [])
-                    if m == "spend" and "billed_charge_local_micro" in metrics_block:
-                        val_list = metrics_block["billed_charge_local_micro"]
-                        
-                    val = 0
-                    if isinstance(val_list, list) and idx < len(val_list):
-                        val = val_list[idx]
-                    elif isinstance(val_list, (int, float)):
-                        val = val_list if idx == 0 else 0
-                        
-                    if m == "spend" and "billed_charge_local_micro" in metrics_block:
-                        val = float(val) / 1_000_000.0
-                        
-                    metrics_dict[m] = val
+            for item in items_list:
+                entity_id = item.get("id", "Unknown")
+                metrics_block = item.get("id_data", [{}])[0].get("metrics", {}) if item.get("id_data") else item.get("metrics", {})
+                if not metrics_block:
+                    continue
                     
-                results.append(CampaignData(
-                    campaign_name=entity_id,
-                    date=date_str,
-                    metrics=metrics_dict
-                ))
+                for idx, date_str in enumerate(dates_seq):
+                    # Extract base metrics safely for calculation
+                    def get_val_at_idx(key_name, divisor=1.0):
+                        val_list = metrics_block.get(key_name, [])
+                        if isinstance(val_list, list) and idx < len(val_list):
+                            try:
+                                return float(val_list[idx]) / divisor
+                            except Exception:
+                                return 0.0
+                        elif isinstance(val_list, (int, float)):
+                            return (float(val_list) if idx == 0 else 0.0) / divisor
+                        return 0.0
+
+                    clicks = get_val_at_idx("clicks")
+                    impressions = get_val_at_idx("impressions")
+                    spend = get_val_at_idx("billed_charge_local_micro", 1_000_000.0)
+
+                    metrics_dict = {}
+                    for m in request.metrics:
+                        if m == "ctr":
+                            metrics_dict["ctr"] = clicks / impressions if impressions > 0 else 0.0
+                        elif m == "cpc":
+                            metrics_dict["cpc"] = spend / clicks if clicks > 0 else 0.0
+                        elif m == "cpm":
+                            metrics_dict["cpm"] = (spend / impressions) * 1000.0 if impressions > 0 else 0.0
+                        elif m == "roas":
+                            # X Ads API does not provide conversion value data for ROAS calculation
+                            metrics_dict["roas"] = None
+                        else:
+                            val_list = metrics_block.get(m, [])
+                            if m == "spend" and "billed_charge_local_micro" in metrics_block:
+                                val_list = metrics_block["billed_charge_local_micro"]
+                                
+                            val = 0
+                            if isinstance(val_list, list) and idx < len(val_list):
+                                val = val_list[idx]
+                            elif isinstance(val_list, (int, float)):
+                                val = val_list if idx == 0 else 0
+                                
+                            if m == "spend" and "billed_charge_local_micro" in metrics_block:
+                                val = float(val) / 1_000_000.0
+                                
+                            metrics_dict[m] = val
+                        
+                    results.append(CampaignData(
+                        campaign_name=entity_id,
+                        date=date_str,
+                        metrics=metrics_dict
+                    ))
         return results
 
     def get_schema(self) -> Dict[str, Any]:
         return {
-            "metrics": ["impressions", "clicks", "spend", "engagements"],
+            "metrics": ["impressions", "clicks", "spend", "engagements", "ctr", "cpc", "cpm", "roas"],
             "dimensions": ["campaign_id", "line_item_id", "promoted_tweet_id", "date"]
         }
 
@@ -173,6 +206,7 @@ class XOrganicConnector(BaseConnector):
         if request.post_id:
             url = f"https://api.twitter.com/2/tweets/{request.post_id}?tweet.fields=public_metrics,created_at"
             response = requests.get(url, headers=headers, timeout=30)
+            self._record_rate_limit(response.headers)
             response.raise_for_status()
             data = response.json().get("data", {})
             metrics = data.get("public_metrics", {})
@@ -184,6 +218,7 @@ class XOrganicConnector(BaseConnector):
         else:
             me_url = "https://api.twitter.com/2/users/me"
             me_response = requests.get(me_url, headers=headers, timeout=30)
+            self._record_rate_limit(me_response.headers)
             me_response.raise_for_status()
             user_data = me_response.json().get("data", {})
             user_id = user_data.get("id")
@@ -197,6 +232,7 @@ class XOrganicConnector(BaseConnector):
                 "max_results": 20
             }
             tweets_response = requests.get(tweets_url, headers=headers, params=params, timeout=30)
+            self._record_rate_limit(tweets_response.headers)
             tweets_response.raise_for_status()
             tweets_data = tweets_response.json().get("data", [])
             
@@ -236,6 +272,7 @@ class XOrganicConnector(BaseConnector):
 
         try:
             response = requests.get(url, headers=headers, params=params, timeout=30)
+            self._record_rate_limit(response.headers)
             response.raise_for_status()
             data = response.json()
 

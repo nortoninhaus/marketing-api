@@ -42,6 +42,11 @@ METRIC_TRANSLATION_MAP: dict[str, dict[str, str | None]] = {
         "bounce_rate": None,
         "downloads": None,
         "ratings": None,
+        "purchase": "purchase",
+        "lead": "lead",
+        "add_to_cart": "add_to_cart",
+        "initiate_checkout": "initiate_checkout",
+        "roas": "purchase_roas",
     },
     "google_ads": {
         "impressions": "impressions",
@@ -60,6 +65,11 @@ METRIC_TRANSLATION_MAP: dict[str, dict[str, str | None]] = {
         "bounce_rate": "bounce_rate",
         "downloads": None,
         "ratings": None,
+        "purchase": None,
+        "lead": None,
+        "add_to_cart": None,
+        "initiate_checkout": None,
+        "roas": "roas",  # Calculated inside connector
     },
     "tiktok_ads": {
         "impressions": "impressions",
@@ -78,16 +88,21 @@ METRIC_TRANSLATION_MAP: dict[str, dict[str, str | None]] = {
         "bounce_rate": None,
         "downloads": None,
         "ratings": None,
+        "purchase": None,
+        "lead": None,
+        "add_to_cart": None,
+        "initiate_checkout": None,
+        "roas": "roas",  # Calculated if needed
     },
     "linkedin_ads": {
         "impressions": "impressions",
         "clicks": "clicks",
         "spend": "costInLocalCurrency",
-        "conversions": None,
+        "conversions": "conversions",  # Calculated/populated
         "reach": None,
-        "ctr": None,
-        "cpc": None,
-        "cpm": None,
+        "ctr": "ctr",  # Calculated
+        "cpc": "cpc",  # Calculated
+        "cpm": "cpm",  # Calculated
         "engagement": None,
         "followers": None,
         "sessions": None,
@@ -96,6 +111,11 @@ METRIC_TRANSLATION_MAP: dict[str, dict[str, str | None]] = {
         "bounce_rate": None,
         "downloads": None,
         "ratings": None,
+        "purchase": None,
+        "lead": None,
+        "add_to_cart": None,
+        "initiate_checkout": None,
+        "roas": "roas",  # Calculated
     },
     "apple_ads": {
         "impressions": "impressions",
@@ -103,9 +123,9 @@ METRIC_TRANSLATION_MAP: dict[str, dict[str, str | None]] = {
         "spend": "spend",
         "conversions": "installs",
         "reach": None,
-        "ctr": None,
-        "cpc": None,
-        "cpm": None,
+        "ctr": "ctr",  # Calculated
+        "cpc": "cpc",  # Calculated
+        "cpm": "cpm",  # Calculated
         "engagement": None,
         "followers": None,
         "sessions": None,
@@ -114,6 +134,11 @@ METRIC_TRANSLATION_MAP: dict[str, dict[str, str | None]] = {
         "bounce_rate": None,
         "downloads": None,
         "ratings": None,
+        "purchase": None,
+        "lead": None,
+        "add_to_cart": None,
+        "initiate_checkout": None,
+        "roas": "roas",  # Calculated
     },
     "x_ads": {
         "impressions": "impressions",
@@ -121,9 +146,9 @@ METRIC_TRANSLATION_MAP: dict[str, dict[str, str | None]] = {
         "spend": "spend",
         "conversions": None,
         "reach": None,
-        "ctr": None,
-        "cpc": None,
-        "cpm": None,
+        "ctr": "ctr",  # Calculated
+        "cpc": "cpc",  # Calculated
+        "cpm": "cpm",  # Calculated
         "engagement": "engagements",
         "followers": None,
         "sessions": None,
@@ -132,6 +157,11 @@ METRIC_TRANSLATION_MAP: dict[str, dict[str, str | None]] = {
         "bounce_rate": None,
         "downloads": None,
         "ratings": None,
+        "purchase": None,
+        "lead": None,
+        "add_to_cart": None,
+        "initiate_checkout": None,
+        "roas": "roas",  # Calculated
     },
     "spotify_ads": {
         "impressions": "impressions",
@@ -139,9 +169,9 @@ METRIC_TRANSLATION_MAP: dict[str, dict[str, str | None]] = {
         "spend": "spend",
         "conversions": None,
         "reach": "reach",
-        "ctr": None,
-        "cpc": None,
-        "cpm": None,
+        "ctr": "ctr",  # Calculated
+        "cpc": "cpc",  # Calculated
+        "cpm": "cpm",  # Calculated
         "engagement": None,
         "followers": None,
         "sessions": None,
@@ -150,12 +180,40 @@ METRIC_TRANSLATION_MAP: dict[str, dict[str, str | None]] = {
         "bounce_rate": None,
         "downloads": None,
         "ratings": None,
+        "purchase": None,
+        "lead": None,
+        "add_to_cart": None,
+        "initiate_checkout": None,
+        "roas": "roas",  # Calculated
+    },
+    "pinterest_ads": {
+        "impressions": "IMPRESSION",
+        "clicks": "CLICKTHROUGH",
+        "spend": "SPEND_IN_MICRO_DOLLAR",  # Requires unit conversion
+        "conversions": "TOTAL_CONVERSIONS",
+        "reach": None,
+        "ctr": "ctr",  # Calculated
+        "cpc": "cpc",  # Calculated
+        "cpm": "cpm",  # Calculated
+        "engagement": "ENGAGEMENT",
+        "followers": None,
+        "sessions": None,
+        "users": None,
+        "pageviews": None,
+        "bounce_rate": None,
+        "downloads": None,
+        "ratings": None,
+        "purchase": None,
+        "lead": None,
+        "add_to_cart": None,
+        "initiate_checkout": None,
+        "roas": "roas",  # Calculated
     },
 
     # ── Organic platforms ──────────────────────────────────────────────
     "meta_organic": {
         "impressions": "views",  # IG: impressions deprecated July 2024
-        "clicks": None,
+        "clicks": "post_clicks",
         "spend": None,
         "conversions": None,
         "reach": "reach",
@@ -170,6 +228,11 @@ METRIC_TRANSLATION_MAP: dict[str, dict[str, str | None]] = {
         "bounce_rate": None,
         "downloads": None,
         "ratings": None,
+        "purchase": None,
+        "lead": None,
+        "add_to_cart": None,
+        "initiate_checkout": None,
+        "roas": None,
     },
     "tiktok_organic": {
         "impressions": "view_count",
@@ -188,6 +251,11 @@ METRIC_TRANSLATION_MAP: dict[str, dict[str, str | None]] = {
         "bounce_rate": None,
         "downloads": None,
         "ratings": None,
+        "purchase": None,
+        "lead": None,
+        "add_to_cart": None,
+        "initiate_checkout": None,
+        "roas": None,
     },
     "linkedin_organic": {
         "impressions": "impressionCount",
@@ -206,6 +274,11 @@ METRIC_TRANSLATION_MAP: dict[str, dict[str, str | None]] = {
         "bounce_rate": None,
         "downloads": None,
         "ratings": None,
+        "purchase": None,
+        "lead": None,
+        "add_to_cart": None,
+        "initiate_checkout": None,
+        "roas": None,
     },
     "x_organic": {
         "impressions": "impression_count",
@@ -224,6 +297,11 @@ METRIC_TRANSLATION_MAP: dict[str, dict[str, str | None]] = {
         "bounce_rate": None,
         "downloads": None,
         "ratings": None,
+        "purchase": None,
+        "lead": None,
+        "add_to_cart": None,
+        "initiate_checkout": None,
+        "roas": None,
     },
     "youtube": {
         "impressions": "views",
@@ -242,6 +320,11 @@ METRIC_TRANSLATION_MAP: dict[str, dict[str, str | None]] = {
         "bounce_rate": None,
         "downloads": None,
         "ratings": None,
+        "purchase": None,
+        "lead": None,
+        "add_to_cart": None,
+        "initiate_checkout": None,
+        "roas": None,
     },
     "threads": {
         "impressions": "views",
@@ -260,6 +343,34 @@ METRIC_TRANSLATION_MAP: dict[str, dict[str, str | None]] = {
         "bounce_rate": None,
         "downloads": None,
         "ratings": None,
+        "purchase": None,
+        "lead": None,
+        "add_to_cart": None,
+        "initiate_checkout": None,
+        "roas": None,
+    },
+    "pinterest_organic": {
+        "impressions": "IMPRESSION",
+        "clicks": "OUTBOUND_CLICK",
+        "spend": None,
+        "conversions": None,
+        "reach": None,
+        "ctr": None,
+        "cpc": None,
+        "cpm": None,
+        "engagement": "ENGAGEMENT",
+        "followers": "FOLLOWER",
+        "sessions": None,
+        "users": None,
+        "pageviews": "PROFILE_VISIT",
+        "bounce_rate": None,
+        "downloads": None,
+        "ratings": None,
+        "purchase": None,
+        "lead": None,
+        "add_to_cart": None,
+        "initiate_checkout": None,
+        "roas": None,
     },
 
     # ── Analytics ──────────────────────────────────────────────────────
@@ -280,6 +391,34 @@ METRIC_TRANSLATION_MAP: dict[str, dict[str, str | None]] = {
         "bounce_rate": "bounceRate",
         "downloads": None,
         "ratings": None,
+        "purchase": None,
+        "lead": None,
+        "add_to_cart": None,
+        "initiate_checkout": None,
+        "roas": None,
+    },
+    "shopify": {
+        "impressions": None,
+        "clicks": None,
+        "spend": None,
+        "conversions": "orders_count",
+        "reach": None,
+        "ctr": None,
+        "cpc": None,
+        "cpm": None,
+        "engagement": None,
+        "followers": None,
+        "sessions": "sessions",
+        "users": None,
+        "pageviews": "page_views",
+        "bounce_rate": "bounce_rate",
+        "downloads": None,
+        "ratings": None,
+        "purchase": "total_sales",
+        "lead": None,
+        "add_to_cart": None,
+        "initiate_checkout": None,
+        "roas": None,
     },
 
     # ── App Store platforms ────────────────────────────────────────────
@@ -300,6 +439,11 @@ METRIC_TRANSLATION_MAP: dict[str, dict[str, str | None]] = {
         "bounce_rate": None,
         "downloads": "installs",
         "ratings": "rating",
+        "purchase": None,
+        "lead": None,
+        "add_to_cart": None,
+        "initiate_checkout": None,
+        "roas": None,
     },
     "apple_app_store": {
         "impressions": "impressions",
@@ -318,6 +462,11 @@ METRIC_TRANSLATION_MAP: dict[str, dict[str, str | None]] = {
         "bounce_rate": None,
         "downloads": "downloads",
         "ratings": None,
+        "purchase": None,
+        "lead": None,
+        "add_to_cart": None,
+        "initiate_checkout": None,
+        "roas": None,
     },
 }
 
@@ -327,6 +476,7 @@ METRIC_TRANSLATION_MAP: dict[str, dict[str, str | None]] = {
 # ---------------------------------------------------------------------------
 UNIT_CONVERSIONS: dict[tuple[str, str], float] = {
     ("google_ads", "cost_micros"): 1_000_000.0,
+    ("pinterest_ads", "SPEND_IN_MICRO_DOLLAR"): 1_000_000.0,
 }
 
 # ---------------------------------------------------------------------------
@@ -359,14 +509,18 @@ PLATFORM_TYPES: dict[str, str] = {
     "google_play": "app_store",
     "apple_app_store": "app_store",
     "spotify_ads": "ads",
+    "pinterest_ads": "ads",
+    "pinterest_organic": "organic",
+    "shopify": "analytics",
 }
 
 # ---------------------------------------------------------------------------
 # Supported platforms for comments
 # ---------------------------------------------------------------------------
 COMMENT_SUPPORTED_PLATFORMS: list[str] = [
-    "meta_ads", "meta_organic", "threads", "youtube", "x_organic",
+    "meta_ads", "meta_organic", "threads", "youtube", "x_organic", "pinterest_organic",
 ]
+
 
 
 # ===================================================================
@@ -543,6 +697,9 @@ def validate_platform_params(
         "apple_ads": set(),
         "threads": {"post_id"},
         "spotify_ads": set(),
+        "pinterest_ads": set(),
+        "pinterest_organic": {"post_id"},
+        "shopify": set(),
     }
 
     supported = allowed_params.get(platform, set())
@@ -576,6 +733,13 @@ def validate_platform_params(
         elif platform == "google_play":
             if not re.match(r"^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$", account_id):
                 errors.append("El formato de account_id para google_play debe ser el package name de la app (ej. com.example.app).")
+        elif platform == "pinterest_ads":
+            if not re.match(r"^\w+$", account_id):
+                errors.append("El formato de account_id para pinterest_ads debe ser un identificador alfanumérico.")
+        elif platform == "shopify":
+            if not re.match(r"^[a-zA-Z0-9.-]+$", account_id):
+                errors.append("El formato de account_id para shopify debe ser el subdominio de la tienda (ej. mi-tienda.myshopify.com o mi-tienda).")
 
     return errors
+
 
