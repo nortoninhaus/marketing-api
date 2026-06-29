@@ -86,12 +86,23 @@ class MetaAdsConnector(BaseConnector):
             fields.append("campaign_name")
 
         # Handle breakdown dimensions
+        # Map UI-facing dimension names to valid Meta Graph API breakdown values
+        VALID_META_BREAKDOWNS = {
+            "age", "gender", "country", "dma", "publisher_platform",
+            "impression_device", "device_platform", "platform_position",
+            "body_asset", "image_asset", "title_asset", "video_asset",
+            "description_asset", "region",
+        }
+        # Translate common UI aliases to valid API breakdown names
+        DIMENSION_TO_BREAKDOWN = {
+            "platform_device": "impression_device",
+        }
         breakdowns = []
         if request.dimensions:
             for dim in request.dimensions:
-                if dim in ["age", "gender", "country", "dma", "publisher_platform", "platform_device", "device_platform",
-                           "body_asset", "image_asset", "title_asset", "video_asset", "description_asset"]:
-                    breakdowns.append(dim)
+                mapped = DIMENSION_TO_BREAKDOWN.get(dim, dim)
+                if mapped in VALID_META_BREAKDOWNS:
+                    breakdowns.append(mapped)
 
         params = {
             "time_range": {
@@ -295,7 +306,8 @@ class MetaAdsConnector(BaseConnector):
                 "cost_per_outbound_click"
             ],
             "dimensions": ["campaign_name", "adset_name", "ad_name", "date_start",
-                          "age", "gender", "country", "dma", "publisher_platform", "platform_device", "device_platform",
+                          "age", "gender", "country", "dma", "publisher_platform", "impression_device", "device_platform",
+                          "platform_position", "region",
                           "body_asset", "image_asset", "title_asset", "video_asset", "description_asset"],
             "metadata": {
                 "api_version": GRAPH_API_VERSION,
