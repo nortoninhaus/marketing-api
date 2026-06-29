@@ -63,14 +63,24 @@ class MetaAdsConnector(BaseConnector):
                 level = "adset"
 
         # Determine fields to request. If conversions or specific pixel action types are requested, request 'actions'
+        # Also request actions / action_values for custom/personalized metrics.
         fields = []
         has_actions = False
+        has_action_values = False
+        STANDARD_META_FIELDS = {
+            "impressions", "clicks", "spend", "reach", "conversions", "cpc", "cpm", "ctr", "frequency",
+            "purchase_roas", "purchase", "lead", "add_to_cart", "initiate_checkout", "roas"
+        }
         for m in request.metrics:
             m_mapped = "purchase_roas" if m == "roas" else m
-            if m_mapped in ("conversions", "purchase", "lead", "add_to_cart", "initiate_checkout"):
+            if m_mapped in ("conversions", "purchase", "lead", "add_to_cart", "initiate_checkout") or m_mapped not in STANDARD_META_FIELDS:
                 has_actions = True
+                if m_mapped not in STANDARD_META_FIELDS:
+                    has_action_values = True
                 if "actions" not in fields:
                     fields.append("actions")
+                if has_action_values and "action_values" not in fields:
+                    fields.append("action_values")
             else:
                 if m_mapped not in fields:
                     fields.append(m_mapped)
@@ -227,6 +237,21 @@ class MetaAdsConnector(BaseConnector):
                             if action.get("action_type") in target_types:
                                 try:
                                     val_sum += int(float(action.get("value", 0)))
+                                except Exception:
+                                    pass
+                        metrics_dict[m] = val_sum
+                    elif m_mapped not in STANDARD_META_FIELDS:
+                        # Personalized/custom metric (e.g. custom conversion or custom pixel event)
+                        is_val = m_mapped.endswith("_value")
+                        base_m = m_mapped[:-6] if is_val else m_mapped
+                        target_array = i.get("action_values" if is_val else "actions", [])
+                        val_sum = 0
+                        for action in target_array:
+                            act_type = action.get("action_type", "")
+                            # Match if action_type equals base_m, ends with it, or contains it
+                            if act_type == base_m or act_type.endswith(f".{base_m}") or base_m in act_type:
+                                try:
+                                    val_sum += float(action.get("value", 0)) if is_val else int(float(action.get("value", 0)))
                                 except Exception:
                                     pass
                         metrics_dict[m] = val_sum
