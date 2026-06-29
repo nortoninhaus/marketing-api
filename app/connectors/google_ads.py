@@ -121,7 +121,16 @@ class GoogleAdsConnector(BaseConnector):
         }
 
         # Build metrics select list
+        # Identify standard vs custom conversion action metrics
+        STANDARD_FIELDS = {
+            "impressions", "clicks", "cost_micros", "conversions", "conversions_value",
+            "video_views", "roas", "video_quartile_25_rate", "video_quartile_50_rate",
+            "video_quartile_75_rate", "video_quartile_100_rate", "value_per_all_conversion",
+            "average_cpc", "average_cpm", "engagements", "bounce_rate"
+        }
+        
         query_metrics = []
+        custom_metrics = []
         for m in request.metrics:
             if m == "roas":
                 if "conversions_value" not in query_metrics:
@@ -130,8 +139,11 @@ class GoogleAdsConnector(BaseConnector):
                     query_metrics.append("cost_micros")
             else:
                 mapped_m = MAP_METRICS.get(m, m)
-                if mapped_m not in query_metrics:
-                    query_metrics.append(mapped_m)
+                if mapped_m in STANDARD_FIELDS or mapped_m in MAP_METRICS.values():
+                    if mapped_m not in query_metrics:
+                        query_metrics.append(mapped_m)
+                else:
+                    custom_metrics.append(m)
 
         metric_fields = [f"metrics.{m}" for m in query_metrics]
         query_fields = select_dims + metric_fields
@@ -173,6 +185,57 @@ class GoogleAdsConnector(BaseConnector):
             {limit_clause}
         """
         
+        # If custom metrics are requested, perform a separate segmented conversions query
+        custom_metrics_data = {}
+        if custom_metrics:
+            seg_fields = select_dims + ["metrics.conversions", "metrics.conversions_value", "segments.conversion_action", "conversion_action.name"]
+            seg_query = f"""
+                SELECT {', '.join(seg_fields)}
+                FROM {resource}
+                WHERE {where_clause}
+            """
+            try:
+                seg_stream = ga_service.search_stream(customer_id=creds["customer_id"], query=seg_query)
+                for batch in seg_stream:
+                    for row in batch.results:
+                        if not hasattr(row, "segments") or not hasattr(row.segments, "conversion_action"):
+                            continue
+                        action_name = row.conversion_action.name if hasattr(row, "conversion_action") and hasattr(row.conversion_action, "name") else ""
+                        if not action_name:
+                            continue
+                        
+                        # Build campaign name
+                        c_name = row.campaign.name if hasattr(row, "campaign") and hasattr(row.campaign, "name") else "Campaign"
+                        if resource == "ad_group" and hasattr(row, "ad_group") and hasattr(row.ad_group, "name"):
+                            c_name = f"{c_name} | {row.ad_group.name}"
+                        elif resource == "ad_group_ad" and hasattr(row, "ad_group_ad") and hasattr(row.ad_group_ad, "ad") and hasattr(row.ad_group_ad.ad, "name"):
+                            c_name = f"{c_name} | {row.ad_group.name} | Ad: {row.ad_group_ad.ad.name}"
+                        elif resource == "campaign_search_term_view" and hasattr(row, "campaign_search_term_view") and hasattr(row.campaign_search_term_view, "search_term"):
+                            c_name = f"{c_name} | Search: {row.campaign_search_term_view.search_term}"
+                        elif resource == "geographic_view" and hasattr(row, "geographic_view") and hasattr(row.geographic_view, "country_criterion_id"):
+                            c_name = f"{c_name} | Geo: {row.geographic_view.country_criterion_id}"
+                        elif resource == "keyword_view":
+                            kw_part = ""
+                            if hasattr(row, "ad_group_criterion") and hasattr(row.ad_group_criterion, "keyword") and hasattr(row.ad_group_criterion.keyword, "text"):
+                                kw_part = f" | KW: {row.ad_group_criterion.keyword.text}"
+                            ag_part = f" | {row.ad_group.name}" if hasattr(row, "ad_group") and hasattr(row.ad_group, "name") else ""
+                            c_name = f"{c_name}{ag_part}{kw_part}"
+                            
+                        # Reconstruct date
+                        c_date = str(row.segments.date) if hasattr(row.segments, "date") else start_str
+                        key = (c_name, c_date)
+                        if key not in custom_metrics_data:
+                            custom_metrics_data[key] = {}
+                            
+                        for m in custom_metrics:
+                            is_val = m.endswith("_value")
+                            base_m = m[:-6] if is_val else m
+                            if action_name == base_m:
+                                val = float(row.metrics.conversions_value) if is_val else float(row.metrics.conversions)
+                                custom_metrics_data[key][m] = custom_metrics_data[key].get(m, 0.0) + val
+            except Exception as e:
+                logger.warning(f"Failed to query custom conversion actions: {e}")
+
         # Use search_stream to fetch records in dynamic chunks
         response_stream = ga_service.search_stream(customer_id=creds["customer_id"], query=query)
         results = []
@@ -191,6 +254,10 @@ class GoogleAdsConnector(BaseConnector):
                                 metrics_dict["roas"] = 0.0
                         except Exception:
                             metrics_dict["roas"] = 0.0
+                    elif m in custom_metrics:
+                        # Pull custom metric value from segmented conversions data
+                        # We will merge the custom metric after determining row name and date
+                        metrics_dict[m] = 0.0
                     else:
                         mapped_m = MAP_METRICS.get(m, m)
                         try:
@@ -234,6 +301,11 @@ class GoogleAdsConnector(BaseConnector):
 
                 date_val = str(row.segments.date) if hasattr(row.segments, "date") else start_str
                 
+                # Merge custom conversion action metrics if present
+                if (name, date_val) in custom_metrics_data:
+                    for m in custom_metrics:
+                        metrics_dict[m] = custom_metrics_data[(name, date_val)].get(m, 0.0)
+
                 results.append(CampaignData(
                     campaign_name=name,
                     date=date_val,

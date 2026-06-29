@@ -136,6 +136,71 @@ def test_google_ads_fetch_data_ad_group_level(mock_ads_client_class):
         assert "FROM ad_group" in kwargs["query"]
 
 
+class MockSegmentedAdsRow:
+    def __init__(self, campaign_name, date_str, action_name, conversions, conversions_value):
+        self.campaign = MagicMock()
+        self.campaign.name = campaign_name
+        self.segments = MagicMock()
+        self.segments.date = date_str
+        self.segments.conversion_action = "customers/123/conversionActions/456"
+        self.conversion_action = MagicMock()
+        self.conversion_action.name = action_name
+        self.metrics = MagicMock()
+        self.metrics.conversions = conversions
+        self.metrics.conversions_value = conversions_value
+
+
+@patch("app.connectors.google_ads.GoogleAdsClient")
+def test_google_ads_custom_conversion_metrics(mock_ads_client_class):
+    mock_client = MagicMock()
+    mock_ads_client_class.load_from_dict.return_value = mock_client
+    
+    mock_service = MagicMock()
+    mock_client.get_service.return_value = mock_service
+    
+    seg_rows = [
+        MockSegmentedAdsRow("Campaign Alpha", "2026-05-01", "account_created_Sipy_Personas", 12.0, 120.0),
+        MockSegmentedAdsRow("Campaign Alpha", "2026-05-01", "account_created_ahorro_futuro", 8.0, 80.0),
+    ]
+    main_rows = [
+        MockAdsRow("Campaign Alpha", "2026-05-01", 1000, 100),
+    ]
+    
+    mock_service.search_stream.side_effect = [
+        [MockAdsBatch(seg_rows)],
+        [MockAdsBatch(main_rows)],
+    ]
+    
+    connector = GoogleAdsConnector()
+    with patch.object(connector, "get_credentials") as mock_get_creds:
+        mock_get_creds.return_value = {
+            "developer_token": "fake_dev_token",
+            "client_id": "fake_client_id",
+            "client_secret": "fake_secret",
+            "refresh_token": "fake_refresh_token",
+            "customer_id": "1234567890",
+        }
+        
+        req = DataRequest(
+            platform="google_ads",
+            start_date=date(2026, 5, 1),
+            end_date=date(2026, 5, 7),
+            metrics=["impressions", "clicks", "account_created_Sipy_Personas", "account_created_ahorro_futuro_value"],
+            client_id="test_client",
+            user_id="test_user",
+            account_id="1234567890"
+        )
+        
+        results = connector.fetch_data(req)
+        assert len(results) == 1
+        assert results[0].campaign_name == "Campaign Alpha"
+        assert results[0].metrics["impressions"] == 1000
+        assert results[0].metrics["clicks"] == 100
+        assert results[0].metrics["account_created_Sipy_Personas"] == 12.0
+        assert results[0].metrics["account_created_ahorro_futuro_value"] == 80.0
+
+
+
 # ═══════════════════════════════════════════════════════════════════
 # GA4 CONNECTOR TESTS
 # ═══════════════════════════════════════════════════════════════════

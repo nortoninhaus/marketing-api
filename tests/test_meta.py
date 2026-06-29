@@ -337,4 +337,51 @@ def test_meta_ads_breakdown_validation():
         assert "asset" in str(excinfo.value)
 
 
+@patch("app.connectors.meta.FacebookSession")
+@patch("app.connectors.meta.FacebookAdsApi")
+@patch("app.connectors.meta.AdAccount")
+def test_meta_ads_custom_conversion_metrics(mock_ad_account, mock_api, mock_session):
+    mock_instance = MagicMock()
+    mock_ad_account.return_value = mock_instance
+    mock_instance.get_insights.return_value = [
+        {
+            "campaign_name": "Test Ads Campaign",
+            "date_start": "2026-05-01",
+            "impressions": "500",
+            "actions": [
+                {"action_type": "offsite_conversion.custom.12345", "value": "15"},
+                {"action_type": "account_created_Sipy_Personas", "value": "22"},
+            ],
+            "action_values": [
+                {"action_type": "account_created_Sipy_Personas", "value": "220.0"},
+            ]
+        }
+    ]
+    
+    connector = MetaAdsConnector()
+    with patch.object(connector, "get_credentials") as mock_get_creds:
+        mock_get_creds.return_value = {
+            "access_token": "fake_ads_token",
+            "ad_account_id": "act_12345"
+        }
+        
+        req = DataRequest(
+            platform="meta_ads",
+            start_date=date(2026, 5, 1),
+            end_date=date(2026, 5, 7),
+            metrics=["impressions", "12345", "account_created_Sipy_Personas", "account_created_Sipy_Personas_value"],
+            client_id="test_client",
+            user_id="test_user",
+            account_id="act_12345"
+        )
+        
+        results = connector.fetch_data(req)
+        assert len(results) == 1
+        assert results[0].metrics["impressions"] == 500
+        assert results[0].metrics["12345"] == 15
+        assert results[0].metrics["account_created_Sipy_Personas"] == 22
+        assert results[0].metrics["account_created_Sipy_Personas_value"] == 220.0
+
+
+
 
