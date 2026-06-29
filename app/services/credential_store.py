@@ -215,6 +215,69 @@ class CredentialStore:
 
         return data
 
+    async def _refresh_ghl_token(self, data: Dict[str, Any], doc_ref) -> Dict[str, Any]:
+        """
+        Refreshes a GoHighLevel OAuth access token using the stored refresh_token.
+        Updates the Firestore document with the new access_token, refresh_token, and expiry.
+        Returns the updated credential dict.
+        """
+        refresh_token = data.get("refresh_token")
+        if not refresh_token:
+            logger.warning("No refresh_token available for GHL token refresh")
+            return data
+
+        client_id = settings.ghl_client_id
+        client_secret = settings.ghl_client_secret
+
+        if not client_id or not client_secret:
+            logger.warning("GHL client_id/client_secret not configured for token refresh")
+            return data
+
+        user_type = data.get("user_type") or data.get("userType") or "Location"
+
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    "https://services.leadconnectorhq.com/oauth/token",
+                    data={
+                        "client_id": client_id,
+                        "client_secret": client_secret,
+                        "refresh_token": refresh_token,
+                        "grant_type": "refresh_token",
+                        "user_type": user_type,
+                    },
+                    headers={"Content-Type": "application/x-www-form-urlencoded"}
+                )
+                if resp.status_code == 200:
+                    token_data = resp.json()
+                    new_access_token = token_data["access_token"]
+                    new_refresh_token = token_data.get("refresh_token", refresh_token)
+                    expires_in = token_data.get("expires_in", 86399)
+                    new_expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+
+                    # Update Firestore document
+                    update_payload = {
+                        "access_token": new_access_token,
+                        "refresh_token": new_refresh_token,
+                        "token_expires_at": new_expiry.isoformat(),
+                    }
+                    if "userType" in token_data:
+                        update_payload["user_type"] = token_data["userType"]
+                    await doc_ref.update(update_payload)
+
+                    data["access_token"] = new_access_token
+                    data["refresh_token"] = new_refresh_token
+                    data["token_expires_at"] = new_expiry.isoformat()
+                    if "userType" in token_data:
+                        data["user_type"] = token_data["userType"]
+                    logger.info("Successfully refreshed GHL access token")
+                else:
+                    logger.error(f"GHL token refresh failed: {resp.status_code} - {resp.text}")
+        except Exception as e:
+            logger.error(f"Error refreshing GHL token: {e}")
+
+        return data
+
     async def resolve_credentials(self, client_id: str, platform: str, account_id: str) -> Optional[Dict[str, Any]]:
         """
         Resolves credentials for a specific request.
@@ -222,6 +285,7 @@ class CredentialStore:
         2. Falls back to the general/manual credentials document clients/{client_id}/credentials/{platform}
         3. For Google platforms, refreshes access_token if expired.
         4. For Meta and Threads platforms, refreshes access_token if close to expiry.
+        5. For GHL, refreshes access_token if expired.
         """
         if not self.db:
             return None
@@ -248,6 +312,11 @@ class CredentialStore:
                 elif platform == "threads" and self._is_token_close_to_expiry(data):
                     logger.info(f"Access token close to expiry for Threads {account_id}, refreshing...")
                     data = await self._refresh_threads_token(data, doc_ref)
+
+                # Refresh GHL tokens if expired
+                elif platform == "ghl" and self._is_token_expired(data):
+                    logger.info(f"Access token expired for GHL {account_id}, refreshing...")
+                    data = await self._refresh_ghl_token(data, doc_ref)
 
                 return data  # Returns full dict including access_token, refresh_token, etc.
         except Exception as e:

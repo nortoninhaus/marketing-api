@@ -420,6 +420,29 @@ METRIC_TRANSLATION_MAP: dict[str, dict[str, str | None]] = {
         "initiate_checkout": None,
         "roas": None,
     },
+    "ghl": {
+        "impressions": None,
+        "clicks": None,
+        "spend": None,
+        "conversions": "opportunities_count",
+        "reach": None,
+        "ctr": None,
+        "cpc": None,
+        "cpm": None,
+        "engagement": None,
+        "followers": None,
+        "sessions": None,
+        "users": None,
+        "pageviews": None,
+        "bounce_rate": None,
+        "downloads": None,
+        "ratings": None,
+        "purchase": "sales_value",
+        "lead": "leads_count",
+        "add_to_cart": None,
+        "initiate_checkout": None,
+        "roas": None,
+    },
 
     # ── App Store platforms ────────────────────────────────────────────
     "google_play": {
@@ -512,6 +535,7 @@ PLATFORM_TYPES: dict[str, str] = {
     "pinterest_ads": "ads",
     "pinterest_organic": "organic",
     "shopify": "analytics",
+    "ghl": "analytics",
 }
 
 # ---------------------------------------------------------------------------
@@ -534,6 +558,8 @@ def get_platform_type(platform: str) -> str:
 
 def get_default_metrics(platform: str) -> list[str]:
     """Return the default generic metrics appropriate for the platform's type."""
+    if platform == "ghl":
+        return ["lead", "conversions", "purchase"]
     ptype = get_platform_type(platform)
     return list(DEFAULT_METRICS_BY_TYPE.get(ptype, []))
 
@@ -700,6 +726,7 @@ def validate_platform_params(
         "pinterest_ads": set(),
         "pinterest_organic": {"post_id"},
         "shopify": set(),
+        "ghl": set(),
     }
 
     supported = allowed_params.get(platform, set())
@@ -732,13 +759,16 @@ def validate_platform_params(
                 errors.append("El formato de account_id para apple_app_store debe ser un ID numérico de aplicación.")
         elif platform == "google_play":
             if not re.match(r"^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$", account_id):
-                errors.append("El formato de account_id para google_play debe ser el package name de la app (ej. com.example.app).")
+                errors.append("El formato de account_id para google_play debe ser the package name de la app (ej. com.example.app).")
         elif platform == "pinterest_ads":
             if not re.match(r"^\w+$", account_id):
                 errors.append("El formato de account_id para pinterest_ads debe ser un identificador alfanumérico.")
         elif platform == "shopify":
             if not re.match(r"^[a-zA-Z0-9.-]+$", account_id):
                 errors.append("El formato de account_id para shopify debe ser el subdominio de la tienda (ej. mi-tienda.myshopify.com o mi-tienda).")
+        elif platform == "ghl":
+            if not re.match(r"^[a-zA-Z0-9_-]+$", account_id):
+                errors.append("El formato de account_id para ghl debe ser un identificador alfanumérico (ej. locationId de GHL).")
 
     return errors
 

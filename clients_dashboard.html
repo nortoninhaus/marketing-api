@@ -19,7 +19,7 @@
     --mint:#1AE08C; --mint-deep:#10B873;
     --google:#5C9DFF; --meta:#A78BFA; --tiktok:#FF6B8A; --ga4:#F5C451;
     --linkedin:#0A66C2; --twitter:#1DA1F2; --youtube:#FF0000;
-    --pinterest:#E60023; --shopify:#95BF47; --spotify:#1DB954;
+    --pinterest:#E60023; --shopify:#95BF47; --spotify:#1DB954; --ghl:#F06A3D;
     --apple:#A2AAAD; --threads:#000; --down:#FF6B6B;
     --glass-bg: rgba(18, 24, 35, 0.72);
     --glass-border: rgba(255, 255, 255, 0.08);
@@ -95,6 +95,7 @@
   .chip-linkedin { background:rgba(10,102,194,.18); color:#3B9AFF }
   .chip-youtube { background:rgba(255,0,0,.12); color:#FF4444 }
   .chip-shopify { background:rgba(149,191,71,.14); color:var(--shopify) }
+  .chip-ghl { background:rgba(240,106,61,.14); color:var(--ghl) }
   .chip-pinterest { background:rgba(230,0,35,.12); color:#FF3355 }
   .chip-spotify { background:rgba(29,185,84,.14); color:var(--spotify) }
   .chip-twitter { background:rgba(29,161,242,.14); color:var(--twitter) }
@@ -313,7 +314,8 @@ const CLIENTS = [
       { platform: "meta_ads", name: "AH — Retargeting Catalog", account_id: "act_345678901235", status: "active", spend: 7200, impressions: 1120000, conversions: 680, roas: 8.2 },
       { platform: "google_ads", name: "AH — Brand Search", account_id: "456-789-0123", status: "active", spend: 5600, impressions: 340000, conversions: 920, roas: 7.5 },
       { platform: "ga4", name: "adrianahoyos.com", account_id: "properties/298345612", status: "active", spend: 0, impressions: 0, conversions: 0, sessions: 67000, users: 42000, pageviews: 189000 },
-      { platform: "shopify", name: "adrianahoyos.myshopify.com", account_id: "adrianahoyos", status: "active", spend: 0, impressions: 0, conversions: 312, revenue: 487000 }
+      { platform: "shopify", name: "adrianahoyos.myshopify.com", account_id: "adrianahoyos", status: "active", spend: 0, impressions: 0, conversions: 312, revenue: 487000 },
+      { platform: "ghl", name: "Adriana Hoyos CRM", account_id: "ah_crm_location_1", status: "active", spend: 0, conversions: 182, revenue: 145000, leads: 950 }
     ]
   },
   {
@@ -400,7 +402,8 @@ const PLATFORM_META = {
   spotify_ads: { label: "Spotify Ads", chip: "chip-spotify", color: "#1DB954", icon: "S" },
   pinterest_ads: { label: "Pinterest Ads", chip: "chip-pinterest", color: "#E60023", icon: "P" },
   pinterest_organic: { label: "Pinterest Organic", chip: "chip-pinterest", color: "#E60023", icon: "P" },
-  shopify: { label: "Shopify", chip: "chip-shopify", color: "#95BF47", icon: "S" }
+  shopify: { label: "Shopify", chip: "chip-shopify", color: "#95BF47", icon: "S" },
+  ghl: { label: "GoHighLevel", chip: "chip-ghl", color: "#F06A3D", icon: "H" }
 };
 
 let currentClientId = null;
@@ -555,8 +558,9 @@ function showClientDetail(clientId) {
       <h3>Cuentas Conectadas</h3>
       ${client.accounts.map(acc => {
         const pm = PLATFORM_META[acc.platform] || { label: acc.platform, color: '#888', icon: '?' };
-        const isAds = acc.spend > 0;
+         const isAds = acc.spend > 0;
         const isAnalytics = acc.platform === 'ga4' || acc.platform === 'shopify';
+        const isGhl = acc.platform === 'ghl';
         return `
         <div class="account-row" onclick="showPlatformReport('${clientId}', '${acc.account_id}')">
           <div class="ar-icon" style="background:${pm.color}22">
@@ -571,16 +575,16 @@ function showClientDetail(clientId) {
             ${acc.status === 'active' ? 'Conectada' : 'Desconectada'}
           </div>
           <div class="ar-metric">
-            <small>${isAds ? 'Inversión' : (isAnalytics ? 'Sesiones' : 'Impresiones')}</small>
-            ${isAds ? fmtCurrency(acc.spend) : fmt(acc.sessions || acc.impressions)}
+            <small>${isAds ? 'Inversión' : (isGhl ? 'Leads' : (isAnalytics ? 'Sesiones' : 'Impresiones'))}</small>
+            ${isAds ? fmtCurrency(acc.spend) : (isGhl ? fmt(acc.leads) : fmt(acc.sessions || acc.impressions))}
           </div>
           <div class="ar-metric">
-            <small>${isAnalytics ? 'Usuarios' : 'Impresiones'}</small>
-            ${fmt(isAnalytics ? acc.users : acc.impressions)}
+            <small>${isGhl ? 'Conv. (Won)' : (isAnalytics ? 'Usuarios' : 'Impresiones')}</small>
+            ${fmt(isGhl ? acc.conversions : (isAnalytics ? acc.users : acc.impressions))}
           </div>
           <div class="ar-metric">
-            <small>${isAds ? 'Conversiones' : (isAnalytics ? 'Pageviews' : 'Conv.')}</small>
-            ${fmt(isAds ? acc.conversions : (acc.pageviews || acc.conversions))}
+            <small>${isAds ? 'Conversiones' : (isGhl ? '—' : (isAnalytics ? 'Pageviews' : 'Conv.'))}</small>
+            ${isAds ? fmt(acc.conversions) : (isGhl ? '—' : fmt(acc.pageviews || acc.conversions))}
           </div>
           <div class="ar-metric">
             <small>${isAds ? 'ROAS' : (acc.revenue ? 'Revenue' : '—')}</small>
@@ -615,6 +619,7 @@ function showPlatformReport(clientId, accountId) {
 
   const pm = PLATFORM_META[acc.platform] || { label: acc.platform, color: '#888', icon: '?' };
   const isAds = acc.spend > 0;
+  const isGhl = acc.platform === 'ghl';
   const isAnalytics = acc.platform === 'ga4' || acc.platform === 'shopify';
 
   document.getElementById('reportBackLabel').textContent = `Volver a ${client.name}`;
@@ -631,6 +636,13 @@ function showPlatformReport(clientId, accountId) {
         impressions: Math.round((acc.impressions / 26) * factor),
         clicks: Math.round((acc.impressions / 26) * factor * (0.012 + Math.random() * 0.008)),
         conversions: Math.round((acc.conversions / 26) * factor),
+      });
+    } else if (isGhl) {
+      days.push({
+        date: `2026-06-${day}`,
+        leads: Math.round(((acc.leads || 0) / 26) * factor),
+        conversions: Math.round(((acc.conversions || 0) / 26) * factor),
+        revenue: Math.round(((acc.revenue || 0) / 26) * factor),
       });
     } else {
       days.push({
@@ -649,6 +661,8 @@ function showPlatformReport(clientId, accountId) {
   const totalSessions = days.reduce((s, d) => s + (d.sessions || 0), 0);
   const totalUsers = days.reduce((s, d) => s + (d.users || 0), 0);
   const totalPageviews = days.reduce((s, d) => s + (d.pageviews || 0), 0);
+  const totalLeads = days.reduce((s, d) => s + (d.leads || 0), 0);
+  const totalGhlRevenue = days.reduce((s, d) => s + (d.revenue || 0), 0);
   const ctr = totalImpressions > 0 ? ((totalClicks / totalImpressions) * 100).toFixed(2) : '—';
   const cpc = totalClicks > 0 ? (totalSpend / totalClicks).toFixed(2) : '—';
 
@@ -673,12 +687,16 @@ function showPlatformReport(clientId, accountId) {
         <div class="rk"><div class="rk-label">CPC</div><div class="rk-val tabnum">$${cpc}</div></div>
         <div class="rk"><div class="rk-label">Conversiones</div><div class="rk-val tabnum">${fmt(totalConversions)}</div></div>
         <div class="rk"><div class="rk-label">ROAS</div><div class="rk-val tabnum" style="color:var(--mint)">${fmtRoas(acc.roas)}</div></div>
+      ` : (isGhl ? `
+        <div class="rk"><div class="rk-label">Leads (Contactos)</div><div class="rk-val tabnum">${fmt(totalLeads)}</div></div>
+        <div class="rk"><div class="rk-label">Conversiones (Won)</div><div class="rk-val tabnum">${fmt(totalConversions)}</div></div>
+        <div class="rk"><div class="rk-label">Valor de Ventas</div><div class="rk-val tabnum" style="color:var(--mint)">${fmtCurrency(totalGhlRevenue)}</div></div>
       ` : `
         <div class="rk"><div class="rk-label">Sesiones</div><div class="rk-val tabnum">${fmt(totalSessions)}</div></div>
         <div class="rk"><div class="rk-label">Usuarios</div><div class="rk-val tabnum">${fmt(totalUsers)}</div></div>
         <div class="rk"><div class="rk-label">Pageviews</div><div class="rk-val tabnum">${fmt(totalPageviews)}</div></div>
         ${acc.revenue ? `<div class="rk"><div class="rk-label">Revenue</div><div class="rk-val tabnum">${fmtCurrency(acc.revenue)}</div></div>` : ''}
-      `}
+      `)}
     </div>
 
     <div class="chart-section">
@@ -693,26 +711,30 @@ function showPlatformReport(clientId, accountId) {
         <thead><tr>
           <th style="text-align:left">Fecha</th>
           ${isAds ? '<th>Inversión</th><th>Impresiones</th><th>Clicks</th><th>Conversiones</th>' :
-                    '<th>Sesiones</th><th>Usuarios</th><th>Pageviews</th>'}
+            (isGhl ? '<th>Leads</th><th>Conversiones (Won)</th><th>Valor Ventas</th>' :
+                     '<th>Sesiones</th><th>Usuarios</th><th>Pageviews</th>')}
         </tr></thead>
         <tbody>
           ${days.map(d => `<tr>
             <td style="text-align:left; font-weight:700; color:var(--muted)">${d.date}</td>
             ${isAds ? `<td class="tabnum">${fmtCurrency(d.spend)}</td><td class="tabnum">${fmt(d.impressions)}</td><td class="tabnum">${fmt(d.clicks)}</td><td class="tabnum">${fmt(d.conversions)}</td>` :
-                      `<td class="tabnum">${fmt(d.sessions)}</td><td class="tabnum">${fmt(d.users)}</td><td class="tabnum">${fmt(d.pageviews)}</td>`}
+              (isGhl ? `<td class="tabnum">${fmt(d.leads)}</td><td class="tabnum">${fmt(d.conversions)}</td><td class="tabnum">${fmtCurrency(d.revenue)}</td>` :
+                       `<td class="tabnum">${fmt(d.sessions)}</td><td class="tabnum">${fmt(d.users)}</td><td class="tabnum">${fmt(d.pageviews)}</td>`)}
           </tr>`).join('')}
         </tbody>
         <tfoot><tr>
           <td>TOTAL</td>
           ${isAds ? `<td style="color:var(--accent)">${fmtCurrency(totalSpend)}</td><td>${fmt(totalImpressions)}</td><td>${fmt(totalClicks)}</td><td style="color:var(--mint)">${fmt(totalConversions)}</td>` :
-                    `<td>${fmt(totalSessions)}</td><td>${fmt(totalUsers)}</td><td>${fmt(totalPageviews)}</td>`}
+            (isGhl ? `<td style="color:var(--accent)">${fmt(totalLeads)}</td><td style="color:var(--mint)">${fmt(totalConversions)}</td><td style="color:var(--mint)">${fmtCurrency(totalGhlRevenue)}</td>` :
+                     `<td>${fmt(totalSessions)}</td><td>${fmt(totalUsers)}</td><td>${fmt(totalPageviews)}</td>`)}
         </tr></tfoot>
       </table>
     </div>
   `;
 
+  const chartType = isAds ? 'ads' : (isGhl ? 'ghl' : 'analytics');
   switchView('report', null);
-  setTimeout(() => drawReportChart(days, isAds), 100);
+  setTimeout(() => drawReportChart(days, chartType), 100);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -825,7 +847,7 @@ function drawDetailChart(client) {
   });
 }
 
-function drawReportChart(days, isAds) {
+function drawReportChart(days, type) {
   const canvas = document.getElementById('reportChart');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
@@ -838,8 +860,9 @@ function drawReportChart(days, isAds) {
   const plotW = W - pad.l - pad.r;
   const plotH = H - pad.t - pad.b;
 
-  const metric = isAds ? 'spend' : 'sessions';
-  const color = isAds ? '#A78BFA' : '#5C9DFF';
+  const chartType = (type === true || type === 'ads') ? 'ads' : (type === 'ghl' ? 'ghl' : 'analytics');
+  const metric = chartType === 'ads' ? 'spend' : (chartType === 'ghl' ? 'leads' : 'sessions');
+  const color = chartType === 'ads' ? '#A78BFA' : (chartType === 'ghl' ? '#F06A3D' : '#5C9DFF');
   const vals = days.map(d => d[metric] || 0);
   const maxV = Math.max(...vals, 1);
 
@@ -856,7 +879,7 @@ function drawReportChart(days, isAds) {
     ctx.fillStyle = '#5E6A7A';
     ctx.font = '600 10px Manrope, sans-serif';
     ctx.textAlign = 'right';
-    const label = isAds ? fmtCurrency(maxV - (maxV / 4) * i) : fmt(maxV - (maxV / 4) * i);
+    const label = chartType === 'ads' ? fmtCurrency(maxV - (maxV / 4) * i) : fmt(maxV - (maxV / 4) * i);
     ctx.fillText(label, pad.l - 8, y + 4);
   }
 

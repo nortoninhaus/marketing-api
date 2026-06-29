@@ -35,6 +35,8 @@ class Platform(str, Enum):
     PINTEREST_ADS = "pinterest_ads"
     PINTEREST_ORGANIC = "pinterest_organic"
     SHOPIFY = "shopify"
+    GHL = "ghl"
+
 
     @classmethod
     def ads_platforms(cls) -> list["Platform"]:

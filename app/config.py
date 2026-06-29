@@ -92,6 +92,14 @@ class Settings(BaseSettings):
     shopify_access_token: str = ""
     shopify_shop_name: str = ""
 
+    # --- GoHighLevel (GHL) ---
+    ghl_access_token: str = ""
+    ghl_location_id: str = ""
+    ghl_client_id: str = ""
+    ghl_client_secret: str = ""
+    ghl_oauth_scopes: str = "contacts.readonly opportunities.readonly locations.readonly"
+    ghl_oauth_redirect_uri: str = ""
+
     # --- BigQuery Sink ---
     bigquery_project_id: str = ""
     bigquery_dataset_id: str = "marketing_data"
