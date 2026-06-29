@@ -88,7 +88,7 @@ class MetaAdsConnector(BaseConnector):
         # Handle breakdown dimensions
         # Map UI-facing dimension names to valid Meta Graph API breakdown values
         VALID_META_BREAKDOWNS = {
-            "age", "gender", "country", "dma", "publisher_platform",
+            "age", "gender", "country", "comscore_market", "publisher_platform",
             "impression_device", "device_platform", "platform_position",
             "body_asset", "image_asset", "title_asset", "video_asset",
             "description_asset", "region",
@@ -96,6 +96,7 @@ class MetaAdsConnector(BaseConnector):
         # Translate common UI aliases to valid API breakdown names
         DIMENSION_TO_BREAKDOWN = {
             "platform_device": "impression_device",
+            "dma": "comscore_market",
         }
         breakdowns = []
         if request.dimensions:
@@ -306,7 +307,7 @@ class MetaAdsConnector(BaseConnector):
                 "cost_per_outbound_click"
             ],
             "dimensions": ["campaign_name", "adset_name", "ad_name", "date_start",
-                          "age", "gender", "country", "dma", "publisher_platform", "impression_device", "device_platform",
+                          "age", "gender", "country", "comscore_market", "publisher_platform", "impression_device", "device_platform",
                           "platform_position", "region",
                           "body_asset", "image_asset", "title_asset", "video_asset", "description_asset"],
             "metadata": {
