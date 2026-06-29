@@ -108,6 +108,7 @@ class ThreadsConnector(BaseConnector):
                 "until": until_ts,
                 "access_token": access_token,
             })
+            self._record_rate_limit(dict(res.headers))
             if res.status_code != 200:
                 logger.error(f"Threads user insights error: {res.text}")
                 return []
@@ -152,6 +153,7 @@ class ThreadsConnector(BaseConnector):
                     "limit": 100,
                     "access_token": access_token,
                 })
+                self._record_rate_limit(dict(list_res.headers))
                 if list_res.status_code != 200:
                     logger.error(f"Threads media list error: {list_res.text}")
                     return []
@@ -164,6 +166,7 @@ class ThreadsConnector(BaseConnector):
                     "metric": ",".join(metrics),
                     "access_token": access_token,
                 })
+                self._record_rate_limit(dict(ins_res.headers))
                 if ins_res.status_code != 200:
                     logger.warning(f"Threads media insights error for {media_id}: {ins_res.text}")
                     continue

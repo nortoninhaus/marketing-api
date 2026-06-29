@@ -182,4 +182,96 @@ class ApiClient {
       throw _handleError(e);
     }
   }
+
+  // --- SOTA Methods ---
+
+  Future<Map<String, dynamic>> analyzeVideo(String videoUrl) async {
+    try {
+      final response = await _dio.post('/api/v1/sota/analyze-video', data: {'video_url': videoUrl});
+      return _parseResponse(response.data) as Map<String, dynamic>;
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> generateMedia(String prompt, String model) async {
+    try {
+      final response = await _dio.post('/api/v1/sota/generate-media', data: {'prompt': prompt, 'model': model});
+      return _parseResponse(response.data) as Map<String, dynamic>;
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
+  Future<List<dynamic>> getSocialTickets() async {
+    try {
+      final response = await _dio.get('/api/v1/sota/social-tickets');
+      return _parseResponse(response.data, expectList: true) as List<dynamic>;
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
+  Future<List<dynamic>> getListeningAlerts() async {
+    try {
+      final response = await _dio.get('/api/v1/sota/listening-alerts');
+      return _parseResponse(response.data, expectList: true) as List<dynamic>;
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
+  Future<List<dynamic>> getCampaignProposals() async {
+    try {
+      final response = await _dio.get('/api/v1/sota/campaign-proposals');
+      return _parseResponse(response.data, expectList: true) as List<dynamic>;
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> confirmProposal(String proposalId, bool approved) async {
+    try {
+      final response = await _dio.post('/api/v1/sota/confirm-proposal', data: {'proposal_id': proposalId, 'approved': approved});
+      return _parseResponse(response.data) as Map<String, dynamic>;
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> getQueryFanOut() async {
+    try {
+      final response = await _dio.get('/api/v1/sota/query-fan-out');
+      return _parseResponse(response.data) as Map<String, dynamic>;
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
+  Future<List<dynamic>> getSeoCalendar() async {
+    try {
+      final response = await _dio.get('/api/v1/sota/seo-calendar');
+      return _parseResponse(response.data, expectList: true) as List<dynamic>;
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
+  Future<List<dynamic>> getBrandProfiles() async {
+    try {
+      final response = await _dio.get('/api/v1/sota/brand-profiles');
+      return _parseResponse(response.data, expectList: true) as List<dynamic>;
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
+  Future<List<dynamic>> getAgentSkills() async {
+    try {
+      final response = await _dio.get('/api/v1/sota/agent-skills');
+      return _parseResponse(response.data, expectList: true) as List<dynamic>;
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
 }

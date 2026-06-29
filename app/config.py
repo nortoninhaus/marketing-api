@@ -20,14 +20,15 @@ class Settings(BaseSettings):
     )
 
     # --- API Authentication ---
-    api_key: str = "dev-key-change-me"
+    # No default — deployment MUST set API_KEY in the environment.
+    api_key: str
 
     # --- Meta (Facebook / Instagram) ---
     meta_access_token: str = ""
     meta_app_id: str = ""
     meta_app_secret: str = ""
     meta_oauth_redirect_uri: str = ""
-    meta_oauth_scopes: str = "ads_read,pages_show_list,pages_read_engagement"
+    meta_oauth_scopes: str = "ads_read,pages_show_list,pages_read_engagement,read_insights,instagram_basic,instagram_manage_insights"
 
     # --- Google Ads ---
     google_ads_developer_token: str = ""
@@ -82,6 +83,14 @@ class Settings(BaseSettings):
 
     # --- Apple Search Ads ---
     apple_ads_access_token: str = ""
+
+    # --- Pinterest ---
+    pinterest_access_token: str = ""
+    pinterest_ad_account_id: str = ""
+
+    # --- Shopify ---
+    shopify_access_token: str = ""
+    shopify_shop_name: str = ""
 
     # --- BigQuery Sink ---
     bigquery_project_id: str = ""

@@ -3,7 +3,10 @@ OAuth Router — Handles OAuth flows for Meta and Google platforms.
 Supports: Meta Ads, Meta Organic, Google Ads, GA4, YouTube.
 """
 
+import asyncio
 import base64
+import hashlib
+import hmac
 import json
 import logging
 from datetime import datetime, timezone, timedelta
@@ -17,6 +20,25 @@ from app.services.credential_store import credential_store
 from app.middleware.auth import verify_api_key
 
 logger = logging.getLogger(__name__)
+
+
+def _sign_state(data: dict) -> str:
+    """Encode and HMAC-sign an OAuth state parameter."""
+    payload = base64.urlsafe_b64encode(json.dumps(data).encode()).decode()
+    sig = hmac.new(settings.api_key.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return f"{payload}.{sig}"
+
+
+def _verify_state(state: str) -> dict:
+    """Verify HMAC signature and decode an OAuth state parameter.
+    Raises ValueError on invalid or tampered state."""
+    if "." not in state:
+        raise ValueError("Missing signature in state parameter")
+    payload, sig = state.rsplit(".", 1)
+    expected = hmac.new(settings.api_key.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig, expected):
+        raise ValueError("Invalid signature on state parameter")
+    return json.loads(base64.urlsafe_b64decode(payload.encode()).decode())
 
 router = APIRouter(
     prefix="/api/v1/oauth",
@@ -90,13 +112,13 @@ async def get_authorize_url(
             detail=f"Platform '{platform}' is not supported for OAuth connections. Supported: {', '.join(SUPPORTED_PLATFORMS)}"
         )
 
-    # Encode state containing client_id, platform and final redirect_url
+    # Encode state containing client_id, platform and final redirect_url (HMAC-signed)
     state_data = {
         "client_id": client_id,
         "platform": platform,
         "redirect_url": redirect_url
     }
-    state = base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
+    state = _sign_state(state_data)
 
     # ─── Meta Platforms ────────────────────────────────────────────
     if platform in ("meta_ads", "meta_organic"):
@@ -233,14 +255,13 @@ async def oauth_callback(
         raise HTTPException(status_code=400, detail="Missing required parameters code or state.")
 
     try:
-        state_bytes = base64.urlsafe_b64decode(state.encode())
-        state_data = json.loads(state_bytes.decode())
+        state_data = _verify_state(state)
         client_id = state_data.get("client_id", "client_1")
         platform = state_data.get("platform")
         redirect_url = state_data.get("redirect_url", "http://127.0.0.1:5000")
     except Exception as e:
-        logger.error(f"Failed to decode OAuth state parameter: {e}")
-        raise HTTPException(status_code=400, detail="Invalid state parameter.")
+        logger.error(f"Failed to verify OAuth state parameter: {e}")
+        raise HTTPException(status_code=400, detail="Invalid or tampered state parameter.")
 
     backend_redirect_uri = _build_meta_redirect_uri(request)
 
@@ -441,25 +462,39 @@ async def oauth_callback(
             access_token = token_data.get("data", {}).get("access_token")
             advertiser_ids = token_data.get("data", {}).get("advertiser_ids", [])
             
-            if advertiser_ids:
-                info_url = "https://business-api.tiktok.com/open_api/v1.3/advertiser/info/"
-                info_res = await client.get(
-                    info_url,
-                    params={"advertiser_ids": json.dumps(advertiser_ids)},
+            # Retrieve advertiser names using the OAuth-specific advertiser listing endpoint
+            try:
+                advertisers_url = "https://business-api.tiktok.com/open_api/v1.3/oauth2/advertiser/get/"
+                advertisers_res = await client.get(
+                    advertisers_url,
+                    params={"app_id": app_id, "secret": secret},
                     headers={"Access-Token": access_token}
                 )
-                if info_res.status_code == 200:
-                    info_data = info_res.json()
-                    advertisers = info_data.get("data", {}).get("list", [])
-                    for adv in advertisers:
-                        await credential_store.save_oauth_connection(
-                            client_id=client_id,
-                            platform="tiktok_ads",
-                            account_id=str(adv.get("advertiser_id")),
-                            account_name=adv.get("advertiser_name", f"TikTok Ads {adv.get('advertiser_id')}"),
-                            access_token=access_token
-                        )
+                if advertisers_res.status_code == 200:
+                    advertisers_data = advertisers_res.json()
+                    logger.info(f"Oauth advertiser/get response: {advertisers_data}")
+                    advertisers_list = advertisers_data.get("data", {}).get("list", [])
+                    
+                    if advertisers_list:
+                        for adv in advertisers_list:
+                            await credential_store.save_oauth_connection(
+                                client_id=client_id,
+                                platform="tiktok_ads",
+                                account_id=str(adv.get("advertiser_id")),
+                                account_name=adv.get("advertiser_name", f"TikTok Ads {adv.get('advertiser_id')}"),
+                                access_token=access_token
+                            )
+                    else:
+                        for adv_id in advertiser_ids:
+                            await credential_store.save_oauth_connection(
+                                client_id=client_id,
+                                platform="tiktok_ads",
+                                account_id=str(adv_id),
+                                account_name=f"TikTok Ads {adv_id}",
+                                access_token=access_token
+                            )
                 else:
+                    logger.warning(f"Oauth advertiser/get failed: {advertisers_res.text}")
                     for adv_id in advertiser_ids:
                         await credential_store.save_oauth_connection(
                             client_id=client_id,
@@ -468,14 +503,55 @@ async def oauth_callback(
                             account_name=f"TikTok Ads {adv_id}",
                             access_token=access_token
                         )
-            else:
-                await credential_store.save_oauth_connection(
-                    client_id=client_id,
-                    platform="tiktok_ads",
-                    account_id="default",
-                    account_name="TikTok Ads Connected",
-                    access_token=access_token
-                )
+            except Exception as e:
+                logger.error(f"Error querying advertiser names via oauth2/advertiser/get: {e}")
+                for adv_id in advertiser_ids:
+                    await credential_store.save_oauth_connection(
+                        client_id=client_id,
+                        platform="tiktok_ads",
+                        account_id=str(adv_id),
+                        account_name=f"TikTok Ads {adv_id}",
+                        access_token=access_token
+                    )
+
+
+            # Discover Business Centers and Linked TikTok Accounts (Brand Profiles)
+            try:
+                bc_url = "https://business-api.tiktok.com/open_api/v1.3/bc/get/"
+                bc_res = await client.get(bc_url, headers={"Access-Token": access_token})
+                if bc_res.status_code == 200:
+                    bc_data = bc_res.json()
+                    bc_list = bc_data.get("data", {}).get("list", [])
+                    for bc in bc_list:
+                        bc_id = bc.get("bc_id")
+                        asset_url = "https://business-api.tiktok.com/open_api/v1.3/bc/asset/get/"
+                        asset_res = await client.get(
+                            asset_url,
+                            params={"bc_id": bc_id, "asset_type": "TIKTOK_ACCOUNT"},
+                            headers={"Access-Token": access_token}
+                        )
+                        if asset_res.status_code == 200:
+                            asset_data = asset_res.json()
+                            logger.info(f"BC asset/get response data: {asset_data}")
+                            assets = asset_data.get("data", {}).get("asset_list", []) or asset_data.get("data", {}).get("list", [])
+                            for asset in assets:
+                                asset_id = asset.get("asset_id")
+                                asset_name = asset.get("asset_name") or f"TikTok Profile {asset_id}"
+                                await credential_store.save_oauth_connection(
+                                    client_id=client_id,
+                                    platform="tiktok_organic",
+                                    account_id=str(asset_id),
+                                    account_name=asset_name,
+                                    access_token=access_token,
+                                    extra_data={
+                                        "bc_id": bc_id,
+                                        "is_bc_asset": True,
+                                        "permission": asset.get("permission")
+                                    }
+                                )
+            except Exception as e:
+                logger.warning(f"TikTok Business Center asset discovery failed: {e}")
+
 
         return RedirectResponse(url=f"{redirect_url}?oauth=success&platform={platform}")
 
@@ -556,14 +632,13 @@ async def google_oauth_callback(
         raise HTTPException(status_code=400, detail="Missing required parameters code or state.")
 
     try:
-        state_bytes = base64.urlsafe_b64decode(state.encode())
-        state_data = json.loads(state_bytes.decode())
+        state_data = _verify_state(state)
         client_id = state_data.get("client_id", "client_1")
         platform = state_data.get("platform")
         redirect_url = state_data.get("redirect_url", "http://127.0.0.1:5000")
     except Exception as e:
-        logger.error(f"Failed to decode Google OAuth state parameter: {e}")
-        raise HTTPException(status_code=400, detail="Invalid state parameter.")
+        logger.error(f"Failed to verify Google OAuth state parameter: {e}")
+        raise HTTPException(status_code=400, detail="Invalid or tampered state parameter.")
 
     backend_redirect_uri = _build_google_redirect_uri(request)
 
@@ -593,42 +668,44 @@ async def google_oauth_callback(
 
         headers = {"Authorization": f"Bearer {access_token}"}
 
-        # 2. Discover Google Ads Accounts (via Customer Service)
+        # 2. Discover Google Ads Accounts (via Google Ads SDK Customer Service)
         try:
-            ads_res = await client.get(
-                "https://googleads.googleapis.com/v18/customers:listAccessibleCustomers",
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "developer-token": settings.google_ads_developer_token,
-                },
+            from google.oauth2.credentials import Credentials
+            from google.ads.googleads.client import GoogleAdsClient
+            
+            token_credentials = Credentials(
+                token=access_token,
+                refresh_token=refresh_token,
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=google_client_id,
+                client_secret=google_client_secret
             )
-            if ads_res.status_code == 404:
-                logger.info("Google Ads v18 discovery returned 404. Falling back to v17...")
-                ads_res = await client.get(
-                    "https://googleads.googleapis.com/v17/customers:listAccessibleCustomers",
-                    headers={
-                        "Authorization": f"Bearer {access_token}",
-                        "developer-token": settings.google_ads_developer_token,
-                    },
+            
+            ads_client = GoogleAdsClient(
+                credentials=token_credentials,
+                developer_token=settings.google_ads_developer_token,
+                use_proto_plus=True
+            )
+            
+            # Offload blocking gRPC call to a thread
+            customer_service = ads_client.get_service("CustomerService")
+            accessible_customers = await asyncio.to_thread(customer_service.list_accessible_customers)
+            
+            customer_names = accessible_customers.resource_names
+            for name in customer_names:
+                # format: "customers/1234567890"
+                cid = name.split("/")[-1]
+                await credential_store.save_oauth_connection(
+                    client_id=client_id,
+                    platform="google_ads",
+                    account_id=cid,
+                    account_name=f"Google Ads {cid}",
+                    access_token=access_token,
+                    refresh_token=refresh_token,
+                    token_expires_at=token_expires_at,
+                    extra_data={"developer_token": settings.google_ads_developer_token},
                 )
-            if ads_res.status_code == 200:
-                customer_names = ads_res.json().get("resourceNames", [])
-                for name in customer_names:
-                    # format: "customers/1234567890"
-                    cid = name.split("/")[-1]
-                    await credential_store.save_oauth_connection(
-                        client_id=client_id,
-                        platform="google_ads",
-                        account_id=cid,
-                        account_name=f"Google Ads {cid}",
-                        access_token=access_token,
-                        refresh_token=refresh_token,
-                        token_expires_at=token_expires_at,
-                        extra_data={"developer_token": settings.google_ads_developer_token},
-                    )
-                logger.info(f"Discovered {len(customer_names)} Google Ads accounts")
-            else:
-                logger.warning(f"Google Ads discovery returned {ads_res.status_code}: {ads_res.text}")
+            logger.info(f"Discovered {len(customer_names)} Google Ads accounts via SDK")
         except Exception as e:
             logger.warning(f"Google Ads discovery failed (non-fatal): {e}")
 

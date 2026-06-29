@@ -31,6 +31,29 @@ class _QueryScreenState extends ConsumerState<QueryScreen> {
   String? _results;
   bool _isBatchResult = false;
   Map<String, dynamic>? _batchResults;
+
+  // All OAuth-supported platforms for account discovery
+  static const _oauthPlatforms = [
+    'meta_ads', 'meta_organic', 'google_ads', 'ga4',
+    'youtube', 'threads', 'tiktok_ads', 'tiktok_organic'
+  ];
+
+  /// Searches all loaded connection lists for the current accountId and returns its human-readable name.
+  String? _resolveAccountName(WidgetRef ref) {
+    final accountId = _accountIdController.text.trim();
+    if (accountId.isEmpty || accountId == 'account_1') return null;
+    for (final platform in _oauthPlatforms) {
+      final connsAsync = ref.read(oauthConnectionsProvider(platform));
+      final conns = connsAsync.value ?? [];
+      for (final conn in conns) {
+        if (conn['account_id']?.toString() == accountId) {
+          final name = conn['account_name']?.toString();
+          if (name != null && name.isNotEmpty && name != accountId) return name;
+        }
+      }
+    }
+    return null;
+  }
   
   @override
   void initState() {
@@ -121,6 +144,9 @@ class _QueryScreenState extends ConsumerState<QueryScreen> {
     }
     if (_appIdController.text.isNotEmpty) {
       data['app_id'] = _appIdController.text;
+    }
+    if (_selectedDimensions.isNotEmpty) {
+      data['dimensions'] = _selectedDimensions;
     }
     
     return data;
@@ -246,7 +272,25 @@ class _QueryScreenState extends ConsumerState<QueryScreen> {
                             ],
                           ),
                           const SizedBox(height: 16),
-                          TextField(controller: _accountIdController, decoration: const InputDecoration(labelText: 'Account ID')),
+                          Builder(
+                            builder: (context) {
+                              final resolvedName = _resolveAccountName(ref);
+                              return TextField(
+                                controller: _accountIdController,
+                                decoration: InputDecoration(
+                                  labelText: 'Account ID',
+                                  helperText: resolvedName != null ? '✓ $resolvedName' : null,
+                                  helperStyle: const TextStyle(color: AppTheme.primaryColor, fontWeight: FontWeight.w500),
+                                  suffixIcon: resolvedName != null
+                                      ? Tooltip(
+                                          message: resolvedName,
+                                          child: const Icon(Icons.verified_outlined, color: AppTheme.primaryColor, size: 18),
+                                        )
+                                      : null,
+                                ),
+                              );
+                            },
+                          ),
                           _buildConnectedAccountsSection(),
                           
                           const SizedBox(height: 32),
@@ -856,75 +900,126 @@ class _QueryScreenState extends ConsumerState<QueryScreen> {
   }
 
   Widget _buildConnectedAccountsSection() {
-    final oauthPlatforms = _selectedPlatforms.where((p) => 
-        const ['meta_ads', 'meta_organic', 'google_ads', 'ga4', 'youtube', 'threads'].contains(p)
-    ).toList();
-    if (oauthPlatforms.isEmpty) return const SizedBox.shrink();
+    // Always watch all OAuth platforms so names resolve even before platform selection
+    final allConnections = <Map<String, dynamic>>[];
+    bool anyLoading = false;
+    bool hasAny = false;
+
+    for (final platform in _oauthPlatforms) {
+      final connectionsAsync = ref.watch(oauthConnectionsProvider(platform));
+      connectionsAsync.when(
+        data: (conns) {
+          if (conns.isNotEmpty) hasAny = true;
+          for (final c in conns) {
+            allConnections.add({...c, '_platform': platform});
+          }
+        },
+        loading: () { anyLoading = true; },
+        error: (_, __) {},
+      );
+    }
+
+    if (!hasAny && !anyLoading) return const SizedBox.shrink();
+
+    // Auto pre-select the first connected account if still using placeholder
+    if (_accountIdController.text == 'account_1' && allConnections.isNotEmpty) {
+      final firstId = allConnections.first['account_id']?.toString() ?? '';
+      if (firstId.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _accountIdController.text == 'account_1') {
+            _accountIdController.text = firstId;
+          }
+        });
+      }
+    }
+
+    // Group by platform for display
+    final Map<String, List<Map<String, dynamic>>> grouped = {};
+    for (final conn in allConnections) {
+      final p = conn['_platform'] as String;
+      grouped.putIfAbsent(p, () => []).add(conn);
+    }
+
+    const platformLabels = {
+      'meta_ads': 'Meta Ads',
+      'meta_organic': 'Meta / IG',
+      'google_ads': 'Google Ads',
+      'ga4': 'GA4',
+      'youtube': 'YouTube',
+      'threads': 'Threads',
+      'tiktok_ads': 'TikTok Ads',
+      'tiktok_organic': 'TikTok Organic',
+    };
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 12),
-        Text('Connected Accounts', style: Theme.of(context).textTheme.titleSmall?.copyWith(color: AppTheme.primaryColor)),
-        const SizedBox(height: 8),
-        ...oauthPlatforms.map((platform) {
-          final connectionsAsync = ref.watch(oauthConnectionsProvider(platform));
-          return connectionsAsync.when(
-            data: (connections) {
-              if (connections.isEmpty) return const SizedBox.shrink();
-
-              // Auto pre-select connected account if currently using default placeholder
-              if (_accountIdController.text == 'account_1' && connections.isNotEmpty) {
-                final firstId = connections.first['account_id']?.toString() ?? '';
-                if (firstId.isNotEmpty) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted && _accountIdController.text == 'account_1') {
-                      _accountIdController.text = firstId;
-                    }
-                  });
-                }
-              }
-
-              String label = platform == 'meta_ads' 
-                  ? 'Meta Ads:' 
-                  : (platform == 'meta_organic' ? 'Meta Pages:' : (platform == 'google_ads' ? 'Google:' : (platform == 'ga4' ? 'GA4:' : (platform == 'youtube' ? 'YouTube:' : 'Threads:'))));
-
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 8.0),
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Text(
-                      label,
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.mutedTextColor),
-                    ),
-                    ...connections.map((conn) {
-                      final accountId = conn['account_id']?.toString() ?? '';
-                      final accountName = conn['account_name']?.toString() ?? accountId;
-                      final isSelected = _accountIdController.text == accountId;
-                      return ActionChip(
-                        label: Text(accountName, style: const TextStyle(fontSize: 12)),
-                        avatar: Icon(Icons.account_circle, size: 16, color: isSelected ? AppTheme.primaryColor : AppTheme.mutedTextColor),
-                        backgroundColor: isSelected ? AppTheme.primaryColor.withOpacity(0.1) : AppTheme.surfaceColor,
-                        side: BorderSide(color: isSelected ? AppTheme.primaryColor : AppTheme.mutedTextColor.withOpacity(0.2)),
-                        onPressed: () {
-                          _accountIdController.text = accountId;
-                        },
-                      );
-                    }),
-                  ],
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            const Icon(Icons.link, size: 14, color: AppTheme.primaryColor),
+            const SizedBox(width: 6),
+            Text('Connected Accounts', style: Theme.of(context).textTheme.titleSmall?.copyWith(color: AppTheme.primaryColor)),
+            if (anyLoading) ...[
+              const SizedBox(width: 8),
+              const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5)),
+            ],
+          ],
+        ),
+        const SizedBox(height: 10),
+        ...grouped.entries.map((entry) {
+          final platform = entry.key;
+          final connections = entry.value;
+          final label = platformLabels[platform] ?? platform;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.mutedTextColor.withOpacity(0.7), letterSpacing: 0.5),
                 ),
-              );
-            },
-            loading: () => const Padding(
-              padding: EdgeInsets.only(bottom: 8.0),
-              child: SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-            ),
-            error: (e, s) => Padding(
-              padding: const EdgeInsets.only(bottom: 8.0),
-              child: Text('Error loading accounts for $platform', style: const TextStyle(color: Colors.red, fontSize: 12)),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: connections.map((conn) {
+                    final accountId = conn['account_id']?.toString() ?? '';
+                    final accountName = conn['account_name']?.toString() ?? '';
+                    final displayName = accountName.isNotEmpty && accountName != accountId ? accountName : accountId;
+                    final isSelected = _accountIdController.text == accountId;
+                    return Tooltip(
+                      message: 'ID: $accountId',
+                      child: ActionChip(
+                        label: Text(
+                          displayName,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                            color: isSelected ? AppTheme.primaryColor : AppTheme.textPrimaryColor,
+                          ),
+                        ),
+                        avatar: Icon(
+                          isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                          size: 14,
+                          color: isSelected ? AppTheme.primaryColor : AppTheme.mutedTextColor,
+                        ),
+                        backgroundColor: isSelected ? AppTheme.primaryColor.withOpacity(0.12) : AppTheme.surfaceColor,
+                        side: BorderSide(
+                          color: isSelected ? AppTheme.primaryColor : AppTheme.mutedTextColor.withOpacity(0.2),
+                          width: isSelected ? 1.5 : 1,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _accountIdController.text = accountId;
+                          });
+                        },
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
             ),
           );
         }),

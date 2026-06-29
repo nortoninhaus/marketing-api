@@ -56,7 +56,7 @@ def test_batch_data_authorized(client, auth_headers):
                 "metrics": ["clicks"],
                 "client_id": "test_client",
                 "user_id": "test_user",
-                "account_id": "test_account"
+                "account_id": "1234567890"
             },
             {
                 "platform": "ga4",
@@ -65,7 +65,7 @@ def test_batch_data_authorized(client, auth_headers):
                 "metrics": ["sessions"],
                 "client_id": "test_client",
                 "user_id": "test_user",
-                "account_id": "test_property"
+                "account_id": "properties/123456789"
             }
         ]
     }

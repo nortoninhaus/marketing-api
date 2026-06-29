@@ -1,0 +1,1826 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Pauta | Prefectura del Azuay - Consolidado Junio</title>
+    <!-- Fuente Sora -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+    <!-- Chart.js y Plugin DataLabels -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+
+    <style>
+        :root {
+            /* Paleta de colores Premium / Agencia */
+            --primary: #1D3557;
+            --secondary: #E63946;
+            --bg-body: #F8F9FA;
+            --bg-card: #FFFFFF;
+            --text-main: #1E293B;
+            --text-muted: #64748B;
+            --border-color: #E2E8F0;
+            --success: #10B981;
+
+            /* Colores Demográficos */
+            --female: #EC4899;
+            --male: #0ea5e9;
+
+            /* Tipografía */
+            --font-main: 'Sora', system-ui, sans-serif;
+
+            /* Sombras y Radios */
+            --radius-lg: 16px;
+            --radius-md: 12px;
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        /* Reset y Base */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--font-main);
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            overflow-x: hidden;
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Layout */
+        .sidebar {
+            width: 280px;
+            background-color: var(--bg-card);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 32px 24px;
+            position: fixed;
+            height: 100vh;
+            z-index: 10;
+        }
+
+        .main-content {
+            flex: 1;
+            margin-left: 280px;
+            padding: 32px 40px;
+            max-width: 1400px;
+        }
+
+        /* Sidebar Branding */
+        .brand {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            margin-bottom: 48px;
+            padding-bottom: 24px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .brand img {
+            width: 100%;
+            max-width: 200px;
+            height: auto;
+            object-fit: contain;
+        }
+
+        /* Navegación */
+        .nav-menu {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            list-style: none;
+        }
+
+        .nav-item {
+            padding: 14px 16px;
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-muted);
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+
+        .nav-item:hover {
+            background-color: #F1F5F9;
+            color: var(--text-main);
+        }
+
+        .nav-item.active {
+            background-color: var(--primary);
+            color: #FFFFFF;
+        }
+
+        .nav-item svg {
+            width: 20px;
+            height: 20px;
+            pointer-events: none;
+        }
+
+        /* Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            margin-bottom: 32px;
+            padding-bottom: 24px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .header-title h2 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .header-title p {
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        .date-badge {
+            background-color: #E2E8F0;
+            color: var(--primary);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Tabs Content */
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+            animation: fadeIn 0.4s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* KPI Grid */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 24px;
+            margin-bottom: 32px;
+        }
+
+        .kpi-card {
+            background-color: var(--bg-card);
+            padding: 24px;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--border-color);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .kpi-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+
+        .kpi-title {
+            font-size: 14px;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .kpi-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: rgba(29, 53, 87, 0.1);
+            color: var(--primary);
+        }
+
+        .kpi-value {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 4px;
+            color: var(--text-main);
+        }
+
+        .kpi-context {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* Gráficos */
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 24px;
+            margin-bottom: 32px;
+        }
+
+        .chart-card {
+            background-color: var(--bg-card);
+            padding: 24px;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chart-card.full-width {
+            grid-column: 1 / -1;
+        }
+
+        .chart-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 24px;
+            color: var(--primary);
+        }
+
+        .canvas-container {
+            position: relative;
+            height: 320px;
+            width: 100%;
+            flex-grow: 1;
+        }
+
+        /* Estilos de Tabla Demográfica */
+        .table-container {
+            width: 100%;
+            overflow-x: auto;
+            margin-top: 16px;
+        }
+
+        .demo-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            text-align: left;
+        }
+
+        .demo-table th {
+            background-color: #F1F5F9;
+            color: var(--text-main);
+            padding: 10px 14px;
+            font-weight: 600;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .demo-table td {
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-muted);
+        }
+
+        .demo-table tr:hover {
+            background-color: #F8FAFC;
+        }
+
+        /* Sección de Demografía */
+        .demographics-section {
+            background-color: var(--bg-card);
+            padding: 32px;
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm);
+            margin-bottom: 32px;
+        }
+
+        .demo-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 32px;
+            margin-top: 24px;
+        }
+
+        @media (max-width: 1024px) {
+            .demo-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Insights Cards */
+        .insights-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 24px;
+        }
+
+        .insight-box {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-left: 6px solid var(--primary);
+            border-radius: var(--radius-md);
+            padding: 24px 32px;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .insight-box.accent-red {
+            border-left-color: var(--secondary);
+        }
+
+        .insight-box.accent-green {
+            border-left-color: var(--success);
+        }
+
+        .insight-box h3 {
+            font-size: 18px;
+            color: var(--text-main);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .insight-box p {
+            color: var(--text-muted);
+            line-height: 1.7;
+            font-size: 15px;
+            margin-bottom: 12px;
+        }
+
+        .insight-box ul {
+            padding-left: 20px;
+            color: var(--text-muted);
+            line-height: 1.7;
+            font-size: 15px;
+        }
+
+        .insight-box li {
+            margin-bottom: 8px;
+        }
+
+        /* Conclusions Card */
+        .conclusions-card {
+            background-color: var(--primary);
+            color: #FFFFFF;
+            padding: 32px;
+            border-radius: var(--radius-lg);
+            margin-bottom: 32px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: var(--shadow-md);
+        }
+
+        .conclusions-card h3 {
+            margin-bottom: 16px;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .conclusions-list {
+            list-style: none;
+            position: relative;
+            z-index: 2;
+        }
+
+        .conclusions-list li {
+            margin-bottom: 12px;
+            padding-left: 24px;
+            position: relative;
+            font-size: 14px;
+            line-height: 1.6;
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .conclusions-list li::before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            top: 0;
+            color: var(--secondary);
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .bg-pattern {
+            position: absolute;
+            right: -50px;
+            top: -50px;
+            width: 200px;
+            height: 200px;
+            opacity: 0.1;
+            z-index: 1;
+        }
+
+        /* Responsivo */
+        @media (max-width: 1024px) {
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            body {
+                flex-direction: column;
+            }
+
+            .sidebar {
+                width: 100%;
+                height: auto;
+                position: static;
+                padding: 16px;
+                border-right: none;
+                border-bottom: 1px solid var(--border-color);
+            }
+
+            .brand {
+                flex-direction: row;
+                text-align: left;
+                padding-bottom: 16px;
+                margin-bottom: 16px;
+                justify-content: center;
+            }
+
+            .brand img {
+                width: 120px;
+            }
+
+            .main-content {
+                margin-left: 0;
+                padding: 24px 16px;
+            }
+
+            .nav-menu {
+                flex-direction: row;
+                overflow-x: auto;
+                padding-bottom: 8px;
+            }
+
+            .nav-item {
+                white-space: nowrap;
+            }
+
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 16px;
+            }
+
+            .kpi-value {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Sidebar Navegación -->
+    <aside class="sidebar">
+        <div class="brand">
+            <img src="https://www.azuay.gob.ec/wp-content/uploads/2025/09/cropped-Logo-Prefecura-Horizontal-150alto.png"
+                alt="Logo Prefectura del Azuay">
+        </div>
+
+        <ul class="nav-menu">
+            <li class="nav-item active" data-target="resumen">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect width="7" height="9" x="3" y="3" rx="1" />
+                    <rect width="7" height="5" x="14" y="3" rx="1" />
+                    <rect width="7" height="9" x="14" y="12" rx="1" />
+                    <rect width="7" height="5" x="3" y="16" rx="1" />
+                </svg>
+                Resumen Ejecutivo
+            </li>
+            <li class="nav-item" data-target="meta">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+                </svg>
+                Meta Ads
+            </li>
+            <li class="nav-item" data-target="google">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path
+                        d="M21 3v18H3V3h18Zm-8 10h5v-2h-5v2Zm0 4h5v-2h-5v2Zm-4-4h-2v2h2v-2Zm0-4h-2v2h2V9Zm4 0h5V7h-5v2Z" />
+                </svg>
+                Google Ads
+            </li>
+            <li class="nav-item" data-target="tiktok">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5" />
+                </svg>
+                TikTok Ads
+            </li>
+            <li class="nav-item" data-target="insights">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 16v-4" />
+                    <path d="M12 8h.01" />
+                </svg>
+                Insights & Estrategia
+            </li>
+        </ul>
+    </aside>
+
+    <!-- Contenido Principal -->
+    <main class="main-content">
+        <header>
+            <div class="header-title">
+                <h2>Dashboard de Rendimiento</h2>
+                <p>Métricas de Audiencia, Demografía e Impacto Multicanal</p>
+            </div>
+            <div class="date-badge">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect width="18" height="18" x="3" y="4" rx="2" ry="2" />
+                    <line x1="16" x2="16" y1="2" y2="6" />
+                    <line x1="8" x2="8" y1="2" y2="6" />
+                    <line x1="3" x2="21" y1="10" y2="10" />
+                </svg>
+                17 May 2026 - 26 Jun 2026
+            </div>
+        </header>
+
+        <!-- VISTA: RESUMEN EJECUTIVO -->
+        <div id="resumen" class="tab-content active">
+
+            <div class="conclusions-card">
+                <svg class="bg-pattern" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="m22 2-7 20-4-9-9-4Z" />
+                    <path d="M22 2 11 13" />
+                </svg>
+                <h3>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                        stroke="#E63946" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+                        <path d="M9 12l2 2 4-4" />
+                    </svg>
+                    Conclusiones Principales
+                </h3>
+                <ul class="conclusions-list">
+                    <li>La campaña consolidada a nivel provincial logró superar los <strong>2.61 millones de impactos
+                            totales (impresiones)</strong>, logrando una penetración de marca robusta en formatos de
+                        video y feed tradicional.</li>
+                    <li><strong>Google Ads lideró en calidad y permanencia de marca</strong> con un promedio
+                        sobresaliente de <strong>58.9% de VTR</strong>(View-Through Rate), asegurando que el contenido
+                        sea consumido por completo.</li>
+                    <li>La inversión de <strong>$3,170.00</strong> se estructuró para sostener la presencia multicanal
+                        equitativa en la provincia, apalancando eficientemente el bajo costo de TikTok y el sólido
+                        alcance de Meta.</li>
+                </ul>
+            </div>
+
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-title">Inversión Total</span>
+                        <div class="kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"
+                                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="12" y1="1" x2="12" y2="23" />
+                                <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                            </svg></div>
+                    </div>
+                    <div class="kpi-value">$3,170.00</div>
+                    <div class="kpi-context">Inversión consolidada de campaña</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-title">Alcance Total</span>
+                        <div class="kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"
+                                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                                <circle cx="9" cy="7" r="4" />
+                                <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                            </svg></div>
+                    </div>
+                    <div class="kpi-value">1.03M</div>
+                    <div class="kpi-context">1,030,000 personas alcanzadas</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-title">Impresiones Totales</span>
+                        <div class="kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"
+                                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+                                <circle cx="12" cy="12" r="3" />
+                            </svg></div>
+                    </div>
+                    <div class="kpi-value">2.61M</div>
+                    <div class="kpi-context">2,610,000 impactos generados</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-title">Vistas de Video / Int.</span>
+                        <div class="kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"
+                                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round">
+                                <rect width="20" height="15" x="2" y="4" rx="2" />
+                                <path d="m10 8 6 4-6 4Z" />
+                            </svg></div>
+                    </div>
+                    <div class="kpi-value">755k</div>
+                    <div class="kpi-context">755,000 interacciones retenidas</div>
+                </div>
+            </div>
+
+            <!-- Gráficos de Volumen -->
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <div class="chart-title">Distribución de Alcance por Red</div>
+                    <div class="canvas-container"><canvas id="chartAlcancePie"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-title">Desglose de Impresiones Totales</div>
+                    <div class="canvas-container"><canvas id="chartImpresionesPie"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-title">Composición de Inversión por Red</div>
+                    <div class="canvas-container"><canvas id="chartInvPie"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-title">Desglose de Vistas de Video por Red</div>
+                    <div class="canvas-container"><canvas id="chartViewsPie"></canvas></div>
+                </div>
+            </div>
+
+            <!-- SECCIÓN DEMOGRÁFICA CONSOLIDADA (NUEVA) -->
+            <div class="demographics-section">
+                <h3 class="chart-title" style="margin-bottom: 8px;">Análisis Demográfico Consolidado</h3>
+                <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 24px;">Distribución porcentual
+                    integrada de las tres plataformas publicitarias.</p>
+                <div class="demo-grid">
+                    <div class="chart-card" style="box-shadow: none; border: none; padding: 0;">
+                        <div class="chart-title" style="font-size: 14px;">Distribución de Edad</div>
+                        <div class="canvas-container" style="height: 250px;"><canvas id="chartDemoEdad"></canvas></div>
+                        <div class="table-container">
+                            <table class="demo-table">
+                                <thead>
+                                    <tr>
+                                        <th>Rango de Edad</th>
+                                        <th>Porcentaje (%)</th>
+                                        <th>Impacto Estimado (Impr.)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>18-24 años</td>
+                                        <td>17.3%</td>
+                                        <td>434,230</td>
+                                    </tr>
+                                    <tr>
+                                        <td>25-34 años</td>
+                                        <td>26.8%</td>
+                                        <td>672,680</td>
+                                    </tr>
+                                    <tr>
+                                        <td>35-44 años</td>
+                                        <td>19.4%</td>
+                                        <td>486,940</td>
+                                    </tr>
+                                    <tr>
+                                        <td>45-54 años</td>
+                                        <td>14.2%</td>
+                                        <td>356,420</td>
+                                    </tr>
+                                    <tr>
+                                        <td>55-64 años</td>
+                                        <td>12.1%</td>
+                                        <td>303,710</td>
+                                    </tr>
+                                    <tr>
+                                        <td>65+ años</td>
+                                        <td>10.2%</td>
+                                        <td>256,020</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="chart-card" style="box-shadow: none; border: none; padding: 0;">
+                        <div class="chart-title" style="font-size: 14px;">Distribución de Género</div>
+                        <div class="canvas-container" style="height: 250px;"><canvas id="chartDemoSexo"></canvas></div>
+                        <div class="table-container">
+                            <table class="demo-table">
+                                <thead>
+                                    <tr>
+                                        <th>Género</th>
+                                        <th>Porcentaje (%)</th>
+                                        <th>Impacto Estimado (Impr.)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>Femenino</td>
+                                        <td>52.4%</td>
+                                        <td>1,315,240</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Masculino</td>
+                                        <td>47.6%</td>
+                                        <td>1,194,760</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- VISTA: META ADS -->
+
+        <!-- VISTA: META ADS -->
+        <div id="meta" class="tab-content">
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-title">Inversión Meta</span>
+                        <!-- updated -->
+                        <div class="kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg></div>
+                    </div>
+                    <div class="kpi-value">$1,040.00</div>
+                    <div class="kpi-context">Presupuesto consolidado</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-title">Alcance</span>
+                        <div class="kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg></div>
+                    </div>
+                    <div class="kpi-value">395,000</div>
+                    <div class="kpi-context">Usuarios únicos</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-title">Impresiones</span>
+                        <div class="kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></svg></div>
+                    </div>
+                    <div class="kpi-value">745,000</div>
+                    <div class="kpi-context">Líder en volumen acumulado</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-title">Interacciones</span>
+                        <div class="kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="15" x="2" y="4" rx="2" /><path d="m10 8 6 4-6 4Z" /></svg></div>
+                    </div>
+                    <div class="kpi-value">105,500</div>
+                    <div class="kpi-context">Retención vertical del mensaje</div>
+                </div>
+            </div>
+
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <div class="chart-title">Embudo de Volumen: Meta Ads</div>
+                    <div class="canvas-container"><canvas id="chartMetaFunnel"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-title">Tasa de Enganche (Acciones vs Resto)</div>
+                    <div class="canvas-container"><canvas id="chartMetaPie"></canvas></div>
+                </div>
+            </div>
+
+            <!-- DEMOGRAFÍA META -->
+            <div class="demographics-section">
+                <h3 class="chart-title" style="margin-bottom: 8px;">Segmentación Demográfica en Meta Ads</h3>
+                <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 24px;">Mapeo demográfico de impactos directos y alcance en Facebook e Instagram.</p>
+                <div class="demo-grid">
+                    <div class="chart-card" style="box-shadow: none; border: none; padding: 0;">
+                        <div class="chart-title" style="font-size: 14px;">Edad del Público - Meta</div>
+                        <div class="canvas-container" style="height: 250px;"><canvas id="chartMetaEdad"></canvas></div>
+                        <div class="table-container">
+                            <table class="demo-table">
+                                <thead>
+                                    <tr>
+                                        <th>Grupo Etario</th>
+                                        <th>Porcentaje (%)</th>
+                                        <th>Impacto (Impr.)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td>18-24 años</td><td>15.1%</td><td>112,495</td></tr>
+                                    <tr><td>25-34 años</td><td>28.3%</td><td>210,835</td></tr>
+                                    <tr><td>35-44 años</td><td>21.5%</td><td>160,175</td></tr>
+                                    <tr><td>45-54 años</td><td>14.8%</td><td>110,260</td></tr>
+                                    <tr><td>55-64 años</td><td>12.3%</td><td>91,635</td></tr>
+                                    <tr><td>65+ años</td><td>8.0%</td><td>59,600</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="chart-card" style="box-shadow: none; border: none; padding: 0;">
+                        <div class="chart-title" style="font-size: 14px;">Género del Público - Meta</div>
+                        <div class="canvas-container" style="height: 250px;"><canvas id="chartMetaSexo"></canvas></div>
+                        <div class="table-container">
+                            <table class="demo-table">
+                                <thead>
+                                    <tr>
+                                        <th>Género</th>
+                                        <th>Porcentaje (%)</th>
+                                        <th>Impacto (Impr.)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td>Femenino</td><td>54.2%</td><td>403,790</td></tr>
+                                    <tr><td>Masculino</td><td>45.8%</td><td>341,210</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CAMPAIGN TABLE META -->
+            <div class="chart-card full-width" style="margin-bottom: 32px;">
+                <div class="chart-title">Desglose de Campañas - Meta Ads</div>
+                <div class="table-container">
+                    <table class="demo-table">
+                        <thead>
+                            <tr>
+                                <th>Nombre de Campaña</th>
+                                <th>Inversión</th>
+                                <th>Impresiones</th>
+                                <th>Alcance</th>
+                                <th>Interacciones</th>
+                                <th>CTR</th>
+                                <th>CPC</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style="font-weight: 600;">Prefectura_Azuay_Vias_y_Obras_Junio</td>
+                                <td>$450.00</td>
+                                <td>320,000</td>
+                                <td>165,000</td>
+                                <td>45,000</td>
+                                <td>3.88%</td>
+                                <td>$0.010</td>
+                            </tr>
+                            <tr>
+                                <td style="font-weight: 600;">Prefectura_Azuay_Social_y_Fomento_Productivo</td>
+                                <td>$350.00</td>
+                                <td>250,000</td>
+                                <td>130,000</td>
+                                <td>35,000</td>
+                                <td>3.68%</td>
+                                <td>$0.010</td>
+                            </tr>
+                            <tr>
+                                <td style="font-weight: 600;">Prefectura_Azuay_Turismo_Azuay_Junio</td>
+                                <td>$240.00</td>
+                                <td>175,000</td>
+                                <td>100,000</td>
+                                <td>25,500</td>
+                                <td>3.71%</td>
+                                <td>$0.009</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    
+        <!-- VISTA: GOOGLE ADS -->
+        <div id="google" class="tab-content">
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-title">Inversión Google</span>
+                        <div class="kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="12" x2="12" y2="12" /><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg></div>
+                    </div>
+                    <div class="kpi-value">$1,040.00</div>
+                    <div class="kpi-context">Presupuesto ejecutado</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-title">Usuarios Únicos</span>
+                        <div class="kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg></div>
+                    </div>
+                    <div class="kpi-value">222,000</div>
+                    <div class="kpi-context">Alcance de campaña en YT</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-title">Impresiones</span>
+                        <div class="kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></svg></div>
+                    </div>
+                    <div class="kpi-value">695,000</div>
+                    <div class="kpi-context">Apariciones de video pre-roll</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-title">Vistas TrueView</span>
+                        <div class="kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="15" x="2" y="4" rx="2" /><path d="m10 8 6 4-6 4Z" /></svg></div>
+                    </div>
+                    <div class="kpi-value">238,500</div>
+                    <div class="kpi-context" style="color:var(--success); font-weight:600;">58.9% VTR Excepcional</div>
+                </div>
+            </div>
+
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <div class="chart-title">Embudo de Volumen: Google Ads</div>
+                    <div class="canvas-container"><canvas id="chartGoogleFunnel"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-title">Tasa de Visualización In-Stream (VTR)</div>
+                    <div class="canvas-container"><canvas id="chartGooglePie"></canvas></div>
+                </div>
+            </div>
+
+            <!-- DEMOGRAFÍA GOOGLE -->
+            <div class="demographics-section">
+                <h3 class="chart-title" style="margin-bottom: 8px;">Segmentación Demográfica en Google Ads</h3>
+                <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 24px;">Análisis de visualizaciones e impactos demográficos en YouTube.</p>
+                <div class="demo-grid">
+                    <div class="chart-card" style="box-shadow: none; border: none; padding: 0;">
+                        <div class="chart-title" style="font-size: 14px;">Edad del Público - Google</div>
+                        <div class="canvas-container" style="height: 250px;"><canvas id="chartGoogleEdad"></canvas></div>
+                        <div class="table-container">
+                            <table class="demo-table">
+                                <thead>
+                                    <tr>
+                                        <th>Grupo Etario</th>
+                                        <th>Porcentaje (%)</th>
+                                        <th>Impacto (Impr.)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td>18-24 años</td><td>16.5%</td><td>114,675</td></tr>
+                                    <tr><td>25-34 años</td><td>25.2%</td><td>175,140</td></tr>
+                                    <tr><td>35-44 años</td><td>20.1%</td><td>139,695</td></tr>
+                                    <tr><td>45-54 años</td><td>15.5%</td><td>107,725</td></tr>
+                                    <tr><td>55-64 años</td><td>13.2%</td><td>91,740</td></tr>
+                                    <tr><td>65+ años</td><td>9.5%</td><td>66,025</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="chart-card" style="box-shadow: none; border: none; padding: 0;">
+                        <div class="chart-title" style="font-size: 14px;">Género del Público - Google</div>
+                        <div class="canvas-container" style="height: 250px;"><canvas id="chartGoogleSexo"></canvas></div>
+                        <div class="table-container">
+                            <table class="demo-table">
+                                <thead>
+                                    <tr>
+                                        <th>Género</th>
+                                        <th>Porcentaje (%)</th>
+                                        <th>Impacto (Impr.)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td>Femenino</td><td>49.5%</td><td>344,025</td></tr>
+                                    <tr><td>Masculino</td><td>50.5%</td><td>350,975</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CAMPAIGN TABLE GOOGLE -->
+            <div class="chart-card full-width" style="margin-bottom: 32px;">
+                <div class="chart-title">Desglose de Campañas - Google Ads</div>
+                <div class="table-container">
+                    <table class="demo-table">
+                        <thead>
+                            <tr>
+                                <th>Nombre de Campaña</th>
+                                <th>Inversión</th>
+                                <th>Impresiones</th>
+                                <th>Usuarios Únicos</th>
+                                <th>TrueView Views</th>
+                                <th>VTR</th>
+                                <th>CPV</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style="font-weight: 600;">Azuay_YouTube_PreRoll_Rutas_Turisticas_Junio</td>
+                                <td>$550.00</td>
+                                <td>360,000</td>
+                                <td>115,000</td>
+                                <td>215,000</td>
+                                <td>59.7%</td>
+                                <td>$0.002</td>
+                            </tr>
+                            <tr>
+                                <td style="font-weight: 600;">Azuay_YouTube_Preroll_Gestion_Vial_Junio</td>
+                                <td>$490.00</td>
+                                <td>335,000</td>
+                                <td>107,000</td>
+                                <td>196,000</td>
+                                <td>58.5%</td>
+                                <td>$0.002</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    
+        <!-- VISTA: TIKTOK ADS -->
+        <div id="tiktok" class="tab-content">
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-title">Inversión TikTok</span>
+                        <div class="kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg></div>
+                    </div>
+                    <div class="kpi-value">$1,090.00</div>
+                    <div class="kpi-context">Presupuesto ejecutado</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-title">Resultados / Alcance</span>
+                        <div class="kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg></div>
+                    </div>
+                    <div class="kpi-value">408,000</div>
+                    <div class="kpi-context">Alcance de visualización in-feed</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-title">Impresiones</span>
+                        <div class="kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></svg></div>
+                    </div>
+                    <div class="kpi-value">1,170,000</div>
+                    <div class="kpi-context">Líder en volumen acumulado</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-title">Vistas Efectivas</span>
+                        <div class="kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="15" x="2" y="4" rx="2" /><path d="m10 8 6 4-6 4Z" /></svg></div>
+                    </div>
+                    <div class="kpi-value">411,000</div>
+                    <div class="kpi-context">Retención vertical del mensaje</div>
+                </div>
+            </div>
+
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <div class="chart-title">Embudo de Volumen: TikTok Ads</div>
+                    <div class="canvas-container"><canvas id="chartTikTokFunnel"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-title">Tasa de Retención (Vistas vs Scroll)</div>
+                    <div class="canvas-container"><canvas id="chartTikTokPie"></canvas></div>
+                </div>
+            </div>
+
+            <!-- DEMOGRAFÍA TIKTOK -->
+            <div class="demographics-section">
+                <h3 class="chart-title" style="margin-bottom: 8px;">Segmentación Demográfica en TikTok Ads</h3>
+                <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 24px;">Análisis de visualizaciones y engagement demográfico en TikTok.</p>
+                <div class="demo-grid">
+                    <div class="chart-card" style="box-shadow: none; border: none; padding: 0;">
+                        <div class="chart-title" style="font-size: 14px;">Edad del Público - TikTok</div>
+                        <div class="canvas-container" style="height: 250px;"><canvas id="chartTikTokEdad"></canvas></div>
+                        <div class="table-container">
+                            <table class="demo-table">
+                                <thead>
+                                    <tr>
+                                        <th>Grupo Etario</th>
+                                        <th>Porcentaje (%)</th>
+                                        <th>Impacto (Impr.)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td>18-24 años</td><td>20.4%</td><td>238,680</td></tr>
+                                    <tr><td>25-34 años</td><td>26.9%</td><td>314,730</td></tr>
+                                    <tr><td>35-44 años</td><td>16.6%</td><td>194,220</td></tr>
+                                    <tr><td>45-54 años</td><td>12.0%</td><td>140,400</td></tr>
+                                    <tr><td>55-64 años</td><td>10.8%</td><td>126,360</td></tr>
+                                    <tr><td>65+ años</td><td>13.3%</td><td>155,610</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="chart-card" style="box-shadow: none; border: none; padding: 0;">
+                        <div class="chart-title" style="font-size: 14px;">Género del Público - TikTok</div>
+                        <div class="canvas-container" style="height: 250px;"><canvas id="chartTikTokSexo"></canvas></div>
+                        <div class="table-container">
+                            <table class="demo-table">
+                                <thead>
+                                    <tr>
+                                        <th>Género</th>
+                                        <th>Porcentaje (%)</th>
+                                        <th>Impacto (Impr.)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td>Femenino</td><td>53.5%</td><td>625,950</td></tr>
+                                    <tr><td>Masculino</td><td>46.5%</td><td>544,050</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CAMPAIGN TABLE TIKTOK -->
+            <div class="chart-card full-width" style="margin-bottom: 32px;">
+                <div class="chart-title">Desglose de Campañas - TikTok Ads</div>
+                <div class="table-container">
+                    <table class="demo-table">
+                        <thead>
+                            <tr>
+                                <th>Nombre de Campaña</th>
+                                <th>Inversión</th>
+                                <th>Impresiones</th>
+                                <th>Alcance</th>
+                                <th>Vistas Efectivas</th>
+                                <th>Engagement</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style="font-weight: 600;">Prefectura_Azuay_TikTok_Awareness_Tranvia_Junio</td>
+                                <td>$600.00</td>
+                                <td>670,000</td>
+                                <td>230,000</td>
+                                <td>230,000</td>
+                                <td>45,000</td>
+                            </tr>
+                            <tr>
+                                <td style="font-weight: 600;">Prefectura_Azuay_TikTok_Obras_Viales_Junio</td>
+                                <td>$490.00</td>
+                                <td>500,000</td>
+                                <td>178,000</td>
+                                <td>181,000</td>
+                                <td>35,000</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    
+        <!-- VISTA: GOOGLE ANALYTICS 4 -->
+        <div id="ga4" class="tab-content">
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-title">Sesiones Totales</span>
+                        <div class="kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg></div>
+                    </div>
+                    <div class="kpi-value">185,000</div>
+                    <div class="kpi-context">Visitas totales al sitio web</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-title">Usuarios Activos</span>
+                        <div class="kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg></div>
+                    </div>
+                    <div class="kpi-value">98,000</div>
+                    <div class="kpi-context">Lectores únicos del portal</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-title">Vistas de Página</span>
+                        <div class="kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></svg></div>
+                    </div>
+                    <div class="kpi-value">425,000</div>
+                    <div class="kpi-context">Impactos de contenido leídos</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-title">Duración Sesión</span>
+                        <div class="kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
+                    </div>
+                    <div class="kpi-value">1m 45s</div>
+                    <div class="kpi-context">Tiempo promedio de lectura</div>
+                </div>
+            </div>
+
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <div class="chart-title">Fuentes de Tráfico - GA4</div>
+                    <div class="canvas-container"><canvas id="chartGA4Traffic"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-title">Rendimiento por Dispositivo</div>
+                    <div class="canvas-container"><canvas id="chartGA4Devices"></canvas></div>
+                </div>
+            </div>
+
+            <!-- TABLA DE PÁGINAS MÁS VISITADAS -->
+            <div class="chart-card full-width">
+                <div class="chart-title">Páginas Más Visitadas - portal azuay.gob.ec</div>
+                <div class="table-container">
+                    <table class="demo-table">
+                        <thead>
+                            <tr>
+                                <th>Ruta de la Página</th>
+                                <th>Vistas de Página</th>
+                                <th>Usuarios Únicos</th>
+                                <th>Tiempo Promedio</th>
+                                <th>Porcentaje de Rebote</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style="font-weight: 600;">/ (Inicio)</td>
+                                <td>185,000</td>
+                                <td>45,000</td>
+                                <td>1m 32s</td>
+                                <td>38.2%</td>
+                            </tr>
+                            <tr>
+                                <td style="font-weight: 600;">/tramites (Trámites Municipales)</td>
+                                <td>125,000</td>
+                                <td>31,000</td>
+                                <td>2m 15s</td>
+                                <td>29.4%</td>
+                            </tr>
+                            <tr>
+                                <td style="font-weight: 600;">/noticias (Gestión Vial & Obras)</td>
+                                <td>75,000</td>
+                                <td>18,000</td>
+                                <td>1m 58s</td>
+                                <td>42.5%</td>
+                            </tr>
+                            <tr>
+                                <td style="font-weight: 600;">/turismo (Guías Turísticas Azuay)</td>
+                                <td>40,000</td>
+                                <td>12,000</td>
+                                <td>1m 12s</td>
+                                <td>51.8%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    
+        <!-- VISTA: INSIGHTS & ESTRATEGIA -->
+        <div id="insights" class="tab-content">
+            <div class="insights-grid">
+                <div class="insight-box">
+                    <h3>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+                        </svg>
+                        Eficacia del Pre-Roll de Google Ads
+                    </h3>
+                    <p>Google Ads (YouTube) ha mostrado una retención sobresaliente en la provincia. El <strong>VTR (View-Through Rate) de 58.9%</strong> supera las medias nacionales, logrando que el mensaje sobre obras e hitos de la Prefectura sea asimilado de forma completa.</p>
+                </div>
+
+                <div class="insight-box accent-green">
+                    <h3>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+                        </svg>
+                        Eficiencia de Costo y Volumen en TikTok
+                    </h3>
+                    <p>TikTok Ads se consolida como la plataforma con menor barrera de costo por impacto. Con un CPC promedio bajo y una alta tasa de reproducciones efectivas, permite democratizar el alcance de la Prefectura entre el segmento de jóvenes y adultos jóvenes en el Azuay.</p>
+                </div>
+
+                <div class="insight-box accent-red">
+                    <h3>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                        </svg>
+                        Recomendaciones Estratégicas
+                    </h3>
+                    <ul>
+                        <li><strong>Optimización de Contenido de Video:</strong> Mantener la duración de los videos por debajo de 15 segundos para maximizar la retención completa en TikTok y Meta Feeds.</li>
+                        <li><strong>Refuerzo en el Segmento Joven (18-24):</strong> Implementar narrativas dinámicas y formatos UGC (User Generated Content) para elevar la tasa de enganche (Engagement Rate) en este segmento crítico.</li>
+                        <li><strong>Distribución Geográfica:</strong> Focalizar la segmentación en cantones con menor densidad poblacional mediante campañas de geocerca específicas para asegurar un alcance uniforme en toda la provincia del Azuay.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    
+    </main>
+
+    <!-- SCRIPT DE CHARTS E INTERACCIONES -->
+    <script>
+        // Lógica de Tabs
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', () => {
+                document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                
+                item.classList.add('active');
+                const target = item.getAttribute('data-target');
+                document.getElementById(target).classList.add('active');
+            });
+        });
+
+        // Configuración Global de Chart.js
+        Chart.defaults.font.family = "'Sora', sans-serif";
+        Chart.defaults.color = "#64748B";
+        Chart.register(ChartDataLabels);
+
+        const colors = {
+            meta: '#A78BFA',
+            google: '#5C9DFF',
+            tiktok: '#EC4899',
+            female: '#EC4899',
+            male: '#0EA5E9',
+            ga4: '#F5C451'
+        };
+
+        // --- CHARTS RESUMEN ---
+        new Chart(document.getElementById('chartAlcancePie'), {
+            type: 'doughnut',
+            data: {
+                labels: ['Meta Ads', 'Google Ads', 'TikTok Ads'],
+                datasets: [{
+                    data: [395000, 222000, 408000],
+                    backgroundColor: [colors.meta, colors.google, colors.tiktok],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom' },
+                    datalabels: {
+                        color: '#fff',
+                        formatter: (val) => (val / 1000) + 'k',
+                        font: { weight: 'bold' }
+                    }
+                }
+            }
+        });
+
+        new Chart(document.getElementById('chartImpresionesPie'), {
+            type: 'doughnut',
+            data: {
+                labels: ['Meta Ads', 'Google Ads', 'TikTok Ads'],
+                datasets: [{
+                    data: [745000, 695000, 1170000],
+                    backgroundColor: [colors.meta, colors.google, colors.tiktok],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom' },
+                    datalabels: {
+                        color: '#fff',
+                        formatter: (val) => (val / 1000) + 'k',
+                        font: { weight: 'bold' }
+                    }
+                }
+            }
+        });
+
+        new Chart(document.getElementById('chartInvPie'), {
+            type: 'doughnut',
+            data: {
+                labels: ['Meta Ads', 'Google Ads', 'TikTok Ads'],
+                datasets: [{
+                    data: [1040.00, 1040.00, 1090.00],
+                    backgroundColor: [colors.meta, colors.google, colors.tiktok],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom' },
+                    datalabels: {
+                        color: '#fff',
+                        formatter: (val) => '$' + val.toFixed(0),
+                        font: { weight: 'bold' }
+                    }
+                }
+            }
+        });
+
+        new Chart(document.getElementById('chartViewsPie'), {
+            type: 'doughnut',
+            data: {
+                labels: ['Meta Ads', 'Google Ads', 'TikTok Ads'],
+                datasets: [{
+                    data: [105500, 238500, 411000],
+                    backgroundColor: [colors.meta, colors.google, colors.tiktok],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom' },
+                    datalabels: {
+                        color: '#fff',
+                        formatter: (val) => (val / 1000) + 'k',
+                        font: { weight: 'bold' }
+                    }
+                }
+            }
+        });
+
+        new Chart(document.getElementById('chartDemoEdad'), {
+            type: 'bar',
+            data: {
+                labels: ['18-24', '25-34', '35-44', '45-54', '55-64', '65+'],
+                datasets: [{
+                    label: 'Consolidado %',
+                    data: [17.3, 26.8, 19.4, 14.2, 12.1, 10.2],
+                    backgroundColor: '#1D3557',
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    datalabels: {
+                        anchor: 'end',
+                        align: 'top',
+                        formatter: (val) => val + '%'
+                    }
+                },
+                scales: {
+                    y: { max: 35, grid: { drawBorder: false } }
+                }
+            }
+        });
+
+        new Chart(document.getElementById('chartDemoSexo'), {
+            type: 'doughnut',
+            data: {
+                labels: ['Femenino', 'Masculino'],
+                datasets: [{
+                    data: [52.4, 47.6],
+                    backgroundColor: [colors.female, colors.male],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom' },
+                    datalabels: {
+                        color: '#fff',
+                        formatter: (val) => val + '%',
+                        font: { weight: 'bold' }
+                    }
+                }
+            }
+        });
+
+        // --- CHARTS META ---
+        new Chart(document.getElementById('chartMetaFunnel'), {
+            type: 'bar',
+            data: {
+                labels: ['Impresiones', 'Alcance', 'Interacciones'],
+                datasets: [{
+                    data: [745000, 395000, 105500],
+                    backgroundColor: colors.meta,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    datalabels: {
+                        anchor: 'end',
+                        align: 'right',
+                        formatter: (val) => (val / 1000) + 'k'
+                    }
+                }
+            }
+        });
+
+        new Chart(document.getElementById('chartMetaPie'), {
+            type: 'pie',
+            data: {
+                labels: ['Interacciones', 'Otros impactos'],
+                datasets: [{
+                    data: [105500, 639500],
+                    backgroundColor: [colors.meta, '#F1F5F9'],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom' },
+                    datalabels: {
+                        formatter: (val, ctx) => {
+                            if (ctx.dataIndex === 0) return '14.2%';
+                            return '';
+                        },
+                        color: '#fff',
+                        font: { weight: 'bold' }
+                    }
+                }
+            }
+        });
+
+        new Chart(document.getElementById('chartMetaEdad'), {
+            type: 'bar',
+            data: {
+                labels: ['18-24', '25-34', '35-44', '45-54', '55-64', '65+'],
+                datasets: [{
+                    data: [15.1, 28.3, 21.5, 14.8, 12.3, 8.0],
+                    backgroundColor: colors.meta,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    datalabels: { anchor: 'end', align: 'top', formatter: (val) => val + '%' }
+                }
+            }
+        });
+
+        new Chart(document.getElementById('chartMetaSexo'), {
+            type: 'doughnut',
+            data: {
+                labels: ['Femenino', 'Masculino'],
+                datasets: [{
+                    data: [54.2, 45.8],
+                    backgroundColor: [colors.female, colors.male],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom' },
+                    datalabels: { color: '#fff', formatter: (val) => val + '%' }
+                }
+            }
+        });
+
+        // --- CHARTS GOOGLE ---
+        new Chart(document.getElementById('chartGoogleFunnel'), {
+            type: 'bar',
+            data: {
+                labels: ['Impresiones', 'Usuarios Únicos', 'Vistas TrueView'],
+                datasets: [{
+                    data: [695000, 222000, 238500],
+                    backgroundColor: colors.google,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    datalabels: { anchor: 'end', align: 'right', formatter: (val) => (val / 1000) + 'k' }
+                }
+            }
+        });
+
+        new Chart(document.getElementById('chartGooglePie'), {
+            type: 'pie',
+            data: {
+                labels: ['Vistas completas', 'Ignorados (Skip)'],
+                datasets: [{
+                    data: [238500, 456500],
+                    backgroundColor: [colors.google, '#F1F5F9'],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom' },
+                    datalabels: {
+                        formatter: (val, ctx) => {
+                            if (ctx.dataIndex === 0) return '58.9%';
+                            return '';
+                        },
+                        color: '#fff',
+                        font: { weight: 'bold' }
+                    }
+                }
+            }
+        });
+
+        new Chart(document.getElementById('chartGoogleEdad'), {
+            type: 'bar',
+            data: {
+                labels: ['18-24', '25-34', '35-44', '45-54', '55-64', '65+'],
+                datasets: [{
+                    data: [16.5, 25.2, 20.1, 15.5, 13.2, 9.5],
+                    backgroundColor: colors.google,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    datalabels: { anchor: 'end', align: 'top', formatter: (val) => val + '%' }
+                }
+            }
+        });
+
+        new Chart(document.getElementById('chartGoogleSexo'), {
+            type: 'doughnut',
+            data: {
+                labels: ['Femenino', 'Masculino'],
+                datasets: [{
+                    data: [49.5, 50.5],
+                    backgroundColor: [colors.female, colors.male],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom' },
+                    datalabels: { color: '#fff', formatter: (val) => val + '%' }
+                }
+            }
+        });
+
+        // --- CHARTS TIKTOK ---
+        new Chart(document.getElementById('chartTikTokFunnel'), {
+            type: 'bar',
+            data: {
+                labels: ['Impresiones', 'Alcance', 'Vistas Efectivas'],
+                datasets: [{
+                    data: [1170000, 408000, 411000],
+                    backgroundColor: colors.tiktok,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    datalabels: { anchor: 'end', align: 'right', formatter: (val) => (val / 1000) + 'k' }
+                }
+            }
+        });
+
+        new Chart(document.getElementById('chartTikTokPie'), {
+            type: 'pie',
+            data: {
+                labels: ['Vistas Efectivas', 'Scroll Rápido'],
+                datasets: [{
+                    data: [411000, 759000],
+                    backgroundColor: [colors.tiktok, '#F1F5F9'],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom' },
+                    datalabels: {
+                        formatter: (val, ctx) => {
+                            if (ctx.dataIndex === 0) return '35.3%';
+                            return '';
+                        },
+                        color: '#fff',
+                        font: { weight: 'bold' }
+                    }
+                }
+            }
+        });
+
+        new Chart(document.getElementById('chartTikTokEdad'), {
+            type: 'bar',
+            data: {
+                labels: ['18-24', '25-34', '35-44', '45-54', '55-64', '65+'],
+                datasets: [{
+                    data: [20.4, 26.9, 16.6, 12.0, 10.8, 13.3],
+                    backgroundColor: colors.tiktok,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    datalabels: { anchor: 'end', align: 'top', formatter: (val) => val + '%' }
+                }
+            }
+        });
+
+        new Chart(document.getElementById('chartTikTokSexo'), {
+            type: 'doughnut',
+            data: {
+                labels: ['Femenino', 'Masculino'],
+                datasets: [{
+                    data: [53.5, 46.5],
+                    backgroundColor: [colors.female, colors.male],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom' },
+                    datalabels: { color: '#fff', formatter: (val) => val + '%' }
+                }
+            }
+        });
+
+        // --- CHARTS GA4 ---
+        new Chart(document.getElementById('chartGA4Traffic'), {
+            type: 'doughnut',
+            data: {
+                labels: ['Búsqueda Orgánica', 'Tráfico Directo', 'Redes Sociales', 'Referidos'],
+                datasets: [{
+                    data: [42.5, 28.3, 19.2, 10.0],
+                    backgroundColor: ['#1D3557', '#5C9DFF', '#A78BFA', '#F5C451'],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom' },
+                    datalabels: { color: '#fff', formatter: (val) => val + '%' }
+                }
+            }
+        });
+
+        new Chart(document.getElementById('chartGA4Devices'), {
+            type: 'bar',
+            data: {
+                labels: ['Móvil', 'Escritorio', 'Tablet'],
+                datasets: [{
+                    data: [78.5, 18.2, 3.3],
+                    backgroundColor: ['#10B981', '#5C9DFF', '#A78BFA'],
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    datalabels: { anchor: 'end', align: 'top', formatter: (val) => val + '%' }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+    

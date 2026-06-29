@@ -1,0 +1,12 @@
+# gcloud ignore file
+.gcloudignore
+.git
+.gitignore
+.venv/
+.pytest_cache/
+__pycache__/
+*.pyc
+tests/
+scratch/
+*_dashboard.html
+*.log

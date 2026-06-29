@@ -61,15 +61,77 @@ class GA4Connector(BaseConnector):
                 if dim != "date":
                     dims.append(dim)
                     
-        req = RunReportRequest(
-            property=f"properties/{creds['property_id']}",
-            date_ranges=[DateRange(
+        # Parse filters if provided
+        from google.analytics.data_v1beta.types import FilterExpression, FilterExpressionList, Filter
+        dimension_filters = []
+        metric_filters = []
+
+        if hasattr(request, "filters") and request.filters:
+            schema = self.get_schema()
+            allowed_metrics = set(schema.get("metrics", []))
+
+            for key, val in request.filters.items():
+                f = Filter(field_name=key)
+                if isinstance(val, list):
+                    f.in_list_filter = Filter.InListFilter(values=[str(v) for v in val])
+                elif isinstance(val, (int, float)):
+                    f.numeric_filter = Filter.NumericFilter(
+                        operation=Filter.NumericFilter.Operation.EQUAL,
+                        value=Filter.NumericValue(double_value=float(val))
+                    )
+                else:
+                    f.string_filter = Filter.StringFilter(
+                        match_type=Filter.StringFilter.MatchType.EXACT,
+                        value=str(val)
+                    )
+                
+                expr = FilterExpression(filter=f)
+                
+                if key in allowed_metrics or key.startswith("customEvent:") or key.startswith("customUser:"):
+                    metric_filters.append(expr)
+                else:
+                    dimension_filters.append(expr)
+
+        limit = request.limit
+        offset = 0
+        if request.next_page_token:
+            try:
+                offset = int(request.next_page_token)
+            except ValueError:
+                pass
+
+        report_params = {
+            "property": f"properties/{creds['property_id']}",
+            "date_ranges": [DateRange(
                 start_date=request.start_date.strftime("%Y-%m-%d"),
                 end_date=request.end_date.strftime("%Y-%m-%d")
             )],
-            metrics=[Metric(name=m) for m in request.metrics],
-            dimensions=[Dimension(name=d) for d in dims]
-        )
+            "metrics": [Metric(name=m) for m in request.metrics],
+            "dimensions": [Dimension(name=d) for d in dims]
+        }
+
+        if limit is not None:
+            report_params["limit"] = limit
+        if offset > 0:
+            report_params["offset"] = offset
+
+        if dimension_filters:
+            if len(dimension_filters) == 1:
+                report_params["dimension_filter"] = dimension_filters[0]
+            else:
+                report_params["dimension_filter"] = FilterExpression(
+                    and_group=FilterExpressionList(expressions=dimension_filters)
+                )
+
+        if metric_filters:
+            if len(metric_filters) == 1:
+                report_params["metric_filter"] = metric_filters[0]
+            else:
+                report_params["metric_filter"] = FilterExpression(
+                    and_group=FilterExpressionList(expressions=metric_filters)
+                )
+
+        req = RunReportRequest(**report_params)
         
         try:
             response = client.run_report(req)
@@ -126,7 +188,7 @@ class GA4Connector(BaseConnector):
                 "conversions",
                 "eventCount"
             ],
-            "dimensions": ["date", "pagePath", "sessionSourceMedium", "country", "deviceCategory"]
+            "dimensions": ["date", "pagePath", "sessionSourceMedium", "country", "deviceCategory", "sessionCampaignName"]
         }
 
     def ping(self) -> bool:
