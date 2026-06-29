@@ -74,7 +74,7 @@ VALID_PLATFORMS = [
     "tiktok_ads", "tiktok_organic", "linkedin_ads", "linkedin_organic",
     "x_ads", "x_organic", "youtube", "google_play",
     "apple_app_store", "apple_ads", "threads", "spotify_ads",
-    "pinterest_ads", "pinterest_organic", "shopify",
+    "pinterest_ads", "pinterest_organic", "shopify", "ghl",
 ]
 
 # ---------------------------------------------------------------------------

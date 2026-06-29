@@ -65,7 +65,7 @@ GOOGLE_SCOPES = {
 # All Google scopes combined for a single consent prompt
 ALL_GOOGLE_SCOPES = " ".join(GOOGLE_SCOPES.values())
 
-SUPPORTED_PLATFORMS = {"meta_ads", "meta_organic", "google_ads", "ga4", "youtube", "threads", "tiktok_ads", "tiktok_organic"}
+SUPPORTED_PLATFORMS = {"meta_ads", "meta_organic", "google_ads", "ga4", "youtube", "threads", "tiktok_ads", "tiktok_organic", "ghl"}
 
 
 def _build_meta_redirect_uri(request: Request) -> str:
@@ -231,6 +231,28 @@ async def get_authorize_url(
         )
         return {"url": auth_url, "authorization_url": auth_url}
 
+    # ─── GoHighLevel Platform ──────────────────────────────────────
+    if platform == "ghl":
+        ghl_client_id = settings.ghl_client_id
+        if not ghl_client_id:
+            raise HTTPException(
+                status_code=400,
+                detail="GHL Client ID is not configured on the backend. Please set GHL_CLIENT_ID."
+            )
+        backend_redirect_uri = _build_meta_redirect_uri(request)
+        scopes = settings.ghl_oauth_scopes or "contacts.readonly opportunities.readonly locations.readonly"
+        auth_url = (
+            f"https://marketplace.gohighlevel.com/oauth/authorize?"
+            + urlencode({
+                "client_id": ghl_client_id,
+                "redirect_uri": backend_redirect_uri,
+                "scope": scopes,
+                "state": state,
+                "response_type": "code",
+            })
+        )
+        return {"url": auth_url, "authorization_url": auth_url}
+
 
 # ═══════════════════════════════════════════════════════════════════
 # META CALLBACK — Token exchange + dynamic discovery
@@ -264,6 +286,83 @@ async def oauth_callback(
         raise HTTPException(status_code=400, detail="Invalid or tampered state parameter.")
 
     backend_redirect_uri = _build_meta_redirect_uri(request)
+
+    if platform == "ghl":
+        if not settings.ghl_client_id or not settings.ghl_client_secret:
+            raise HTTPException(status_code=500, detail="GHL App credentials (GHL_CLIENT_ID/GHL_CLIENT_SECRET) missing on server.")
+
+        async with httpx.AsyncClient() as client:
+            # 1. Exchange authorization code for access + refresh tokens
+            token_res = await client.post(
+                "https://services.leadconnectorhq.com/oauth/token",
+                data={
+                    "client_id": settings.ghl_client_id,
+                    "client_secret": settings.ghl_client_secret,
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": backend_redirect_uri,
+                    "user_type": "Location"
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"}
+            )
+            if token_res.status_code != 200:
+                logger.error(f"GHL token exchange failed: {token_res.text}")
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="GHL token exchange failed.")
+
+            token_data = token_res.json()
+            access_token = token_data["access_token"]
+            refresh_token = token_data.get("refresh_token")
+            expires_in = token_data.get("expires_in", 86399)
+            token_expires_at = (datetime.now(timezone.utc) + timedelta(seconds=expires_in)).isoformat()
+            location_id = token_data.get("locationId")
+            company_id = token_data.get("companyId")
+            user_type = token_data.get("userType", "Location")
+
+            # 2. Discover Locations
+            if location_id:
+                await credential_store.save_oauth_connection(
+                    client_id=client_id,
+                    platform="ghl",
+                    account_id=location_id,
+                    account_name=f"GHL Location {location_id}",
+                    access_token=access_token,
+                    refresh_token=refresh_token,
+                    token_expires_at=token_expires_at,
+                    extra_data={"company_id": company_id, "user_type": user_type}
+                )
+                logger.info(f"Discovered GHL location: {location_id}")
+            elif company_id:
+                try:
+                    loc_res = await client.get(
+                        "https://services.leadconnectorhq.com/locations/search",
+                        params={"companyId": company_id, "limit": 100},
+                        headers={
+                            "Authorization": f"Bearer {access_token}",
+                            "Version": "2021-07-28"
+                        }
+                    )
+                    if loc_res.status_code == 200:
+                        locations = loc_res.json().get("locations", [])
+                        for loc in locations:
+                            loc_id = loc.get("id")
+                            loc_name = loc.get("name", f"GHL Location {loc_id}")
+                            await credential_store.save_oauth_connection(
+                                client_id=client_id,
+                                platform="ghl",
+                                account_id=loc_id,
+                                account_name=loc_name,
+                                access_token=access_token,
+                                refresh_token=refresh_token,
+                                token_expires_at=token_expires_at,
+                                extra_data={"company_id": company_id, "user_type": user_type}
+                            )
+                        logger.info(f"Discovered {len(locations)} GHL locations under company {company_id}")
+                    else:
+                        logger.warning(f"GHL locations search returned {loc_res.status_code}: {loc_res.text}")
+                except Exception as e:
+                    logger.warning(f"GHL locations discovery failed (non-fatal): {e}")
+
+        return RedirectResponse(url=f"{redirect_url}?oauth=success&platform={platform}")
 
     if platform in ("meta_ads", "meta_organic"):
         if not settings.meta_app_id or not settings.meta_app_secret:

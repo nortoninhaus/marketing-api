@@ -46,6 +46,7 @@ from app.connectors.threads import ThreadsConnector
 from app.connectors.spotify import SpotifyAdsConnector
 from app.connectors.pinterest import PinterestAdsConnector, PinterestOrganicConnector
 from app.connectors.shopify import ShopifyConnector
+from app.connectors.ghl import GhlConnector
 
 # Configure root logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -71,6 +72,7 @@ dispatcher.register(Platform.SPOTIFY_ADS, SpotifyAdsConnector())
 dispatcher.register(Platform.PINTEREST_ADS, PinterestAdsConnector())
 dispatcher.register(Platform.PINTEREST_ORGANIC, PinterestOrganicConnector())
 dispatcher.register(Platform.SHOPIFY, ShopifyConnector())
+dispatcher.register(Platform.GHL, GhlConnector())
 
 app = FastAPI(
     title="Inhaus Marketing Data API",
