@@ -98,12 +98,54 @@ class MetaAdsConnector(BaseConnector):
             "platform_device": "impression_device",
             "dma": "comscore_market",
         }
+
+        # ── Meta breakdown compatibility groups ──
+        # Meta only allows breakdowns from COMPATIBLE groups in the same request.
+        # Asset breakdowns cannot be combined with any other group.
+        # Demographic, Geographic, and Delivery can be combined with each other
+        # (up to Meta's internal limit, typically ≤3-4 total breakdowns).
+        BREAKDOWN_GROUPS = {
+            "demographic": {"age", "gender"},
+            "geographic": {"country", "region", "comscore_market"},
+            "delivery": {"publisher_platform", "platform_position", "impression_device", "device_platform"},
+            "asset": {"body_asset", "image_asset", "title_asset", "video_asset", "description_asset"},
+        }
+        # Asset breakdowns are mutually exclusive with all other groups
+        INCOMPATIBLE_PAIRS = {
+            frozenset({"asset", "demographic"}),
+            frozenset({"asset", "geographic"}),
+            frozenset({"asset", "delivery"}),
+        }
+
         breakdowns = []
         if request.dimensions:
             for dim in request.dimensions:
                 mapped = DIMENSION_TO_BREAKDOWN.get(dim, dim)
                 if mapped in VALID_META_BREAKDOWNS:
                     breakdowns.append(mapped)
+
+        # Validate breakdown group compatibility
+        if breakdowns:
+            active_groups = set()
+            for bd in breakdowns:
+                for group_name, group_members in BREAKDOWN_GROUPS.items():
+                    if bd in group_members:
+                        active_groups.add(group_name)
+            # Check for incompatible group combinations
+            for pair in INCOMPATIBLE_PAIRS:
+                if pair.issubset(active_groups):
+                    group_names = sorted(pair)
+                    members_by_group = {
+                        g: sorted(BREAKDOWN_GROUPS[g] & set(breakdowns))
+                        for g in group_names
+                    }
+                    detail_parts = [f"{g}: {', '.join(members_by_group[g])}" for g in group_names]
+                    raise ValueError(
+                        f"Meta API does not allow combining these breakdown groups in the same request: "
+                        f"{' + '.join(group_names)}. "
+                        f"Selected breakdowns by group — {'; '.join(detail_parts)}. "
+                        f"Please deselect breakdowns from one of these groups and try again."
+                    )
 
         params = {
             "time_range": {

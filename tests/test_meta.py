@@ -310,3 +310,31 @@ def test_meta_organic_fetch_data_combined(mock_client_class, mock_page, mock_api
         assert page_campaign.date == "2026-05-02"
 
 
+def test_meta_ads_breakdown_validation():
+    connector = MetaAdsConnector()
+    with patch.object(connector, "get_credentials") as mock_get_creds:
+        mock_get_creds.return_value = {
+            "access_token": "fake_ads_token",
+            "ad_account_id": "act_12345"
+        }
+        
+        # Demographic (age) + Asset (body_asset) is incompatible
+        req = DataRequest(
+            platform="meta_ads",
+            start_date=date(2026, 5, 1),
+            end_date=date(2026, 5, 7),
+            metrics=["impressions"],
+            dimensions=["age", "body_asset"],
+            client_id="test_client",
+            user_id="test_user",
+            account_id="act_12345"
+        )
+        
+        with pytest.raises(ValueError) as excinfo:
+            connector.fetch_data(req)
+        assert "Meta API does not allow combining these breakdown groups" in str(excinfo.value)
+        assert "demographic" in str(excinfo.value)
+        assert "asset" in str(excinfo.value)
+
+
+
