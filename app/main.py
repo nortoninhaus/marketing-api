@@ -475,15 +475,16 @@ async def get_campaign_data(
         # Thread offloading is critical here to avoid blocking FastAPI
         data = await asyncio.to_thread(connector.fetch_with_retry, request)
         
-        # Dual-write to BigQuery in background
-        if settings.enable_bigquery_sink:
+        # Dual-write to BigQuery in background (only when write_to_bq is requested, truncating existing data)
+        if settings.enable_bigquery_sink and request.write_to_bq:
             background_tasks.add_task(
                 bq_sink.write_data, 
                 request.platform, 
                 data,
                 request.client_id,
                 request.user_id,
-                {"request_id": str(datetime.now(timezone.utc).timestamp())}
+                {"request_id": str(datetime.now(timezone.utc).timestamp())},
+                True # Truncate table first to only keep the last query
             )
 
         # Unified pagination
