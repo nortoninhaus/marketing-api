@@ -6,6 +6,7 @@ import json
 import os
 import textwrap
 import calendar
+import html
 import altair as alt
 from datetime import datetime, date, timedelta
 from dotenv import load_dotenv
@@ -357,7 +358,7 @@ def fetch_schema_from_api(platform_key, api_key):
         return {"metrics": [], "dimensions": []}
 
 @st.cache_data(ttl=120, show_spinner=False)
-def fetch_campaign_data_from_api(platform_key, client_id, user_id, account_id, start_date, end_date, metrics, dimensions, opt_filters, write_to_bq, api_key):
+def fetch_campaign_data_from_api(platform_key, client_id, user_id, account_id, start_date, end_date, metrics, dimensions, opt_filters, write_to_bq, api_key, show_errors=True, timeout=45):
     url = f"{DEFAULT_API_URL}/api/v1/campaign-data"
     headers = {
         "accept": "*/*",
@@ -385,15 +386,78 @@ def fetch_campaign_data_from_api(platform_key, client_id, user_id, account_id, s
     payload.update(opt_filters)
     
     try:
-        res = requests.post(url, headers=headers, json=payload, timeout=45)
+        res = requests.post(url, headers=headers, json=payload, timeout=timeout)
         if res.status_code == 200:
             return res.json().get("data", [])
         else:
-            st.error(f"Error de API ({res.status_code}): {res.text}")
+            if show_errors:
+                st.error(f"Error de API ({res.status_code}): {res.text}")
             return []
     except Exception as e:
-        st.error(f"Error de conexión con la API: {e}")
+        if show_errors:
+            st.error(f"Error de conexión con la API: {e}")
         return []
+
+# Meta ad previews through the existing backend proxy
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_meta_campaign_previews(client_id, account_id, campaign_names, api_key):
+    campaign_names = tuple(name for name in campaign_names if name and name != "N/A")
+    if not campaign_names:
+        return [], None
+
+    headers = {
+        "accept": "*/*",
+        "content-type": "application/json",
+        "x-api-key": api_key,
+        "origin": "https://inhaus-marketing-api.web.app",
+        "referer": "https://inhaus-marketing-api.web.app/",
+    }
+    url = f"{DEFAULT_API_URL}/api/v1/meta-proxy"
+    account_edge = account_id if str(account_id).startswith("act_") else f"act_{account_id}"
+
+    def meta_get(path, params, timeout=30):
+        return requests.post(url, headers=headers, json={
+            "client_id": client_id,
+            "account_id": account_id,
+            "path": path,
+            "method": "GET",
+            "params": params,
+        }, timeout=timeout)
+
+    try:
+        ads_res = meta_get(f"{account_edge}/ads", {
+            "fields": "id,name,campaign{id,name}",
+            "limit": 200,
+        })
+        if ads_res.status_code != 200:
+            return [], f"No se pudieron cargar anuncios Meta ({ads_res.status_code})."
+
+        wanted = set(campaign_names)
+        ads_by_campaign = {}
+        for ad in ads_res.json().get("data", []):
+            campaign_name = (ad.get("campaign") or {}).get("name")
+            if campaign_name in wanted and campaign_name not in ads_by_campaign:
+                ads_by_campaign[campaign_name] = ad
+
+        previews = []
+        for campaign_name in campaign_names:
+            ad = ads_by_campaign.get(campaign_name)
+            if not ad:
+                continue
+            preview_res = meta_get(f"{ad['id']}/previews", {"ad_format": "DESKTOP_FEED_STANDARD"}, timeout=20)
+            if preview_res.status_code != 200:
+                continue
+            body = (preview_res.json().get("data") or [{}])[0].get("body")
+            if body:
+                previews.append({
+                    "campaign_name": campaign_name,
+                    "ad_name": ad.get("name") or "",
+                    "body": body,
+                })
+
+        return previews, None if previews else "No se encontraron previews para las campañas del resultado."
+    except Exception as e:
+        return [], f"Error cargando previews Meta: {e}"
 
 # Process the API result list into a pandas dataframe
 def process_api_response(api_data, platform_key, client_id, user_id):
@@ -440,8 +504,11 @@ def process_api_response(api_data, platform_key, client_id, user_id):
             "reach": int(reach)
         }
         # Add dimensions to the row dict dynamically
+        for key, val in item.get("dimensions", {}).items():
+            row[key] = val
+
         for key, val in item.items():
-            if key not in ["metrics", "platform", "client_id", "user_id"]:
+            if key not in ["metrics", "dimensions", "platform", "client_id", "user_id"]:
                 row[key] = val
                 
         flat_rows.append(row)
@@ -712,7 +779,7 @@ else:
             Comparado contra mes anterior completo: <b>{prev_start_date.strftime('%d/%m/%Y')} al {prev_end_date.strftime('%d/%m/%Y')}</b>.
         </p>
         """, unsafe_allow_html=True)
-        
+
         # Primary KPI calculations
         if platform_type == "ads":
             curr_primary = df_curr["conversions"].sum()
@@ -829,7 +896,79 @@ else:
             kpis_layout += '</div>'
 
         st.markdown(kpis_layout, unsafe_allow_html=True)
-        
+
+        if platform_key == "meta_ads" and st.checkbox("Cargar data oficial Facebook Ads (puede tardar)", value=False):
+            with st.spinner("Cargando data oficial Facebook Ads... puede tardar unos minutos."):
+                age_data = fetch_campaign_data_from_api(
+                    platform_key, client_id, user_id, account_id,
+                    start_date, end_date, ["impressions", "reach"], ["age"],
+                    opt_filters, False, api_key, False, 180
+                )
+                gender_data = fetch_campaign_data_from_api(
+                    platform_key, client_id, user_id, account_id,
+                    start_date, end_date, ["impressions", "reach"], ["gender"],
+                    opt_filters, False, api_key, False, 180
+                )
+                region_data = fetch_campaign_data_from_api(
+                    platform_key, client_id, user_id, account_id,
+                    start_date, end_date, ["impressions", "reach"], ["region"],
+                    opt_filters, False, api_key, False, 180
+                )
+
+            df_age = process_api_response(age_data, platform_key, client_id, user_id) if age_data else pd.DataFrame()
+            df_gender = process_api_response(gender_data, platform_key, client_id, user_id) if gender_data else pd.DataFrame()
+            df_region = process_api_response(region_data, platform_key, client_id, user_id) if region_data else pd.DataFrame()
+
+            def ensure_breakdown_column(df, column):
+                if df.empty or column in df.columns:
+                    return df
+                parts = df["campaign_name"].astype(str).str.rsplit("_", n=1, expand=True)
+                if len(parts.columns) == 2:
+                    df[column] = parts[1]
+                return df
+
+            df_age = ensure_breakdown_column(df_age, "age")
+            df_gender = ensure_breakdown_column(df_gender, "gender")
+            df_region = ensure_breakdown_column(df_region, "region")
+
+            if not df_age.empty or not df_gender.empty or not df_region.empty:
+                st.markdown("### Data oficial Facebook Ads")
+                age_col, gender_col, region_col = st.columns([1, 1, 1.3])
+
+                for df_breakdown, col_name, title, col in [
+                    (df_age, "age", "Edad", age_col),
+                    (df_gender, "gender", "Género", gender_col),
+                ]:
+                    with col:
+                        if col_name in df_breakdown.columns:
+                            metric = "reach" if df_breakdown["reach"].sum() else "impressions"
+                            chart_data = df_breakdown.groupby(col_name)[metric].sum().reset_index()
+                            total = chart_data[metric].sum()
+                            chart_data["share"] = chart_data[metric] / total if total else 0
+                            chart = alt.Chart(chart_data).mark_bar(cornerRadiusEnd=4).encode(
+                                x=alt.X(f"{col_name}:N", title=title),
+                                y=alt.Y("share:Q", title="% audiencia", axis=alt.Axis(format="%")),
+                                tooltip=[col_name, alt.Tooltip("share:Q", format=".2%")]
+                            ).properties(height=300).configure_view(strokeOpacity=0).configure_axis(gridColor="rgba(255,255,255,0.05)")
+                            st.markdown(f"#### {title}")
+                            st.altair_chart(chart, use_container_width=True)
+                        else:
+                            st.info(f"Meta no devolvió {title.lower()} para este rango.")
+
+                with region_col:
+                    if "region" in df_region.columns:
+                        metric = "reach" if df_region["reach"].sum() else "impressions"
+                        table = df_region.groupby("region")[metric].sum().sort_values(ascending=False).head(10)
+                        total = df_region[metric].sum()
+                        table = (table / total).reset_index(name="%") if total else table.reset_index(name="%")
+                        table["%"] = table["%"].apply(lambda x: f"{x:.2%}")
+                        st.markdown("#### Top 10 regiones")
+                        st.dataframe(table.rename(columns={"region": "Región"}), width="stretch", hide_index=True)
+                    else:
+                        st.info("Meta no devolvió regiones para este rango.")
+            else:
+                st.info("Meta no devolvió data oficial para este rango.")
+
         # CHARTS SECTION
         st.markdown("### Tendencias Históricas")
         col_chart_left, col_chart_right = st.columns(2)
@@ -930,11 +1069,8 @@ else:
         # CAMPAIGN BREAKDOWN TABLE
         st.markdown("### Detalle de Campañas y Resultados")
         
-        search_query = st.text_input("🔍 Buscar campaña por nombre:", "")
         df_table = df_curr.copy()
-        if search_query:
-            df_table = df_table[df_table["campaign_name"].str.contains(search_query, case=False, na=False)]
-            
+
         group_keys = ["campaign_name", "platform"]
         for dim in selected_dimensions:
             if dim in df_table.columns and dim not in group_keys:
@@ -944,6 +1080,59 @@ else:
             df_table = df_table.groupby(group_keys).agg({
                 "spend": "sum", "impressions": "sum", "clicks": "sum", "conversions": "sum"
             }).reset_index()
+            if platform_key == "meta_ads" and not df_table.empty:
+                ranked_campaigns = df_table.groupby("campaign_name").agg({
+                    "spend": "sum", "impressions": "sum", "clicks": "sum", "conversions": "sum"
+                }).reset_index()
+                rank_metric = "conversions" if ranked_campaigns["conversions"].sum() else ("clicks" if ranked_campaigns["clicks"].sum() else "impressions")
+                metric_label = {"conversions": "conversiones", "clicks": "clics", "impressions": "impresiones"}[rank_metric]
+                ranked_campaigns = ranked_campaigns.sort_values(rank_metric, ascending=False).head(8)
+                preview_names = tuple(ranked_campaigns["campaign_name"])
+                # ponytail: Meta previews cost one Graph call each; paginate this if accounts need more than 8 cards.
+                previews, preview_error = fetch_meta_campaign_previews(client_id, account_id, preview_names, api_key)
+                previews_by_campaign = {p["campaign_name"]: p for p in previews}
+
+                st.markdown(f"### Ranking: top campañas por {metric_label} (Meta)")
+                if preview_error:
+                    st.info(preview_error)
+
+                rank_cols = st.columns(4)
+                for idx, row in enumerate(ranked_campaigns.itertuples(index=False), start=1):
+                    preview = previews_by_campaign.get(row.campaign_name)
+                    ctr = row.clicks / row.impressions if row.impressions else 0
+                    cpc = row.spend / row.clicks if row.clicks else 0
+                    cpa = row.spend / row.conversions if row.conversions else 0
+                    body = preview["body"] if preview else "<div style='height:320px;display:grid;place-items:center;color:#8A97A8;background:#0A0D13;border-radius:10px;'>Preview no disponible</div>"
+                    raw_ad_name = str(preview.get("ad_name", "")) if preview else ""
+                    ad_name = html.escape(raw_ad_name)
+                    campaign_name = html.escape(str(row.campaign_name))
+                    source_text = f" {row.campaign_name} {raw_ad_name} ".lower()
+                    is_ig = any(token in source_text for token in ("instagram", " instagram ", "/ig", " ig ", "-ig", "_ig"))
+                    source = "FB/IG" if "fb-ig" in source_text or "facebook/ig" in source_text else ("IG" if is_ig else "FB")
+                    source_color = "#E1306C" if source == "IG" else ("#4f46e5" if source == "FB/IG" else "#1877F2")
+                    components_html = f"""
+                    <div style="font-family: Arial, sans-serif; background:#fff; border:1px solid #e5e7eb; border-radius:14px; padding:14px; position:relative; color:#111827;">
+                        <div style="position:absolute; top:10px; right:10px; display:flex; gap:7px; z-index:2;">
+                            <span style="background:#111827; color:#fff; min-width:32px; height:32px; padding:0 7px; border-radius:999px; display:grid; place-items:center; font-weight:800; font-size:13px;">#{idx}</span>
+                            <span style="background:{source_color}; color:#fff; min-width:32px; height:32px; padding:0 7px; border-radius:999px; display:grid; place-items:center; font-weight:800; font-size:12px;">{source}</span>
+                        </div>
+                        <div style="height:330px; overflow:hidden; border-radius:10px; border:1px solid #eef0f3; background:#f8fafc;">{body}</div>
+                        <div style="margin-top:12px; color:#0b3f91; font-weight:800; font-size:14px; line-height:1.25;">{campaign_name}</div>
+                        <div style="margin-top:4px; color:#6b7280; font-size:12px; min-height:16px;">{ad_name}</div>
+                        <div style="margin-top:14px; display:grid; gap:8px; font-size:13px;">
+                            <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>Inversión</span><b>${row.spend:,.2f}</b></div>
+                            <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>Conversiones</span><b>{row.conversions:,.0f}</b></div>
+                            <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>Clics</span><b>{row.clicks:,.0f}</b></div>
+                            <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>Impresiones</span><b>{row.impressions:,.0f}</b></div>
+                            <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>CTR</span><b>{ctr:.2%}</b></div>
+                            <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>CPC</span><b>${cpc:,.2f}</b></div>
+                            <div style="display:flex; justify-content:space-between;"><span>CPA</span><b>${cpa:,.2f}</b></div>
+                        </div>
+                    </div>
+                    """
+                    with rank_cols[(idx - 1) % 4]:
+                        components.html(components_html, height=690, scrolling=True)
+
             df_table["CTR"] = (df_table["clicks"] / df_table["impressions"]).apply(lambda x: f"{x:.2%}" if x > 0 else "0.00%")
             df_table["CPC"] = (df_table["spend"] / df_table["clicks"]).apply(lambda x: f"${x:,.2f}" if x > 0 else "$0.00")
             df_table["CPA"] = (df_table["spend"] / df_table["conversions"]).apply(lambda x: f"${x:,.2f}" if x > 0 else "$0.00")
@@ -969,4 +1158,5 @@ else:
             df_table["reach"] = df_table["reach"].apply(lambda x: f"{x:,}")
             df_table = df_table.rename(columns={"campaign_name": "Publicación", "platform": "Plataforma", "impressions": "Impresiones", "engagement": "Interacciones", "reach": "Alcance"})
             
-        st.dataframe(df_table, width="stretch", hide_index=True)
+        if platform_key != "meta_ads":
+            st.dataframe(df_table, width="stretch", hide_index=True)
