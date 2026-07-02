@@ -827,7 +827,7 @@ def extract_metric(metrics, keys):
 # Fetch connected accounts
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_connections_from_api(platform_key, client_id, api_key):
-    url = f"{DEFAULT_API_URL}/api/v1/connections"
+    url = f"{DEFAULT_API_URL}/api/v1/oauth/connections"
     headers = {
         "accept": "*/*",
         "x-api-key": api_key,
