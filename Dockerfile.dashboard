@@ -1,0 +1,19 @@
+# Dockerfile for Inhaus Marketing Streamlit Dashboard
+
+FROM python:3.13-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy dashboard and config
+COPY dashboard.py .
+COPY .streamlit/ .streamlit/
+
+# Streamlit port is passed dynamically by Cloud Run as PORT env var
+EXPOSE 8501
+
+# Command to run Streamlit in headless mode
+CMD streamlit run dashboard.py --server.port ${PORT:-8501} --server.address 0.0.0.0 --server.headless true

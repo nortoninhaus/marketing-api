@@ -45,3 +45,7 @@ pytest-asyncio>=0.23.0
 
 # --- Agentic / MCP ---
 mcp>=1.6.0
+
+# --- Dashboard ---
+streamlit>=1.35.0
+
