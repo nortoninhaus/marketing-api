@@ -20,6 +20,7 @@ class CampaignData(BaseModel):
     campaign_name: str = Field(..., description="Campaign or content name")
     date: str = Field(..., description="Date for this data point (YYYY-MM-DD)")
     metrics: Dict[str, Any] = Field(default_factory=dict, description="Key-value metric data")
+    dimensions: Dict[str, Any] = Field(default_factory=dict, description="Breakdown dimension values")
 
 
 class PaginationInfo(BaseModel):
@@ -166,4 +167,3 @@ class CredentialStatusResponse(BaseModel):
 
     client_id: str
     platforms: Dict[str, CredentialStatusDetails]
-

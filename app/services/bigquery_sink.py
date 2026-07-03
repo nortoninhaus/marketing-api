@@ -34,7 +34,8 @@ class BigQuerySink:
         data: List[Dict[str, Any]], 
         client_id: str,
         user_id: str,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        truncate: bool = False
     ):
         """Background task to write data to BigQuery."""
         if not self.client or not settings.enable_bigquery_sink:
@@ -47,24 +48,29 @@ class BigQuerySink:
         timestamp = datetime.now(timezone.utc).isoformat()
         rows_to_insert = []
         for item in data:
+            # Convert Pydantic model to dict if applicable to avoid TypeError: CampaignData is not JSON serializable
+            item_dict = item.model_dump() if hasattr(item, "model_dump") else (item.dict() if hasattr(item, "dict") else item)
             row = {
                 "platform": platform.value,
                 "client_id": client_id,
                 "user_id": user_id,
-                "data": json.dumps(item),
+                "data": json.dumps(item_dict),
                 "metadata": json.dumps(metadata or {}),
                 "ingested_at": timestamp
             }
             rows_to_insert.append(row)
 
         try:
-            await asyncio.to_thread(self._insert_rows, rows_to_insert)
+            await asyncio.to_thread(self._insert_rows, rows_to_insert, truncate)
             logger.info(f"Successfully wrote {len(rows_to_insert)} rows to BigQuery for {platform.value}")
         except Exception as e:
             logger.error(f"BigQuery write failed for {platform.value}: {e}")
 
-    def _insert_rows(self, rows: List[Dict[str, Any]]):
+    def _insert_rows(self, rows: List[Dict[str, Any]], truncate: bool = False):
         table_id = self._get_table_id()
+        if truncate:
+            logger.info(f"Truncating table {table_id} before inserting new data...")
+            self.client.query(f"TRUNCATE TABLE {table_id}").result()
         errors = self.client.insert_rows_json(table_id, rows)
         if errors:
             raise Exception(f"BigQuery insert errors: {errors}")
@@ -104,7 +110,12 @@ class BigQuerySink:
                 self.client.create_table(table)
                 logger.info(f"Created table {table_id}")
 
-        await asyncio.to_thread(_setup)
+        try:
+            await asyncio.to_thread(_setup)
+        except Exception as e:
+            logger.error(f"Failed to ensure BigQuery dataset and table: {e}. BigQuery sink will be disabled.")
+            self.client = None # ponytail: safe fallback so future writes return early instead of crashing
+
 
 # Global instance
 bq_sink = BigQuerySink()

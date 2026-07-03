@@ -278,7 +278,8 @@ class MetaAdsConnector(BaseConnector):
                     CampaignData(
                         campaign_name=campaign_name,
                         date=date_val,
-                        metrics=metrics_dict
+                        metrics=metrics_dict,
+                        dimensions={b: i.get(b) for b in breakdowns if i.get(b)}
                     )
                 )
 
