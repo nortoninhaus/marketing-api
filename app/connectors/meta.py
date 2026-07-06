@@ -88,12 +88,14 @@ class MetaAdsConnector(BaseConnector):
         # Always include date_start/date_stop to reconstruct date, and name fields for campaign_name mapping
         if "date_start" not in fields:
             fields.append("date_start")
-        if level == "ad" and "ad_name" not in fields:
-            fields.append("ad_name")
-        elif level == "adset" and "adset_name" not in fields:
-            fields.append("adset_name")
-        elif "campaign_name" not in fields:
-            fields.append("campaign_name")
+        name_fields = ["campaign_name"]
+        if level in ("adset", "ad"):
+            name_fields.append("adset_name")
+        if level == "ad":
+            name_fields.append("ad_name")
+        for name_field in name_fields:
+            if name_field not in fields:
+                fields.append(name_field)
 
         # Handle breakdown dimensions
         # Map UI-facing dimension names to valid Meta Graph API breakdown values
@@ -194,13 +196,9 @@ class MetaAdsConnector(BaseConnector):
         results = []
         while insights is not None:
             for i in insights:
-                # Map name based on level
-                if level == "ad":
-                    campaign_name = i.get("ad_name") or i.get("campaign_name") or "Unknown Ad"
-                elif level == "adset":
-                    campaign_name = i.get("adset_name") or i.get("campaign_name") or "Unknown Adset"
-                else:
-                    campaign_name = i.get("campaign_name") or "Unknown Campaign"
+                campaign_name = i.get("campaign_name") or "Unknown Campaign"
+                adset_name = i.get("adset_name")
+                ad_name = i.get("ad_name")
 
                 # Append breakdown values to campaign_name to differentiate rows
                 for b in breakdowns:
@@ -274,12 +272,18 @@ class MetaAdsConnector(BaseConnector):
                         else:
                             metrics_dict[m] = 0
 
+                dimensions = {b: i.get(b) for b in breakdowns if i.get(b)}
+                if adset_name:
+                    dimensions["adset_name"] = adset_name
+                if ad_name:
+                    dimensions["ad_name"] = ad_name
+
                 results.append(
                     CampaignData(
                         campaign_name=campaign_name,
                         date=date_val,
                         metrics=metrics_dict,
-                        dimensions={b: i.get(b) for b in breakdowns if i.get(b)}
+                        dimensions=dimensions
                     )
                 )
 
