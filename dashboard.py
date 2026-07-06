@@ -15,7 +15,8 @@ from dotenv import load_dotenv
 # Load env variables for local defaults
 load_dotenv()
 DEFAULT_API_KEY = os.getenv("API_KEY", "dev-key-change-me")
-DEFAULT_API_URL = "https://inhaus-marketing-api-btdf7nijqa-uc.a.run.app"
+DEFAULT_API_URL = os.getenv("API_URL", "https://inhaus-marketing-api-btdf7nijqa-uc.a.run.app")
+CAMPAIGN_DATA_TIMEOUT = int(os.getenv("CAMPAIGN_DATA_TIMEOUT", "120"))
 
 # Determine sidebar collapse state dynamically to hide it automatically once query runs
 initial_sidebar = "collapsed" if st.session_state.get("query_run", False) else "expanded"
@@ -394,6 +395,22 @@ def clean_campaign_name(value):
 def meta_base_campaign_name(value):
     return re.sub(r"_(facebook|instagram|audience_network|messenger)$", "", str(value), flags=re.I)
 
+def dashboard_filter_options(df, column):
+    if df.empty or column not in df.columns:
+        return ["Todos"]
+    values = df[column].dropna().astype(str).str.strip()
+    return ["Todos"] + sorted(v for v in values.unique() if v)
+
+def apply_dashboard_filters(df, campaign_filter, adset_filter, ad_filter):
+    for column, value in (
+        ("campaign_name", campaign_filter),
+        ("adset_name", adset_filter),
+        ("ad_name", ad_filter),
+    ):
+        if value != "Todos" and column in df.columns:
+            df = df[df[column].astype(str) == value]
+    return df
+
 # Platform Types definition
 PLATFORM_TYPES = {
     "meta_ads": "ads",
@@ -433,7 +450,13 @@ def fetch_connections_from_api(platform_key, client_id, api_key):
         params = {"platform": platform_key, "client_id": client_id}
         res = requests.get(url, headers=headers, params=params, timeout=10)
         if res.status_code == 200:
-            return res.json()
+            connections = res.json()
+            if connections or not client_id or client_id == "client_1":
+                return connections
+            params = {"platform": platform_key}
+            res = requests.get(url, headers=headers, params=params, timeout=10)
+            if res.status_code == 200:
+                return res.json()
         return []
     except Exception:
         return []
@@ -475,7 +498,7 @@ def fetch_schema_from_api(platform_key, api_key):
         return {"metrics": [], "dimensions": []}
 
 @st.cache_data(ttl=120, show_spinner=False)
-def fetch_campaign_data_from_api(platform_key, client_id, user_id, account_id, start_date, end_date, metrics, dimensions, opt_filters, write_to_bq, api_key, show_errors=True, timeout=45):
+def fetch_campaign_data_from_api(platform_key, client_id, user_id, account_id, start_date, end_date, metrics, dimensions, opt_filters, write_to_bq, api_key, show_errors=True, timeout=CAMPAIGN_DATA_TIMEOUT):
     url = f"{DEFAULT_API_URL}/api/v1/campaign-data"
     headers = {
         "accept": "*/*",
@@ -592,6 +615,59 @@ def fetch_meta_campaign_previews(client_id, account_id, campaign_names, api_key)
         return [], f"Error cargando previews Meta: {e}"
 
 # Process the API result list into a pandas dataframe
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_meta_filter_rows(client_id, account_id, api_key):
+    headers = {
+        "accept": "*/*",
+        "content-type": "application/json",
+        "x-api-key": api_key,
+        "origin": "https://inhaus-marketing-api.web.app",
+        "referer": "https://inhaus-marketing-api.web.app/",
+    }
+    url = f"{DEFAULT_API_URL}/api/v1/meta-proxy"
+    account_edge = account_id if str(account_id).startswith("act_") else f"act_{account_id}"
+    rows = []
+    after = None
+    try:
+        # ponytail: cap option hydration at 5 pages; paginate more if accounts exceed ~2500 ads.
+        for _ in range(5):
+            params = {
+                "fields": "id,name,campaign{id,name},adset{id,name}",
+                "limit": 500,
+            }
+            if after:
+                params["after"] = after
+            res = requests.post(url, headers=headers, json={
+                "client_id": client_id,
+                "account_id": account_id,
+                "path": f"{account_edge}/ads",
+                "method": "GET",
+                "params": params,
+            }, timeout=30)
+            if res.status_code != 200:
+                return [], f"No se pudieron cargar filtros Meta ({res.status_code})."
+            body = res.json()
+            for ad in body.get("data", []):
+                campaign = ad.get("campaign") or {}
+                adset = ad.get("adset") or {}
+                if campaign.get("name"):
+                    rows.append({
+                        "campaign_id": campaign.get("id", ""),
+                        "campaign_name": campaign.get("name", ""),
+                        "adset_id": adset.get("id", ""),
+                        "adset_name": adset.get("name", ""),
+                        "ad_id": ad.get("id", ""),
+                        "ad_name": ad.get("name", ""),
+                    })
+            paging = body.get("paging", {})
+            after = (paging.get("cursors") or {}).get("after")
+            if not after or not paging.get("next"):
+                break
+        return rows, None
+    except Exception as e:
+        return [], f"Error cargando filtros Meta: {e}"
+
+
 def process_api_response(api_data, platform_key, client_id, user_id):
     flat_rows = []
     for item in api_data:
@@ -747,10 +823,7 @@ for selected_platform_key in selected_platform_keys:
     platform_label = platform_labels[selected_platform_key]
     with st.sidebar.expander(platform_label, expanded=len(selected_platform_keys) == 1):
         sidebar_cache = st.session_state.setdefault("sidebar_api_cache", {})
-        connections_key = ("connections", selected_platform_key, client_id, api_key)
-        if connections_key not in sidebar_cache:
-            sidebar_cache[connections_key] = fetch_connections_from_api(selected_platform_key, client_id, api_key)
-        connections = sidebar_cache[connections_key]
+        connections = fetch_connections_from_api(selected_platform_key, client_id, api_key)
         if connections:
             connection_options = {f"{c['account_name']} ({c['account_id']})": c["account_id"] for c in connections}
             selected_conn_label = st.selectbox("Cuentas Conectadas", list(connection_options.keys()), key=f"conn_{selected_platform_key}")
@@ -758,12 +831,15 @@ for selected_platform_key in selected_platform_keys:
         else:
             default_account_id = "act_1229232368796008" if selected_platform_key == "meta_ads" else "account_1"
 
-        account_key = f"account_{selected_platform_key}"
-        prev_conn_key = f"prev_conn_{selected_platform_key}"
-        if st.session_state.get(prev_conn_key) != default_account_id:
-            st.session_state[account_key] = default_account_id
-            st.session_state[prev_conn_key] = default_account_id
-        account_id_value = st.text_input("ID de cuenta", key=account_key)
+        if connections:
+            account_id_value = default_account_id
+        else:
+            account_key = f"account_{selected_platform_key}"
+            prev_conn_key = f"prev_conn_{selected_platform_key}"
+            if st.session_state.get(prev_conn_key) != default_account_id:
+                st.session_state[account_key] = default_account_id
+                st.session_state[prev_conn_key] = default_account_id
+            account_id_value = st.text_input("ID de cuenta", key=account_key)
         schema_key = ("schema", selected_platform_key, api_key)
         if schema_key not in sidebar_cache:
             sidebar_cache[schema_key] = fetch_schema_from_api(selected_platform_key, api_key)
@@ -932,7 +1008,7 @@ if force_query_fetch or active_query_key not in st.session_state["dashboard_quer
         prev_rows = fetch_campaign_data_from_api(
             cfg["platform_key"], client_id, user_id, cfg["account_id"],
             prev_start_date, prev_end_date, cfg["request_metrics"], cfg["request_dimensions"],
-            cfg["opt_filters"], False, api_key
+            cfg["opt_filters"], False, api_key, show_errors=False, timeout=45
         )
         if curr_rows:
             curr_frames.append(process_api_response(curr_rows, cfg["platform_key"], client_id, user_id))
@@ -949,6 +1025,8 @@ if force_query_fetch or active_query_key not in st.session_state["dashboard_quer
         "account_id": account_id,
         "account_disp": account_disp,
         "selected_dimensions": selected_dimensions,
+        "request_metrics": platform_configs[0]["request_metrics"],
+        "request_dimensions": platform_configs[0]["request_dimensions"],
         "opt_filters": opt_filters,
     }
     st.session_state["dashboard_query_cache"][query_key] = (df_curr, df_prev, active_context)
@@ -987,6 +1065,73 @@ components.html("""
 if df_curr.empty:
     st.error("No se recibió información de la API para el periodo actual. Verifica las credenciales, plataforma o ID de cuenta en el menú lateral.")
 else:
+    if platform_key == "meta_ads":
+        filter_rows, filter_error = fetch_meta_filter_rows(client_id, account_id, api_key)
+        meta_filter_df = pd.DataFrame(filter_rows)
+        if not meta_filter_df.empty:
+            campaign_names = set(df_curr["campaign_name"].dropna().astype(str).apply(meta_base_campaign_name))
+            meta_filter_df["base_campaign_name"] = meta_filter_df["campaign_name"].astype(str).apply(meta_base_campaign_name)
+            meta_filter_df = meta_filter_df[meta_filter_df["base_campaign_name"].isin(campaign_names)]
+        if filter_error:
+            st.info(filter_error)
+
+        campaign_col, adset_col, ad_col = st.columns(3)
+        with campaign_col:
+            campaign_options = dashboard_filter_options(df_curr, "campaign_name")
+            if st.session_state.get("meta_campaign_filter") not in campaign_options:
+                st.session_state["meta_campaign_filter"] = "Todos"
+            campaign_filter = st.selectbox("Campaña", campaign_options, key="meta_campaign_filter")
+
+        filtered_meta_rows = meta_filter_df
+        if campaign_filter != "Todos" and not filtered_meta_rows.empty:
+            filtered_meta_rows = filtered_meta_rows[filtered_meta_rows["base_campaign_name"] == meta_base_campaign_name(campaign_filter)]
+        with adset_col:
+            adset_options = dashboard_filter_options(filtered_meta_rows, "adset_name")
+            if st.session_state.get("meta_adset_filter") not in adset_options:
+                st.session_state["meta_adset_filter"] = "Todos"
+            adset_filter = st.selectbox("Conjunto de anuncios", adset_options, key="meta_adset_filter")
+
+        filtered_ad_rows = filtered_meta_rows
+        if adset_filter != "Todos" and not filtered_ad_rows.empty:
+            filtered_ad_rows = filtered_ad_rows[filtered_ad_rows["adset_name"] == adset_filter]
+        with ad_col:
+            ad_options = dashboard_filter_options(filtered_ad_rows, "ad_name")
+            if st.session_state.get("meta_ad_filter") not in ad_options:
+                st.session_state["meta_ad_filter"] = "Todos"
+            ad_filter = st.selectbox("Anuncio", ad_options, key="meta_ad_filter")
+
+        if adset_filter != "Todos" or ad_filter != "Todos":
+            detail_dimensions = list(active_context.get("request_dimensions", []))
+            for dim in ("adset_name", "ad_name"):
+                if dim not in detail_dimensions:
+                    detail_dimensions.append(dim)
+            detail_filters = {}
+            if ad_filter != "Todos" and not filtered_ad_rows.empty:
+                detail_filters["ad.id"] = filtered_ad_rows[filtered_ad_rows["ad_name"] == ad_filter]["ad_id"].dropna().astype(str).tolist()
+            elif adset_filter != "Todos" and not filtered_meta_rows.empty:
+                detail_filters["adset.id"] = filtered_meta_rows[filtered_meta_rows["adset_name"] == adset_filter]["adset_id"].dropna().astype(str).unique().tolist()
+            detail_opt_filters = dict(active_context.get("opt_filters", {}))
+            if detail_filters:
+                detail_opt_filters["filters"] = detail_filters
+                detail_metrics = active_context.get("request_metrics") or ["impressions", "clicks", "spend", "conversions", "reach"]
+                detail_curr_rows = fetch_campaign_data_from_api(
+                    platform_key, client_id, user_id, account_id,
+                    start_date, end_date, detail_metrics, detail_dimensions,
+                    detail_opt_filters, False, api_key
+                )
+                detail_prev_rows = fetch_campaign_data_from_api(
+                    platform_key, client_id, user_id, account_id,
+                    prev_start_date, prev_end_date, detail_metrics, detail_dimensions,
+                    detail_opt_filters, False, api_key, show_errors=False
+                )
+                if detail_curr_rows:
+                    df_curr = process_api_response(detail_curr_rows, platform_key, client_id, user_id)
+                    df_prev = process_api_response(detail_prev_rows, platform_key, client_id, user_id) if detail_prev_rows else pd.DataFrame()
+        df_curr = apply_dashboard_filters(df_curr, campaign_filter, adset_filter, ad_filter)
+        df_prev = apply_dashboard_filters(df_prev, campaign_filter, adset_filter, ad_filter)
+        if campaign_filter != "Todos":
+            st.caption(f"Campaña: {campaign_filter}")
+
     # HERO RENDER (Clean, full width, no Sipy logo)
     title_color = "#0F172A" if theme_mode == "Claro" else "#EAF0F7"
     st.markdown(f"""
