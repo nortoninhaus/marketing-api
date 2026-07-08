@@ -78,6 +78,7 @@ class DataRequest(BaseModel):
     next_page_token: Optional[str] = Field(None, description="Cursor for the next page of results")
     filters: Optional[Dict[str, Any]] = Field(None, description="Dynamic key-value filters or expressions")
     action_attribution_windows: Optional[List[str]] = Field(None, description="Attribution windows for Meta Ads (e.g. ['7d_click', '1d_view'])")
+    write_to_bq: bool = Field(False, description="Whether to also sync this fetch to BigQuery")
 
     @model_validator(mode="after")
     def validate_date_range(self) -> "DataRequest":

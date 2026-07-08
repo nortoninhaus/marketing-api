@@ -286,7 +286,7 @@ class MetaAdsConnector(BaseConnector):
                         dimensions=dimensions
                     )
                 )
-
+ 
             try:
                 insights = insights.get_next_page()
             except Exception:
