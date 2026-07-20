@@ -1,5 +1,6 @@
 # Environment & Secrets
 .env
+.streamlit-home/
 *.pem
 *.p12
 *-service-account.json
@@ -43,4 +44,3 @@ htmlcov/
 
 # Scratch scripts
 scratch/
-
