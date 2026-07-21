@@ -544,3 +544,10 @@ def test_google_play_fetch_data_reviews_fallback(mock_load_creds, mock_build):
         assert results[0].campaign_name == "com.example.app"
         assert results[0].date == "2026-05-01"
         assert results[0].metrics["reviews_count"] == 3
+
+
+def test_google_redirect_uri_builder():
+    from app.routers.oauth import _build_google_redirect_uri
+    uri = _build_google_redirect_uri()
+    assert "google-callback" in uri
+

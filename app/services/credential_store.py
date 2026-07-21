@@ -57,8 +57,8 @@ class CredentialStore:
             logger.warning("No refresh_token available for Google token refresh")
             return data
 
-        client_id = settings.google_client_id or settings.google_ads_client_id
-        client_secret = settings.google_client_secret or settings.google_ads_client_secret
+        client_id = data.get("client_id") or settings.google_client_id or settings.google_ads_client_id
+        client_secret = data.get("client_secret") or settings.google_client_secret or settings.google_ads_client_secret
 
         if not client_id or not client_secret:
             logger.warning("Google client_id/client_secret not configured for token refresh")
