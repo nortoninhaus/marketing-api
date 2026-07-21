@@ -6,17 +6,10 @@ SERVICE_NAME="inhaus-marketing-api"
 REGION="us-central1"
 PROJECT_ID="inhausbrain"
 
-echo "=== 1. Autenticando Docker con Google Artifact Registry ==="
-gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+echo "=== 1. Compilando imagen con Cloud Build ==="
+gcloud builds submit --project="$PROJECT_ID" --tag="$IMAGE_URL" .
 
-echo "=== 2. Compilando imagen local de Docker ==="
-# --platform linux/amd64 es crítico porque estás en Mac M1/M2/M3; Cloud Run requiere arquitectura x86/amd64.
-docker build --platform linux/amd64 -t "$IMAGE_URL" .
-
-echo "=== 3. Subiendo imagen a Artifact Registry ==="
-docker push "$IMAGE_URL"
-
-echo "=== 4. Desplegando nueva imagen en Cloud Run ==="
+echo "=== 2. Desplegando nueva imagen en Cloud Run ==="
 gcloud run deploy "$SERVICE_NAME" \
   --image="$IMAGE_URL" \
   --project="$PROJECT_ID" \

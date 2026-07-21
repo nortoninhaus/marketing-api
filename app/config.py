@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     meta_app_id: str = ""
     meta_app_secret: str = ""
     meta_oauth_redirect_uri: str = ""
-    meta_oauth_scopes: str = "ads_read,pages_show_list,pages_read_engagement,read_insights,instagram_basic,instagram_manage_insights"
+    meta_oauth_scopes: str = "ads_read,pages_show_list,pages_read_engagement,pages_read_user_content,instagram_business_basic,instagram_business_manage_insights"
 
     # --- Google Ads ---
     google_ads_developer_token: str = ""

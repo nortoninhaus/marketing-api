@@ -74,6 +74,7 @@ class DataRequest(BaseModel):
     app_id: Optional[str] = Field(None, description="App package name or ID (app store platforms)")
     dimensions: Optional[List[str]] = Field(None, description="List of dimensions to group by")
     dry_run: bool = Field(False, description="If true, only validate parameters/metrics without fetching upstream data")
+    write_to_bq: bool = Field(False, description="If true, write results to BigQuery")
     limit: Optional[int] = Field(None, description="Maximum number of items to return")
     next_page_token: Optional[str] = Field(None, description="Cursor for the next page of results")
     filters: Optional[Dict[str, Any]] = Field(None, description="Dynamic key-value filters or expressions")

@@ -82,13 +82,17 @@ def _build_threads_redirect_uri(request: Request) -> str:
     return _build_meta_redirect_uri(request)
 
 
-def _build_google_redirect_uri(request: Request) -> str:
+def _build_google_redirect_uri(request: Request = None, override_uri: str = None) -> str:
     """Determine the Google OAuth backend redirect URI."""
+    if override_uri:
+        return override_uri
     if settings.google_oauth_redirect_uri:
         return settings.google_oauth_redirect_uri
-    host = request.headers.get("host", "127.0.0.1:8000")
-    scheme = "https" if request.headers.get("x-forwarded-proto") == "https" or "run.app" in host else "http"
-    return f"{scheme}://{host}/api/v1/oauth/google-callback"
+    if request:
+        host = request.headers.get("host", "127.0.0.1:8000")
+        scheme = "https" if request.headers.get("x-forwarded-proto") == "https" or "run.app" in host else "http"
+        return f"{scheme}://{host}/api/v1/oauth/google-callback"
+    return "https://inhaus-marketing-api-btdf7nijqa-uc.a.run.app/api/v1/oauth/google-callback"
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -786,25 +790,84 @@ async def google_oauth_callback(
                 use_proto_plus=True
             )
             
-            # Offload blocking gRPC call to a thread
-            customer_service = ads_client.get_service("CustomerService")
-            accessible_customers = await asyncio.to_thread(customer_service.list_accessible_customers)
-            
-            customer_names = accessible_customers.resource_names
-            for name in customer_names:
-                # format: "customers/1234567890"
-                cid = name.split("/")[-1]
+            # Offload blocking gRPC calls to a thread
+            def _discover_google_accounts_sync():
+                customer_service = ads_client.get_service("CustomerService")
+                accessible_customers = customer_service.list_accessible_customers()
+                ga_service = ads_client.get_service("GoogleAdsService")
+
+                query = """
+                    SELECT
+                        customer_client.id,
+                        customer_client.descriptive_name,
+                        customer_client.manager,
+                        customer_client.status,
+                        customer_client.hidden,
+                        customer_client.level
+                    FROM customer_client
+                    WHERE customer_client.status = 'ENABLED' AND customer_client.hidden = FALSE
+                """
+
+                discovered = []
+                seen_cids = set()
+
+                for name in accessible_customers.resource_names:
+                    top_cid = name.split("/")[-1]
+                    try:
+                        response = ga_service.search(customer_id=top_cid, query=query)
+                        for row in response:
+                            cc = row.customer_client
+                            child_cid = str(cc.id)
+                            if child_cid in seen_cids:
+                                continue
+                            seen_cids.add(child_cid)
+
+                            desc_name = cc.descriptive_name or f"Google Ads {child_cid}"
+                            is_mgr = bool(cc.manager)
+
+                            discovered.append({
+                                "account_id": child_cid,
+                                "account_name": f"{desc_name}" + (" (MCC)" if is_mgr else ""),
+                                "login_customer_id": top_cid if child_cid != top_cid else None,
+                                "is_manager": is_mgr,
+                                "descriptive_name": desc_name,
+                            })
+                    except Exception as err:
+                        logger.warning(f"Could not query customer_client hierarchy for top customer {top_cid}: {err}")
+                        if top_cid not in seen_cids:
+                            seen_cids.add(top_cid)
+                            discovered.append({
+                                "account_id": top_cid,
+                                "account_name": f"Google Ads {top_cid}",
+                                "login_customer_id": None,
+                                "is_manager": False,
+                                "descriptive_name": f"Google Ads {top_cid}",
+                            })
+                return discovered
+
+            discovered_accounts = await asyncio.to_thread(_discover_google_accounts_sync)
+
+            for acc in discovered_accounts:
+                cid = acc["account_id"]
+                extra_data = {
+                    "developer_token": settings.google_ads_developer_token,
+                    "is_manager": acc["is_manager"],
+                    "descriptive_name": acc["descriptive_name"],
+                }
+                if acc.get("login_customer_id"):
+                    extra_data["login_customer_id"] = acc["login_customer_id"]
+
                 await credential_store.save_oauth_connection(
                     client_id=client_id,
                     platform="google_ads",
                     account_id=cid,
-                    account_name=f"Google Ads {cid}",
+                    account_name=acc["account_name"],
                     access_token=access_token,
                     refresh_token=refresh_token,
                     token_expires_at=token_expires_at,
-                    extra_data={"developer_token": settings.google_ads_developer_token},
+                    extra_data=extra_data,
                 )
-            logger.info(f"Discovered {len(customer_names)} Google Ads accounts via SDK")
+            logger.info(f"Discovered {len(discovered_accounts)} Google Ads accounts (MCC & individual child accounts)")
         except Exception as e:
             logger.warning(f"Google Ads discovery failed (non-fatal): {e}")
 

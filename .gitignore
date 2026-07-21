@@ -43,4 +43,10 @@ htmlcov/
 *.log
 
 # Scratch scripts
-scratch/
+# Local data dumps
+*_live.json
+*_live_fixed.json
+*performance.json
+*performance_fixed.json
+real_ad_previews.json
+*.html
