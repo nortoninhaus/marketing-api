@@ -10,6 +10,8 @@ This project follows a modular, **multi-tenant** architecture designed for **rel
 - **`app/connectors/`**: Individual platform connectors implementing a `BaseConnector` interface.
 - **`app/models/`**: Pydantic models for request/response validation and normalization.
 - **`app/services/`**: Internal services like `CredentialStore` and `Dispatcher`.
+- **`dashboard.py`**: Streamlit-based data visualization and interactive dashboard.
+- **`web_ui/`**: Flutter web application for frontend interaction.
 
 ## Multi-Tenancy
 
@@ -57,9 +59,21 @@ See [llms.md](llms.md) for detailed technical context on the credential resoluti
    # Set your API_KEY and BigQuery sink settings
    ```
 
-3. **Run locally**:
+3. **Run Backend (FastAPI)**:
    ```bash
    uvicorn app.main:app --reload
+   ```
+
+4. **Run Dashboard (Streamlit)**:
+   ```bash
+   streamlit run dashboard.py
+   ```
+
+5. **Run Web UI (Flutter)**:
+   ```bash
+   cd web_ui
+   flutter pub get
+   flutter run -d chrome
    ```
 
 ## API Endpoints

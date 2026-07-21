@@ -1,5 +1,6 @@
 # Environment & Secrets
 .env
+.streamlit-home/
 *.pem
 *.p12
 *-service-account.json
@@ -42,8 +43,6 @@ htmlcov/
 *.log
 
 # Scratch scripts
-scratch/
-
 # Local data dumps
 *_live.json
 *_live_fixed.json

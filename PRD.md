@@ -1,6 +1,6 @@
-# Product Requirements Document (PRD): Inhaus Marketing Data API
+# Product Requirements Document (PRD): Inhaus Marketing Data API v5.0
 
-## 1. Executive Summary
+## 1. Executive Summary & Vision
 The Inhaus Marketing Data API is a unified, high-performance, multi-tenant gateway that abstracts the complexities of interfacing with over 14 major marketing, analytics, and social platforms. Designed for both traditional reporting applications (e.g., Streamlit, Flutter dashboards) and AI-driven workflows, the platform provides standardized JSON interfaces, automated token management, and built-in Model Context Protocol (MCP) server endpoints to allow autonomous AI agents to query cross-channel performance metrics seamlessly.
 
 ---
@@ -28,22 +28,22 @@ The API implements specialized connector classes under `app/connectors/` for the
 
 ## 4. Key Functional Requirements
 
-### 4.1. Dynamic Credential Resolution
+### 4.1. Dynamic Credential Resolution & OAuth
 - Resolve credentials per-request using a three-tier hierarchy:
   1. **Inline Credentials**: Passed directly in the payload for immediate access/testing.
   2. **Firestore Vault**: Asynchronously fetched from a multi-tenant collection matching the `client_id`.
   3. **Global Defaults**: System-level fallbacks defined in environment variables (`.env`).
 - Automatic refresh of long-lived access tokens (Meta, Threads) if they are within 15 days of expiration.
-- Skip refresh checks for permanent organic page access tokens.
+- Automated GAQL discovery of all child ad accounts and sub-managers under top-level MCC accounts via `customer_client` with descriptive names.
 
 ### 4.2. Schema Discovery and Validation
 - **GET `/api/v1/platforms`**: Exposes supported platforms, active configurations, and descriptors.
 - **GET `/api/v1/schema/{platform}`**: Dynamically returns structural parameters and lists of valid metrics and dimensions.
-- Native parameter sanitization rejects invalid query combinations (e.g., passing `video_id` to Google Ads) before invoking upstream endpoints, avoiding silent API errors.
+- Native parameter sanitization rejects invalid query combinations before invoking upstream endpoints.
 
 ### 4.3. High-Concurrency Batch Queries
 - **POST `/api/v1/batch`**: Execute concurrent platform fetches using `asyncio.gather` and background worker threads.
-- **Partial Failure Resiliency**: If one platform fails (e.g., due to an expired token), return successful datasets alongside structured error payloads with a `"status": "partial"` response code.
+- **Partial Failure Resiliency**: Return successful datasets alongside structured error payloads with a `"status": "partial"` response code.
 
 ### 4.4. Model Context Protocol (MCP) Support
 - Expose native stdio transport for MCP host systems (e.g., Cursor, Claude Desktop, Antigravity).
@@ -63,3 +63,4 @@ The API implements specialized connector classes under `app/connectors/` for the
 - **Security**: Mandatory `X-API-Key` validation on all REST endpoints. Strict credential isolation per client tenant.
 - **Performance**: Thread pool offloading for synchronous blocking client SDK code to prevent main-loop starvation.
 - **Scalability**: Stateless architecture containerized via `Dockerfile` and configured for serverless scaling (e.g., Google Cloud Run).
+
