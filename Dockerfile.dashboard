@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy dashboard and config
 COPY dashboard.py .
+COPY dashboard/ dashboard/
 COPY .streamlit/ .streamlit/
 
 # Streamlit port is passed dynamically by Cloud Run as PORT env var
