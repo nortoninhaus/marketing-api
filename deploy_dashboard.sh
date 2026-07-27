@@ -21,7 +21,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --image="$IMAGE_URL" \
   --project="$PROJECT_ID" \
   --region="$REGION" \
-  --set-env-vars="FIREBASE_PROJECT_ID=inhausbrain" \
+  --set-env-vars="FIREBASE_PROJECT_ID=inhaus-marketing-api" \
   --allow-unauthenticated
 
 echo "=== ¡Proceso Completado! ==="
