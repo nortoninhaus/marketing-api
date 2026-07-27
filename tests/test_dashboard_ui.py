@@ -52,6 +52,15 @@ def test_campaign_names_are_cleaned_for_display():
     assert '"campaign_label": "Campaña"' in SOURCE
 
 
+def test_sidebar_actions_are_ordered_without_a_separator():
+    query_button = 'st.sidebar.button("🚀 Consultar API"'
+    logout_button = 'st.sidebar.button("🔒 Cerrar Sesión"'
+
+    assert SOURCE.index(query_button) < SOURCE.index(logout_button)
+    assert 'st.sidebar.markdown("---")' not in SOURCE
+    assert ".inhaus-logout-container {" not in SOURCE
+
+
 if __name__ == "__main__":
     test_dashboard_has_light_dark_and_spanish_meta_labels()
     test_theme_change_does_not_refetch_official_meta_data()
@@ -59,3 +68,4 @@ if __name__ == "__main__":
     test_dashboard_hashtag_ranking_uses_returned_post_text()
     test_regions_are_localized_and_charted()
     test_campaign_names_are_cleaned_for_display()
+    test_sidebar_actions_are_ordered_without_a_separator()

@@ -199,15 +199,6 @@ stroke: #EAF0F7 !important;
     fill: #FFFFFF !important;
     stroke: #FFFFFF !important;
 }
-/* Premium Logout Button absolute positioning at the bottom of the sidebar */
-.inhaus-logout-container {
-    position: absolute !important;
-    bottom: 20px !important;
-    left: 16px !important;
-    right: 16px !important;
-    width: calc(100% - 32px) !important;
-    z-index: 999 !important;
-}
 .inhaus-logout-btn {
     border: 1px solid rgba(255, 75, 75, 0.4) !important;
     color: #FF4B4B !important;
@@ -685,12 +676,6 @@ if st.sidebar.button(theme_icon, key="theme_switch_button", help="Cambiar tema")
     st.session_state["theme_switch"] = theme_mode != "Oscuro"
     st.rerun()
 
-if st.sidebar.button("🔒 Cerrar Sesión", key="logout_button", use_container_width=True):
-    st.session_state.pop("dashboard_auth_token", None)
-    st.session_state.pop("dashboard_user", None)
-    dashboard_auth_cookie_bridge(clear=True)
-    st.rerun()
-
 st.sidebar.markdown("### Configuración de Consulta")
 
 # Hidden admin defaults
@@ -858,9 +843,14 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
 else:
     start_date, end_date = default_start, today
 
-st.sidebar.markdown("---")
 # Execute Button in Sidebar to prevent auto-loading until clicked
 execute_query = st.sidebar.button("🚀 Consultar API", use_container_width=True)
+
+if st.sidebar.button("🔒 Cerrar Sesión", key="logout_button", use_container_width=True):
+    st.session_state.pop("dashboard_auth_token", None)
+    st.session_state.pop("dashboard_user", None)
+    dashboard_auth_cookie_bridge(clear=True)
+    st.rerun()
 
 # MAIN DISPLAY (Occupies full wide screen)
 # Header
@@ -1312,9 +1302,6 @@ if platform_key == "meta_ads" and st.checkbox("Cargar datos oficiales de Faceboo
                 ).properties(height=300)
                 st.markdown("#### Regiones principales")
                 st.altair_chart(theme_chart(region_chart), use_container_width=True)
-                table["%"] = table["%"].apply(lambda x: f"{x:.2%}")
-                st.markdown("#### Top 10 regiones")
-                show_theme_table(table.rename(columns={"region": "Región"}))
             else:
                 st.info("Meta no devolvió regiones para este rango.")
     else:
