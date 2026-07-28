@@ -90,6 +90,11 @@ if os.getenv("DASHBOARD_AUTH_SELF_CHECK") == "1":
     dashboard_auth_self_check()
     raise SystemExit("dashboard auth self-check passed")
 
+
+def toggle_theme():
+    st.session_state["theme_switch"] = not st.session_state.get("theme_switch", True)
+
+
 # Determine sidebar collapse state dynamically to hide it automatically once query runs
 initial_sidebar = "collapsed" if st.session_state.get("query_run", False) else "expanded"
 
@@ -213,34 +218,48 @@ stroke: #EAF0F7 !important;
 }
 
 
+:root {
+    --inhaus-polygon-gradient: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='20.5' y2='20.5' gradientUnits='userSpaceOnUse'%3E%3Cstop stop-color='white'/%3E%3Cstop offset='.84506' stop-color='white' stop-opacity='.99'/%3E%3Cstop offset='.9506' stop-color='white' stop-opacity='0'/%3E%3Cstop offset='1' stop-color='white' stop-opacity='0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M0 0H40L0 40V0Z' fill='url(%23g)'/%3E%3C/svg%3E");
+}
+
 .inhaus-theme-wipe {
     position: fixed;
     inset: 0;
     z-index: 2147483647;
     pointer-events: none;
-    clip-path: polygon(0 0, 0 0, 0 0);
-    animation: inhaus-polygon-gradient 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    mask: var(--inhaus-polygon-gradient) top left / 0 no-repeat;
+    mask-origin: top left;
+    animation: inhaus-theme-scale 1.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .inhaus-theme-wipe.inhaus-to-dark { background: #0A0D13; }
 .inhaus-theme-wipe.inhaus-to-light { background: #F8F9FC; }
 
-::view-transition-old(root),
-::view-transition-new(root) {
-    animation-duration: 900ms;
-    animation-fill-mode: both;
+::view-transition-group(root) {
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
 }
-::view-transition-new(root) { animation-name: inhaus-theme-scale; }
+
+::view-transition-new(root) {
+    mask: var(--inhaus-polygon-gradient) top left / 0 no-repeat;
+    mask-origin: top left;
+    animation: inhaus-theme-scale 1.5s both;
+}
+
+::view-transition-old(root) {
+    animation: none;
+    z-index: -1;
+}
 
 @keyframes inhaus-theme-scale {
-    from { clip-path: polygon(0 0, 0 0, 0 0); }
-    to { clip-path: polygon(0 0, 200vw 0, 0 200vh); }
+    to { mask-size: 200vmax; }
 }
 
-@keyframes inhaus-polygon-gradient {
-    0% { clip-path: polygon(0 0, 0 0, 0 0); }
-    70% { clip-path: polygon(0 0, 100% 0, 0 100%); }
-    100% { clip-path: polygon(0 0, 200vw 0, 0 200vh); opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+    ::view-transition-group(root),
+    ::view-transition-new(root),
+    .inhaus-theme-wipe {
+        animation-duration: 1ms !important;
+    }
 }
 
 /* Typography Overrides */
@@ -608,12 +627,12 @@ if theme_mode == "Claro":
     """, unsafe_allow_html=True)
 
 dashboard_user = require_dashboard_login()
-components.html("""
+st.html("""
 <script>
 (function() {
     const parentDoc = window.parent.document;
     const parentWin = window.parent;
-    const version = "polygon-gradient-v6";
+    const version = "polygon-gradient-v7";
     if (parentDoc.__inhausSidebarEnhancer === version) return;
     parentDoc.__inhausSidebarEnhancer = version;
 
@@ -633,15 +652,51 @@ components.html("""
         if (collapseBtn) collapseBtn.click();
     };
 
-    const startThemeTransition = (event) => {
-        const button = event.target.closest("button");
-        if (!button || !button.textContent.match(/[☀☾]/)) return;
-        const goingDark = button.textContent.includes("☀");
+    const showThemeFallback = (goingDark) => {
         const wipe = parentDoc.createElement("div");
         wipe.className = "inhaus-theme-wipe " + (goingDark ? "inhaus-to-dark" : "inhaus-to-light");
         parentDoc.body.appendChild(wipe);
         wipe.addEventListener("animationend", () => wipe.remove(), { once: true });
-        setTimeout(() => wipe.remove(), 1200);
+        setTimeout(() => wipe.remove(), 1800);
+    };
+
+    const waitForThemeChange = (expectedIcon) => new Promise((resolve) => {
+        let observer;
+        let timeout;
+        const changed = () => Array.from(
+            parentDoc.querySelectorAll('[data-testid="stSidebar"] button')
+        ).some((button) => button.textContent.includes(expectedIcon));
+        const done = () => {
+            if (observer) observer.disconnect();
+            if (timeout) parentWin.clearTimeout(timeout);
+            resolve();
+        };
+        if (changed()) {
+            done();
+            return;
+        }
+        observer = new parentWin.MutationObserver(() => {
+            if (changed()) done();
+        });
+        observer.observe(parentDoc.body, { childList: true, subtree: true, characterData: true });
+        timeout = parentWin.setTimeout(done, 2000);
+    });
+
+    const startThemeTransition = (event) => {
+        const button = event.target.closest("button");
+        if (!button || !button.textContent.match(/[☀☾]/)) return;
+        const goingDark = button.textContent.includes("☀");
+        if (typeof parentDoc.startViewTransition === "function") {
+            try {
+                parentDoc.startViewTransition(
+                    () => waitForThemeChange(goingDark ? "☾" : "☀")
+                );
+                return;
+            } catch (_) {
+                // Fall through for browsers that expose but cannot start view transitions.
+            }
+        }
+        showThemeFallback(goingDark);
     };
 
     const tagLogoutButton = () => {
@@ -667,14 +722,12 @@ components.html("""
     });
 })();
 </script>
-""", height=0, width=0)
+""", unsafe_allow_javascript=True)
 
 # SIDEBAR FILTERS (Acts as the collapsible Hamburger Menu on the left)
 st.sidebar.image("https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/69691ca0d848087449f86454.svg", width=180)
 theme_icon = "☾" if theme_mode == "Oscuro" else "☀"
-if st.sidebar.button(theme_icon, key="theme_switch_button", help="Cambiar tema"):
-    st.session_state["theme_switch"] = theme_mode != "Oscuro"
-    st.rerun()
+st.sidebar.button(theme_icon, key="theme_switch_button", help="Cambiar tema", on_click=toggle_theme)
 
 st.sidebar.markdown("### Configuración de Consulta")
 

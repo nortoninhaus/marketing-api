@@ -1,11 +1,17 @@
 from pathlib import Path
+from types import SimpleNamespace
 
+import requests
+from streamlit.testing.v1 import AppTest
 
-SOURCE = Path(__file__).resolve().parents[1].joinpath("dashboard.py").read_text()
+from dashboard.auth import create_dashboard_token
+
+DASHBOARD_PATH = Path(__file__).resolve().parents[1] / "dashboard.py"
+SOURCE = DASHBOARD_PATH.read_text()
 
 
 def test_dashboard_has_light_dark_and_spanish_meta_labels():
-    assert 'st.sidebar.toggle("☀️ / 🌙"' in SOURCE
+    assert 'st.sidebar.button(theme_icon, key="theme_switch_button"' in SOURCE
     assert 'st.sidebar.radio("Tema", ["Claro", "Oscuro"]' not in SOURCE
     assert '"male": "Masculino"' in SOURCE
     assert '"female": "Femenino"' in SOURCE
@@ -20,6 +26,38 @@ def test_theme_change_does_not_refetch_official_meta_data():
     assert "meta_official_cache" in SOURCE
     assert "official_key" in SOURCE
     assert 'st.session_state["meta_official_cache"][official_key]' in SOURCE
+
+
+def test_theme_change_preserves_sidebar_state(monkeypatch):
+    monkeypatch.setattr(
+        requests,
+        "get",
+        lambda *args, **kwargs: SimpleNamespace(status_code=200, json=lambda: []),
+    )
+    app = AppTest.from_file(DASHBOARD_PATH, default_timeout=20)
+    app.session_state["dashboard_auth_token"] = create_dashboard_token(
+        {
+            "username": "test",
+            "client_id": "client_1",
+            "user_id": "user_1",
+            "accounts": {},
+        }
+    )
+
+    app.run()
+    app.sidebar.multiselect[0].select("Meta Ads (Facebook/IG)").run()
+    app.sidebar.button[0].click().run()
+
+    assert not app.exception
+    assert app.sidebar.button[0].label == "☀"
+    assert app.sidebar.multiselect[0].value == ["Meta Ads (Facebook/IG)"]
+
+
+def test_theme_change_uses_polygon_gradient_view_transition():
+    assert "parentDoc.startViewTransition" in SOURCE
+    assert "M0 0H40L0 40V0Z" in SOURCE
+    assert "mask-size: 200vmax" in SOURCE
+    assert "unsafe_allow_javascript=True" in SOURCE
 
 
 def test_charts_and_header_follow_selected_theme():
