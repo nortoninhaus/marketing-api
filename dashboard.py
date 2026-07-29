@@ -87,7 +87,7 @@ from dashboard.ui import (
     render_dashboard_empty_state,
 )
 
-DASHBOARD_CACHE_VERSION = 3
+DASHBOARD_CACHE_VERSION = 4
 
 
 if os.getenv("DASHBOARD_AUTH_SELF_CHECK") == "1":
@@ -946,7 +946,7 @@ for cfg in platform_configs:
     dimension_names = [x["name"] for x in cfg["dimensions_list"]]
     request_metrics = list(cfg["selected_metrics"])
     if cfg["platform_type"] == "ads":
-        standard_metrics = ["impressions", "clicks", "spend", "conversions", "lead", "reach", "__results__", "cost_per_result"]
+        standard_metrics = ["impressions", "clicks", "spend", "conversions", "lead", "reach", "post_engagement", "__results__", "cost_per_result"]
     elif cfg["platform_type"] == "analytics":
         standard_metrics = ["sessions", "users", "pageviews", "bounce_rate"]
     elif cfg["platform_type"] == "app_store":
@@ -1045,6 +1045,8 @@ for frame in (df_curr, df_prev):
         frame["cost_per_result"] = 0.0
     if "result_indicator" not in frame.columns:
         frame["result_indicator"] = ""
+    if "post_engagement" not in frame.columns:
+        frame["post_engagement"] = 0
 
 # Inject JavaScript to automatically collapse the sidebar menu if it is expanded
 import streamlit.components.v1 as components

@@ -264,6 +264,7 @@ def process_api_response(api_data, platform_key, client_id, user_id):
         clicks = extract_metric(metrics, ["clicks", "unique_clicks"])
         conversions = extract_metric(metrics, ["conversions", "actions", "purchase", "lead", "add_to_cart"])
         leads = extract_metric(metrics, ["lead"])
+        post_engagement = extract_metric(metrics, ["post_engagement"])
         results = extract_metric(metrics, ["__results__", "results"])
         cost_per_result = extract_metric(metrics, ["cost_per_result"])
         result_indicator = str(metrics.get("result_indicator") or "")
@@ -296,6 +297,7 @@ def process_api_response(api_data, platform_key, client_id, user_id):
             "clicks": int(clicks),
             "conversions": int(conversions),
             "lead": int(leads),
+            "post_engagement": int(post_engagement),
             "results": int(results),
             "cost_per_result": cost_per_result,
             "result_indicator": result_indicator,
@@ -333,6 +335,6 @@ def process_api_response(api_data, platform_key, client_id, user_id):
     if df.empty:
         return pd.DataFrame(columns=[
             "platform", "client_id", "user_id", "campaign_name", "date", "spend", "impressions", "clicks", "conversions", "lead", "results", "cost_per_result", "result_indicator",
-            "sessions", "users", "pageviews", "bounce_rate", "downloads", "ratings", "engagement", "followers", "reach", "likes", "comments"
+            "sessions", "users", "pageviews", "bounce_rate", "downloads", "ratings", "engagement", "post_engagement", "followers", "reach", "likes", "comments"
         ])
     return df

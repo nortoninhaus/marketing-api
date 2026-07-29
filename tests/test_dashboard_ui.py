@@ -144,11 +144,29 @@ def test_ads_cards_show_real_leads_and_total_reach():
     )
 
     assert df["lead"].sum() == 7
-    assert 'standard_metrics = ["impressions", "clicks", "spend", "conversions", "lead", "reach", "__results__", "cost_per_result"]' in SOURCE
+    assert 'standard_metrics = ["impressions", "clicks", "spend", "conversions", "lead", "reach", "post_engagement", "__results__", "cost_per_result"]' in SOURCE
     assert 'curr_primary = df_curr["lead"].sum()' in SOURCE
     assert 'primary_label = "Clientes Potenciales"' in SOURCE
     assert 'get_kpi_card_html("Alcance Total", f"{total_reach_curr:,}"' in SOURCE
     assert '"Costo por Conversión (CPA)"' not in SOURCE
+
+
+def test_meta_post_engagement_is_requested_and_normalized():
+    df = process_api_response(
+        [{
+            "campaign_name": "Engagement Campaign",
+            "date": "2026-07-01",
+            "metrics": {"post_engagement": 37},
+        }],
+        "meta_ads",
+        "client_1",
+        "user_1",
+    )
+
+    assert df.loc[0, "post_engagement"] == 37
+    assert '"post_engagement"' in SOURCE[
+        SOURCE.index("standard_metrics ="):SOURCE.index("query_configs.append")
+    ]
 
 
 def test_featured_campaigns_show_requested_meta_metrics():
@@ -244,13 +262,14 @@ def test_unknown_meta_result_indicator_is_not_humanized():
 
 
 def test_results_schema_change_invalidates_and_migrates_cached_frames():
-    assert "DASHBOARD_CACHE_VERSION = 3" in SOURCE
+    assert "DASHBOARD_CACHE_VERSION = 4" in SOURCE
     assert 'schema_key = ("schema", DASHBOARD_CACHE_VERSION, selected_platform_key, api_key)' in SOURCE
     assert "query_key = (\n    DASHBOARD_CACHE_VERSION," in SOURCE
     assert "if active_query_key[0] != DASHBOARD_CACHE_VERSION:" in SOURCE
     assert 'frame["results"] = frame.get("__results__", 0)' in SOURCE
     assert 'frame["cost_per_result"] = 0.0' in SOURCE
     assert 'frame["result_indicator"] = ""' in SOURCE
+    assert 'frame["post_engagement"] = 0' in SOURCE
 
 
 def test_historical_charts_are_commented_out():
