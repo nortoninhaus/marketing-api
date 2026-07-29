@@ -82,11 +82,52 @@ def test_meta_ads_maps_results_alias(mock_ad_account, mock_api, mock_session):
             account_id="act_12345",
         ))
 
+    assert rows[0].metrics["result_indicator"] == "actions:lead"
     assert rows[0].metrics["__results__"] == 12
     assert rows[0].metrics["cost_per_result"] == 0.42
     assert "results" in account.get_insights.call_args.kwargs["fields"]
     assert "cost_per_result" in account.get_insights.call_args.kwargs["fields"]
     assert "__results__" not in account.get_insights.call_args.kwargs["fields"]
+
+
+@patch("app.connectors.meta.FacebookSession")
+@patch("app.connectors.meta.FacebookAdsApi")
+@patch("app.connectors.meta.AdAccount")
+def test_meta_ads_resolves_lead_result_from_actions(mock_ad_account, mock_api, mock_session):
+    account = MagicMock()
+    mock_ad_account.return_value = account
+    account.get_insights.return_value = [{
+        "campaign_name": "Quality Leads",
+        "date_start": "2026-07-01",
+        "objective": "OUTCOME_LEADS",
+        "optimization_goal": "QUALITY_LEAD",
+        "actions": [{"action_type": "lead", "value": "9"}],
+        "cost_per_action_type": [{"action_type": "lead", "value": "3.25"}],
+    }]
+
+    connector = MetaAdsConnector()
+    with patch.object(connector, "get_credentials", return_value={
+        "access_token": "fake_ads_token",
+        "ad_account_id": "act_12345",
+    }):
+        rows = connector.fetch_data(DataRequest(
+            platform="meta_ads",
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 31),
+            metrics=["__results__", "cost_per_result", "lead"],
+            client_id="test_client",
+            user_id="test_user",
+            account_id="act_12345",
+        ))
+
+    assert rows[0].metrics["result_indicator"] == "actions:lead"
+    assert rows[0].metrics["__results__"] == 9
+    assert rows[0].metrics["cost_per_result"] == 3.25
+    requested_fields = account.get_insights.call_args.kwargs["fields"]
+    assert "actions" in requested_fields
+    assert "cost_per_action_type" in requested_fields
+    assert "objective" in requested_fields
+    assert "optimization_goal" in requested_fields
 
 
 @patch("app.connectors.meta.FacebookSession")
@@ -422,5 +463,4 @@ def test_meta_ads_custom_conversion_metrics(mock_ad_account, mock_api, mock_sess
         assert results[0].metrics["12345"] == 15
         assert results[0].metrics["account_created_Sipy_Personas"] == 22
         assert results[0].metrics["account_created_Sipy_Personas_value"] == 220.0
-
 
