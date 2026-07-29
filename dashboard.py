@@ -1673,21 +1673,35 @@ if platform_type == "ads":
 
         st.markdown("### Desempeño de campañas destacadas")
         show_theme_table(campaign_summary)
-        ranked_campaigns = (
+        ranking_specs = (
+            ("clientes potenciales", "lead", "Clientes potenciales"),
+            ("alcance", "reach", "Alcance"),
+            ("interacciones", "post_engagement", "Interacciones"),
+        )
+        campaign_ranking_summary = (
             meta_table.groupby("base_campaign_name")
             .agg(
                 platform=("platform", lambda values: " / ".join(dict.fromkeys(values))),
                 lead=("lead", "sum"),
+                reach=("reach", "sum"),
+                post_engagement=("post_engagement", "sum"),
                 spend=("spend", "sum"),
                 impressions=("impressions", "sum"),
                 clicks=("clicks", "sum"),
                 conversions=("conversions", "sum"),
             )
             .reset_index()
-            .sort_values("lead", ascending=False).head(8)
         )
-        preview_names = tuple(dict.fromkeys(ranked_campaigns["base_campaign_name"]))
-        # ponytail: Meta previews cost one Graph call each; paginate this if accounts need more than 8 cards.
+        ranked_campaigns_by_metric = {
+            metric: campaign_ranking_summary.sort_values(metric, ascending=False).head(3)
+            for _, metric, _ in ranking_specs
+        }
+        preview_names = tuple(dict.fromkeys(
+            campaign_name
+            for _, metric, _ in ranking_specs
+            for campaign_name in ranked_campaigns_by_metric[metric]["base_campaign_name"]
+        ))
+        # ponytail: Meta previews cost one Graph call each; the three rankings need at most nine.
         preview_cache = st.session_state.setdefault("meta_preview_cache", {})
         preview_key = (client_id, account_id, preview_names, api_key)
         if preview_key not in preview_cache:
@@ -1698,16 +1712,45 @@ if platform_type == "ads":
             "spend": "sum", "impressions": "sum", "clicks": "sum", "conversions": "sum"
         }).to_dict("index")
 
-        st.markdown("### Ranking: top campañas por clientes potenciales (Meta)")
         if preview_error:
             st.info(preview_error)
 
-        rank_cols = st.columns(4)
-        for idx, row in enumerate(ranked_campaigns.itertuples(index=False), start=1):
+        ranking_rows = (
+            (ranking_name, metric, metric_label, idx, row)
+            for ranking_name, metric, metric_label in ranking_specs
+            for idx, row in enumerate(
+                ranked_campaigns_by_metric[metric].itertuples(index=False),
+                start=1,
+            )
+        )
+        for ranking_name, metric, metric_label, idx, row in ranking_rows:
+            if idx == 1:
+                st.markdown(f"### Ranking: top campañas por {ranking_name} (Meta)")
+                rank_cols = st.columns(3)
             preview = previews_by_campaign.get(row.base_campaign_name)
             ctr = row.clicks / row.impressions if row.impressions else 0
             cpc = row.spend / row.clicks if row.clicks else 0
             cpa = row.spend / row.conversions if row.conversions else 0
+            metric_rows = [(metric_label, f"{getattr(row, metric):,.0f}")]
+            metric_rows.extend([
+                ("Inversión", f"${row.spend:,.2f}"),
+                ("Conversiones", f"{row.conversions:,.0f}"),
+            ])
+            if metric != "lead":
+                metric_rows.append(("Clientes potenciales", f"{row.lead:,.0f}"))
+            metric_rows.extend([
+                ("Clics", f"{row.clicks:,.0f}"),
+                ("Impresiones", f"{row.impressions:,.0f}"),
+                ("CTR", f"{ctr:.2%}"),
+                ("CPC", f"${cpc:,.2f}"),
+                ("CPA", f"${cpa:,.2f}"),
+            ])
+            metrics_html = "".join(
+                '<div style="display:flex; justify-content:space-between; '
+                'border-bottom:1px dashed #e5e7eb; padding-bottom:6px;">'
+                f"<span>{label}</span><b>{value}</b></div>"
+                for label, value in metric_rows
+            )
             body = preview["body"] if preview else "<div style='height:320px;display:grid;place-items:center;color:#8A97A8;background:#0A0D13;border-radius:10px;'>Preview no disponible</div>"
             raw_ad_name = str(preview.get("ad_name", "")) if preview else ""
             ad_name = html.escape(raw_ad_name)
@@ -1729,14 +1772,7 @@ if platform_type == "ads":
                 <div style="margin-top:12px; color:#0b3f91; font-weight:800; font-size:14px; line-height:1.25;">{campaign_name}</div>
                 <div style="margin-top:4px; color:#6b7280; font-size:12px; min-height:16px;">{ad_name}</div>
                 <div style="margin-top:14px; display:grid; gap:8px; font-size:13px;">
-                    <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>Inversión</span><b>${row.spend:,.2f}</b></div>
-                    <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>Conversiones</span><b>{row.conversions:,.0f}</b></div>
-                    <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>Clientes potenciales</span><b>{row.lead:,.0f}</b></div>
-                    <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>Clics</span><b>{row.clicks:,.0f}</b></div>
-                    <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>Impresiones</span><b>{row.impressions:,.0f}</b></div>
-                    <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>CTR</span><b>{ctr:.2%}</b></div>
-                    <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>CPC</span><b>${cpc:,.2f}</b></div>
-                    <div style="display:flex; justify-content:space-between;"><span>CPA</span><b>${cpa:,.2f}</b></div>
+                    {metrics_html}
                 </div>
             </div>
             """

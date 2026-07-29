@@ -219,11 +219,24 @@ def test_featured_campaigns_show_requested_meta_metrics():
     assert '"platform": "Plataforma"' not in featured_campaign_source
 
 
-def test_meta_campaign_cards_rank_by_leads_and_keep_full_names():
-    assert '.sort_values("lead", ascending=False).head(8)' in SOURCE
-    assert "Ranking: top campañas por clientes potenciales (Meta)" in SOURCE
-    assert "<span>Clientes potenciales</span>" in SOURCE
-    assert "campaign_name = html.escape(str(row.base_campaign_name))" in SOURCE
+def test_meta_campaign_cards_render_three_top_three_rankings():
+    assert "ranking_specs = (" in SOURCE
+    ranking_source = SOURCE[
+        SOURCE.index("ranking_specs ="):SOURCE.index("for preview in previews:")
+    ]
+
+    for title, metric, label in (
+        ("clientes potenciales", "lead", "Clientes potenciales"),
+        ("alcance", "reach", "Alcance"),
+        ("interacciones", "post_engagement", "Interacciones"),
+    ):
+        assert f'("{title}", "{metric}", "{label}")' in ranking_source
+
+    assert ".sort_values(metric, ascending=False).head(3)" in ranking_source
+    assert "rank_cols = st.columns(3)" in ranking_source
+    assert "metric_rows = [(metric_label," in ranking_source
+    assert 'st.markdown(f"### Ranking: top campañas por {ranking_name} (Meta)")' in ranking_source
+    assert "campaign_name = html.escape(str(row.base_campaign_name))" in ranking_source
 
 
 def test_meta_result_indicator_survives_dashboard_normalization():
