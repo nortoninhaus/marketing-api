@@ -445,6 +445,7 @@ class MetaAdsConnector(BaseConnector):
                 "purchase_roas",
                 "purchase",
                 "lead",
+                "post_engagement",
                 "add_to_cart",
                 "initiate_checkout",
                 "roas",
