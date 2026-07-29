@@ -2,21 +2,26 @@ import ast
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 import requests
 from streamlit.testing.v1 import AppTest
 
 from dashboard.api import process_api_response
 from dashboard.auth import create_dashboard_token
+from dashboard import utils as dashboard_utils
 
 DASHBOARD_PATH = Path(__file__).resolve().parents[1] / "dashboard.py"
 SOURCE = DASHBOARD_PATH.read_text()
+CONFIG_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("config.py").read_text()
+API_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("api.py").read_text()
+UTILS_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("utils.py").read_text()
 
 
 def test_dashboard_has_light_dark_and_spanish_meta_labels():
     assert 'st.sidebar.button(theme_icon, key="theme_switch_button"' in SOURCE
     assert 'st.sidebar.radio("Tema", ["Claro", "Oscuro"]' not in SOURCE
-    assert '"male": "Masculino"' in SOURCE
-    assert '"female": "Femenino"' in SOURCE
+    assert '"male": "Masculino"' in CONFIG_SOURCE
+    assert '"female": "Femenino"' in CONFIG_SOURCE
     assert "Desempeño de campañas destacadas" in SOURCE
     assert "Ranking de hashtags (Instagram)" in SOURCE
 
@@ -70,8 +75,8 @@ def test_charts_and_header_follow_selected_theme():
 
 def test_dashboard_hashtag_ranking_uses_returned_post_text():
     assert "ad_hashtag_rows" in SOURCE
-    assert "effective_object_story_id" in SOURCE
-    assert '"post_message": post_text' in SOURCE
+    assert "effective_object_story_id" in API_SOURCE
+    assert '"post_message": post_text' in API_SOURCE
     assert 'preview.get("body", "")' in SOURCE
     assert 'preview.get("post_message", "")' in SOURCE
     assert 'text_col = "caption" if "caption" in df_curr.columns else "campaign_name"' in SOURCE
@@ -81,14 +86,14 @@ def test_dashboard_hashtag_ranking_uses_returned_post_text():
 
 def test_regions_are_localized_and_charted():
     assert "clean_region_name" in SOURCE
-    assert 're.sub(r"\\s+Province$"' in SOURCE
+    assert 're.sub(r"\\s+Province$"' in UTILS_SOURCE
     assert 'st.markdown("#### Regiones principales")' in SOURCE
     assert "region_chart" in SOURCE
 
 
 def test_campaign_names_are_cleaned_for_display():
-    assert "clean_campaign_name" in SOURCE
-    assert '"campaign_label": clean_campaign_name(campaign_name)' in SOURCE
+    assert "clean_campaign_name" in UTILS_SOURCE
+    assert '"campaign_label": clean_campaign_name(campaign_name)' in API_SOURCE
     assert '"campaign_label": "Campaña"' in SOURCE
 
 
@@ -158,6 +163,41 @@ def test_featured_campaigns_show_requested_meta_metrics():
     assert 'ranked_campaigns["cost_per_result"] = ranked_campaigns["spend"].div(ranked_campaigns["results"])' not in SOURCE
     assert 'ranked_campaigns["cpm"] = ranked_campaigns["spend"].mul(1000).div(ranked_campaigns["impressions"])' in SOURCE
     assert 'ranked_campaigns["cpc"] = ranked_campaigns["spend"].div(ranked_campaigns["clicks"])' in SOURCE
+
+
+def test_meta_result_indicator_survives_dashboard_normalization():
+    df = process_api_response(
+        [{
+            "campaign_name": "Reach Campaign",
+            "date": "2026-07-01",
+            "metrics": {
+                "result_indicator": "reach",
+                "__results__": 42_206,
+                "cost_per_result": 0.01,
+            },
+        }],
+        "meta_ads",
+        "client_1",
+        "user_1",
+    )
+
+    assert df.loc[0, "result_indicator"] == "reach"
+
+
+@pytest.mark.parametrize(("indicator", "label"), [
+    ("reach", "Alcance"),
+    ("actions:lead", "Clientes potenciales"),
+    ("actions:post_engagement", "Interacciones con la publicación"),
+    ("actions:landing_page_view", "Visitas a la página de destino"),
+    ("actions:link_click", "Clics en el enlace"),
+    ("actions:purchase", "Compras"),
+])
+def test_meta_result_indicators_use_official_labels(indicator, label):
+    assert dashboard_utils.translate_meta_result_indicator(indicator) == label
+
+
+def test_unknown_meta_result_indicator_is_not_humanized():
+    assert dashboard_utils.translate_meta_result_indicator("actions:future_metric") == "—"
 
 
 def test_results_schema_change_invalidates_and_migrates_cached_frames():

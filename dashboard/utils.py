@@ -2,7 +2,7 @@ import re
 import calendar
 from datetime import date
 import pandas as pd
-from dashboard.config import DIMENSION_VALUE_LABELS
+from dashboard.config import DIMENSION_VALUE_LABELS, META_RESULT_LABELS
 
 # Helper function to extract metrics robustly
 def extract_metric(metrics, keys):
@@ -20,6 +20,10 @@ def translate_dimension_value(column, value):
         return "Desconocido"
     text = str(value)
     return DIMENSION_VALUE_LABELS.get(column, {}).get(text.lower(), text)
+
+
+def translate_meta_result_indicator(value):
+    return META_RESULT_LABELS.get(str(value or "").lower(), "—")
 
 
 def clean_region_name(value):
