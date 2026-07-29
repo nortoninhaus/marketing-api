@@ -56,7 +56,11 @@ def apply_dashboard_filters(df, campaign_filter, adset_filter, ad_filter):
         else:
             df = df[df["campaign_name"].astype(str).apply(meta_base_campaign_name) == meta_base_campaign_name(campaign_filter)]
     for column, value in (("adset_name", adset_filter), ("ad_name", ad_filter)):
-        if value != "Todos" and column in df.columns:
+        if not value or value == "Todos" or column not in df.columns:
+            continue
+        if isinstance(value, (list, tuple, set)):
+            df = df[df[column].astype(str).isin([str(item) for item in value])]
+        else:
             df = df[df[column].astype(str) == value]
     return df
 

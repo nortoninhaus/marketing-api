@@ -1070,7 +1070,7 @@ if df_curr.empty:
     st.stop()
 else:
     applied_campaign_filter = []
-    applied_adset_filter = "Todos"
+    applied_adset_filter = []
     applied_ad_filter = "Todos"
     if platform_key == "meta_ads":
         filter_rows, filter_error = fetch_meta_filter_rows(client_id, account_id, api_key)
@@ -1084,10 +1084,15 @@ else:
 
         campaign_col, adset_col, ad_col, apply_col = st.columns([2, 2, 2, 1])
         with campaign_col:
-            campaign_options = dashboard_filter_options(df_curr, "campaign_name")[1:]
+            campaign_options = sorted({
+                meta_base_campaign_name(value)
+                for value in df_curr["campaign_name"].dropna().astype(str)
+                if meta_base_campaign_name(value)
+            })
             current_campaign_filter = st.session_state.get("meta_campaign_filter", [])
             if isinstance(current_campaign_filter, str):
                 current_campaign_filter = [] if current_campaign_filter == "Todos" else [current_campaign_filter]
+            current_campaign_filter = [meta_base_campaign_name(value) for value in current_campaign_filter]
             st.session_state["meta_campaign_filter"] = [value for value in current_campaign_filter if value in campaign_options]
             campaign_filter = st.multiselect("Campañas", campaign_options, key="meta_campaign_filter")
 
@@ -1095,14 +1100,16 @@ else:
         if campaign_filter and not filtered_meta_rows.empty:
             filtered_meta_rows = filtered_meta_rows[filtered_meta_rows["base_campaign_name"].isin({meta_base_campaign_name(value) for value in campaign_filter})]
         with adset_col:
-            adset_options = dashboard_filter_options(filtered_meta_rows, "adset_name")
-            if st.session_state.get("meta_adset_filter") not in adset_options:
-                st.session_state["meta_adset_filter"] = "Todos"
-            adset_filter = st.selectbox("Conjunto de anuncios", adset_options, key="meta_adset_filter")
+            adset_options = dashboard_filter_options(filtered_meta_rows, "adset_name")[1:]
+            current_adset_filter = st.session_state.get("meta_adset_filter", [])
+            if isinstance(current_adset_filter, str):
+                current_adset_filter = [] if current_adset_filter == "Todos" else [current_adset_filter]
+            st.session_state["meta_adset_filter"] = [value for value in current_adset_filter if value in adset_options]
+            adset_filter = st.multiselect("Conjuntos de anuncios", adset_options, key="meta_adset_filter")
 
         filtered_ad_rows = filtered_meta_rows
-        if adset_filter != "Todos" and not filtered_ad_rows.empty:
-            filtered_ad_rows = filtered_ad_rows[filtered_ad_rows["adset_name"] == adset_filter]
+        if adset_filter and not filtered_ad_rows.empty:
+            filtered_ad_rows = filtered_ad_rows[filtered_ad_rows["adset_name"].isin(adset_filter)]
         with ad_col:
             ad_options = dashboard_filter_options(filtered_ad_rows, "ad_name")
             if st.session_state.get("meta_ad_filter") not in ad_options:
@@ -1115,8 +1122,8 @@ else:
                 applied_api_filters = {}
                 if campaign_filter and not filtered_meta_rows.empty:
                     applied_api_filters["campaign.id"] = filtered_meta_rows["campaign_id"].dropna().astype(str).unique().tolist()
-                if adset_filter != "Todos" and not filtered_meta_rows.empty:
-                    applied_api_filters["adset.id"] = filtered_meta_rows[filtered_meta_rows["adset_name"] == adset_filter]["adset_id"].dropna().astype(str).unique().tolist()
+                if adset_filter and not filtered_meta_rows.empty:
+                    applied_api_filters["adset.id"] = filtered_meta_rows[filtered_meta_rows["adset_name"].isin(adset_filter)]["adset_id"].dropna().astype(str).unique().tolist()
                 if ad_filter != "Todos" and not filtered_ad_rows.empty:
                     applied_api_filters["ad.id"] = filtered_ad_rows[filtered_ad_rows["ad_name"] == ad_filter]["ad_id"].dropna().astype(str).unique().tolist()
                 st.session_state["meta_applied_campaign_filter"] = campaign_filter
@@ -1130,18 +1137,20 @@ else:
                 st.rerun()
 
         applied_campaign_filter = st.session_state.get("meta_applied_campaign_filter", [])
-        applied_adset_filter = st.session_state.get("meta_applied_adset_filter", "Todos")
+        applied_adset_filter = st.session_state.get("meta_applied_adset_filter", [])
+        if isinstance(applied_adset_filter, str):
+            applied_adset_filter = [] if applied_adset_filter == "Todos" else [applied_adset_filter]
         applied_ad_filter = st.session_state.get("meta_applied_ad_filter", "Todos")
         filtered_meta_rows = meta_filter_df
         if applied_campaign_filter and not filtered_meta_rows.empty:
             filtered_meta_rows = filtered_meta_rows[filtered_meta_rows["base_campaign_name"].isin({meta_base_campaign_name(value) for value in applied_campaign_filter})]
         filtered_ad_rows = filtered_meta_rows
-    if applied_adset_filter != "Todos" and not filtered_ad_rows.empty:
-        filtered_ad_rows = filtered_ad_rows[filtered_ad_rows["adset_name"] == applied_adset_filter]
+    if applied_adset_filter and not filtered_ad_rows.empty:
+        filtered_ad_rows = filtered_ad_rows[filtered_ad_rows["adset_name"].isin(applied_adset_filter)]
 
     detail_curr_rows = []
     detail_prev_rows = []
-    if applied_adset_filter != "Todos" or applied_ad_filter != "Todos":
+    if applied_adset_filter or applied_ad_filter != "Todos":
         detail_dimensions = list(active_context.get("request_dimensions", []))
         for dim in ("adset_name", "ad_name"):
             if dim not in detail_dimensions:
@@ -1149,8 +1158,8 @@ else:
             detail_filters = {}
             if applied_ad_filter != "Todos" and not filtered_ad_rows.empty:
                 detail_filters["ad.id"] = filtered_ad_rows[filtered_ad_rows["ad_name"] == applied_ad_filter]["ad_id"].dropna().astype(str).tolist()
-            elif applied_adset_filter != "Todos" and not filtered_meta_rows.empty:
-                detail_filters["adset.id"] = filtered_meta_rows[filtered_meta_rows["adset_name"] == applied_adset_filter]["adset_id"].dropna().astype(str).unique().tolist()
+            elif applied_adset_filter and not filtered_meta_rows.empty:
+                detail_filters["adset.id"] = filtered_meta_rows[filtered_meta_rows["adset_name"].isin(applied_adset_filter)]["adset_id"].dropna().astype(str).unique().tolist()
             detail_opt_filters = dict(active_context.get("opt_filters", {}))
             if detail_filters:
                 detail_opt_filters["filters"] = detail_filters
@@ -1605,6 +1614,7 @@ for dim in selected_dimensions:
         group_keys.append(dim)
 
 if platform_type == "ads":
+    ad_hashtag_rows = []
     if "result_indicator" in df_table.columns and "result_indicator" not in group_keys:
         group_keys.append("result_indicator")
     df_table["result_cost_weighted"] = df_table["results"] * df_table["cost_per_result"]
@@ -1621,13 +1631,16 @@ if platform_type == "ads":
     meta_table = df_table[df_table["platform"].isin(meta_platforms)].copy()
     if platform_key == "meta_ads" and not meta_table.empty:
         meta_table["base_campaign_name"] = meta_table["campaign_name"].apply(meta_base_campaign_name)
-        campaign_summary = meta_table.groupby(
-            ["base_campaign_name", "platform", "result_indicator"],
-            dropna=False,
-        ).agg({
-            "spend": "sum", "impressions": "sum", "clicks": "sum",
-            "results": "sum", "result_cost_weighted": "sum",
-        }).reset_index()
+        campaign_summary = (
+            meta_table
+            .sort_values(["results", "result_indicator"], ascending=[False, False])
+            .groupby("base_campaign_name").agg({
+                "result_indicator": "first",
+                "spend": "sum", "impressions": "sum", "clicks": "sum",
+                "results": "sum", "result_cost_weighted": "sum",
+            })
+            .reset_index()
+        )
         campaign_summary["cost_per_result"] = (
             campaign_summary["result_cost_weighted"]
             .div(campaign_summary["results"])
@@ -1642,11 +1655,10 @@ if platform_type == "ads":
         for column in ("cost_per_result", "cpm", "cpc", "spend"):
             campaign_summary[column] = campaign_summary[column].apply(lambda x: f"${x:,.2f}")
         campaign_summary = campaign_summary[[
-            "base_campaign_name", "platform", "result_label", "results", "cost_per_result",
+            "base_campaign_name", "result_label", "results", "cost_per_result",
             "cpm", "impressions", "clicks", "cpc", "spend",
         ]].rename(columns={
             "base_campaign_name": "Campaña",
-            "platform": "Plataforma",
             "result_label": "Tipo de resultado",
             "results": "Resultados",
             "cost_per_result": "Costo por resultado",
@@ -1729,7 +1741,6 @@ if platform_type == "ads":
             with rank_cols[(idx - 1) % 4]:
                 components.html(components_html, height=690, scrolling=True)
 
-        ad_hashtag_rows = []
         for preview in previews:
             metrics = campaign_metrics.get(preview.get("campaign_name"), {})
             text = " ".join([
@@ -1751,8 +1762,6 @@ if platform_type == "ads":
         st.markdown("### Ranking de hashtags (Instagram)")
         hashtag_table = pd.DataFrame(ad_hashtag_rows).groupby("Hashtag").sum(numeric_only=True).reset_index()
         show_theme_table(hashtag_table.sort_values(["Visualizaciones", "Posts"], ascending=False).head(10))
-    else:
-        st.caption("No se encontraron hashtags")
 
     df_table["CTR"] = (df_table["clicks"] / df_table["impressions"]).apply(lambda x: f"{x:.2%}" if x > 0 else "0.00%")
     df_table["CPC"] = (df_table["spend"] / df_table["clicks"]).apply(lambda x: f"${x:,.2f}" if x > 0 else "$0.00")
@@ -1818,7 +1827,5 @@ if platform_key == "meta_organic":
         })
         st.markdown("### Ranking de hashtags (Instagram)")
         show_theme_table(hashtag_df)
-    else:
-        st.caption("No se encontraron hashtags")
 
     st.dataframe(df_table, width="stretch", hide_index=True)

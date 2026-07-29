@@ -3,6 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import pandas as pd
 import requests
 from streamlit.testing.v1 import AppTest
 
@@ -81,7 +82,7 @@ def test_dashboard_hashtag_ranking_uses_returned_post_text():
     assert 'preview.get("post_message", "")' in SOURCE
     assert 'text_col = "caption" if "caption" in df_curr.columns else "campaign_name"' in SOURCE
     assert 're.findall(r"#[\\wáéíóúÁÉÍÓÚñÑ]+", text)' in SOURCE
-    assert "No se encontraron hashtags" in SOURCE
+    assert "No se encontraron hashtags" not in SOURCE
 
 
 def test_regions_are_localized_and_charted():
@@ -105,6 +106,29 @@ def test_sidebar_actions_are_ordered_without_a_separator():
     assert SOURCE.index(query_button) < SOURCE.index(logout_button)
     assert 'st.sidebar.markdown("---")' not in SOURCE
     assert ".inhaus-logout-container {" not in SOURCE
+
+
+def test_meta_filters_use_unique_campaigns_and_multiple_adsets():
+    assert "campaign_options = sorted({" in SOURCE
+    assert 'st.multiselect("Conjuntos de anuncios", adset_options, key="meta_adset_filter")' in SOURCE
+    assert 'filtered_meta_rows["adset_name"].isin(adset_filter)' in SOURCE
+
+
+def test_dashboard_filters_accept_multiple_adsets():
+    frame = pd.DataFrame({
+        "campaign_name": ["Campaign"] * 3,
+        "adset_name": ["Set A", "Set B", "Set C"],
+        "ad_name": ["Ad A", "Ad B", "Ad C"],
+    })
+
+    result = dashboard_utils.apply_dashboard_filters(
+        frame,
+        campaign_filter=[],
+        adset_filter=["Set A", "Set C"],
+        ad_filter="Todos",
+    )
+
+    assert result["adset_name"].tolist() == ["Set A", "Set C"]
 
 
 def test_ads_cards_show_real_leads_and_total_reach():
@@ -168,10 +192,13 @@ def test_featured_campaigns_show_requested_meta_metrics():
     ):
         assert f'"{label}"' in featured_campaign_source
     assert '"reach": "Reach"' not in featured_campaign_source
-    assert "campaign_summary = meta_table.groupby(" in SOURCE
+    assert '.sort_values(["results", "result_indicator"], ascending=[False, False])' in SOURCE
     assert 'campaign_summary["result_label"] = campaign_summary["result_indicator"].apply(translate_meta_result_indicator)' in SOURCE
     assert '"base_campaign_name": "Campaña"' in featured_campaign_source
     assert "campaign_summary = ranked_campaigns" not in featured_campaign_source
+    assert 'groupby("base_campaign_name").agg({' in featured_campaign_source
+    assert '"result_indicator": "first"' in featured_campaign_source
+    assert '"platform": "Plataforma"' not in featured_campaign_source
 
 
 def test_meta_campaign_cards_rank_by_leads_and_keep_full_names():
