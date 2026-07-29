@@ -1,9 +1,11 @@
+import ast
 from pathlib import Path
 from types import SimpleNamespace
 
 import requests
 from streamlit.testing.v1 import AppTest
 
+from dashboard.api import process_api_response
 from dashboard.auth import create_dashboard_token
 
 DASHBOARD_PATH = Path(__file__).resolve().parents[1] / "dashboard.py"
@@ -99,6 +101,84 @@ def test_sidebar_actions_are_ordered_without_a_separator():
     assert ".inhaus-logout-container {" not in SOURCE
 
 
+def test_ads_cards_show_real_leads_and_total_reach():
+    df = process_api_response(
+        [{
+            "campaign_name": "Lead campaign",
+            "date": "2026-07-01",
+            "metrics": {"conversions": 999, "lead": 7, "reach": 123},
+        }],
+        "meta_ads",
+        "client_1",
+        "user_1",
+    )
+
+    assert df["lead"].sum() == 7
+    assert 'standard_metrics = ["impressions", "clicks", "spend", "conversions", "lead", "reach", "__results__"]' in SOURCE
+    assert 'curr_primary = df_curr["lead"].sum()' in SOURCE
+    assert 'primary_label = "Clientes Potenciales"' in SOURCE
+    assert 'get_kpi_card_html("Alcance Total", f"{total_reach_curr:,}"' in SOURCE
+    assert '"Costo por Conversión (CPA)"' not in SOURCE
+
+
+def test_featured_campaigns_show_requested_meta_metrics():
+    df = process_api_response(
+        [{
+            "campaign_name": "Lead campaign",
+            "date": "2026-07-01",
+            "metrics": {
+                "__results__": 7,
+                "reach": 100,
+                "impressions": 200,
+                "clicks": 10,
+                "spend": 50,
+            },
+        }],
+        "meta_ads",
+        "client_1",
+        "user_1",
+    )
+
+    assert df["results"].sum() == 7
+    assert '"__results__"' in SOURCE
+    for label in (
+        "Resultados",
+        "Costo por resultado",
+        "Reach",
+        "CPM",
+        "Impressions",
+        "Clicks",
+        "CPC",
+        "Inversión",
+    ):
+        assert f'"{label}"' in SOURCE
+    assert 'ranked_campaigns["cost_per_result"] = ranked_campaigns["spend"].div(ranked_campaigns["results"])' in SOURCE
+    assert 'ranked_campaigns["cpm"] = ranked_campaigns["spend"].mul(1000).div(ranked_campaigns["impressions"])' in SOURCE
+    assert 'ranked_campaigns["cpc"] = ranked_campaigns["spend"].div(ranked_campaigns["clicks"])' in SOURCE
+
+
+def test_results_schema_change_invalidates_and_migrates_cached_frames():
+    assert "DASHBOARD_CACHE_VERSION = 1" in SOURCE
+    assert 'schema_key = ("schema", DASHBOARD_CACHE_VERSION, selected_platform_key, api_key)' in SOURCE
+    assert "query_key = (\n    DASHBOARD_CACHE_VERSION," in SOURCE
+    assert "if active_query_key[0] != DASHBOARD_CACHE_VERSION:" in SOURCE
+    assert 'frame["results"] = frame.get("__results__", 0)' in SOURCE
+
+
+def test_historical_charts_are_commented_out():
+    active_strings = {
+        node.value
+        for node in ast.walk(ast.parse(SOURCE))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
+
+    assert "### Tendencias Históricas" not in active_strings
+    assert "#### Inversión vs. conversiones diarias (eje dual)" not in active_strings
+    assert "#### Distribución de Conversiones por Campaña" not in active_strings
+    assert '# st.markdown("### Tendencias Históricas")' in SOURCE
+    assert "# col_chart_left, col_chart_right = st.columns(2)" in SOURCE
+
+
 if __name__ == "__main__":
     test_dashboard_has_light_dark_and_spanish_meta_labels()
     test_theme_change_does_not_refetch_official_meta_data()
@@ -107,3 +187,7 @@ if __name__ == "__main__":
     test_regions_are_localized_and_charted()
     test_campaign_names_are_cleaned_for_display()
     test_sidebar_actions_are_ordered_without_a_separator()
+    test_ads_cards_show_real_leads_and_total_reach()
+    test_featured_campaigns_show_requested_meta_metrics()
+    test_results_schema_change_invalidates_and_migrates_cached_frames()
+    test_historical_charts_are_commented_out()

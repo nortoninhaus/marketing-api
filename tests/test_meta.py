@@ -50,6 +50,41 @@ def test_meta_ads_fetch_data(mock_ad_account, mock_api, mock_session):
 
 @patch("app.connectors.meta.FacebookSession")
 @patch("app.connectors.meta.FacebookAdsApi")
+@patch("app.connectors.meta.AdAccount")
+def test_meta_ads_maps_results_alias(mock_ad_account, mock_api, mock_session):
+    account = MagicMock()
+    mock_ad_account.return_value = account
+    account.get_insights.return_value = [{
+        "campaign_name": "Lead Campaign",
+        "date_start": "2026-05-01",
+        "results": [{
+            "indicator": "actions:lead",
+            "values": [{"value": "12"}],
+        }],
+    }]
+
+    connector = MetaAdsConnector()
+    with patch.object(connector, "get_credentials", return_value={
+        "access_token": "fake_ads_token",
+        "ad_account_id": "act_12345",
+    }):
+        rows = connector.fetch_data(DataRequest(
+            platform="meta_ads",
+            start_date=date(2026, 5, 1),
+            end_date=date(2026, 5, 7),
+            metrics=["__results__"],
+            client_id="test_client",
+            user_id="test_user",
+            account_id="act_12345",
+        ))
+
+    assert rows[0].metrics["__results__"] == 12
+    assert "results" in account.get_insights.call_args.kwargs["fields"]
+    assert "__results__" not in account.get_insights.call_args.kwargs["fields"]
+
+
+@patch("app.connectors.meta.FacebookSession")
+@patch("app.connectors.meta.FacebookAdsApi")
 @patch("app.connectors.meta.Page")
 def test_meta_organic_fetch_data(mock_page, mock_api, mock_session):
     mock_instance = MagicMock()
@@ -381,7 +416,6 @@ def test_meta_ads_custom_conversion_metrics(mock_ad_account, mock_api, mock_sess
         assert results[0].metrics["12345"] == 15
         assert results[0].metrics["account_created_Sipy_Personas"] == 22
         assert results[0].metrics["account_created_Sipy_Personas_value"] == 220.0
-
 
 
 

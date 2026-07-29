@@ -263,6 +263,8 @@ def process_api_response(api_data, platform_key, client_id, user_id):
         impressions = extract_metric(metrics, ["impressions", "views", "reach"])
         clicks = extract_metric(metrics, ["clicks", "unique_clicks"])
         conversions = extract_metric(metrics, ["conversions", "actions", "purchase", "lead", "add_to_cart"])
+        leads = extract_metric(metrics, ["lead"])
+        results = extract_metric(metrics, ["__results__", "results"])
 
         sessions = extract_metric(metrics, ["sessions"])
         users = extract_metric(metrics, ["users"])
@@ -291,6 +293,8 @@ def process_api_response(api_data, platform_key, client_id, user_id):
             "impressions": int(impressions),
             "clicks": int(clicks),
             "conversions": int(conversions),
+            "lead": int(leads),
+            "results": int(results),
             "sessions": int(sessions),
             "users": int(users),
             "pageviews": int(pageviews),
@@ -324,7 +328,7 @@ def process_api_response(api_data, platform_key, client_id, user_id):
     df = pd.DataFrame(flat_rows)
     if df.empty:
         return pd.DataFrame(columns=[
-            "platform", "client_id", "user_id", "campaign_name", "date", "spend", "impressions", "clicks", "conversions",
+            "platform", "client_id", "user_id", "campaign_name", "date", "spend", "impressions", "clicks", "conversions", "lead", "results",
             "sessions", "users", "pageviews", "bounce_rate", "downloads", "ratings", "engagement", "followers", "reach", "likes", "comments"
         ])
     return df

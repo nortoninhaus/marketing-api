@@ -69,10 +69,10 @@ class MetaAdsConnector(BaseConnector):
         has_action_values = False
         STANDARD_META_FIELDS = {
             "impressions", "clicks", "spend", "reach", "conversions", "cpc", "cpm", "ctr", "frequency",
-            "purchase_roas", "purchase", "lead", "add_to_cart", "initiate_checkout", "roas"
+            "results", "purchase_roas", "purchase", "lead", "add_to_cart", "initiate_checkout", "roas"
         }
         for m in request.metrics:
-            m_mapped = "purchase_roas" if m == "roas" else m
+            m_mapped = {"roas": "purchase_roas", "__results__": "results"}.get(m, m)
             if m_mapped in ("conversions", "purchase", "lead", "add_to_cart", "initiate_checkout") or m_mapped not in STANDARD_META_FIELDS:
                 has_actions = True
                 if m_mapped not in STANDARD_META_FIELDS:
@@ -210,7 +210,7 @@ class MetaAdsConnector(BaseConnector):
 
                 metrics_dict = {}
                 for m in request.metrics:
-                    m_mapped = "purchase_roas" if m == "roas" else m
+                    m_mapped = {"roas": "purchase_roas", "__results__": "results"}.get(m, m)
                     if m_mapped == "conversions":
                         # Parse standard actions array
                         actions = i.get("actions", [])
@@ -258,10 +258,11 @@ class MetaAdsConnector(BaseConnector):
                         if isinstance(val, list):
                             total_val = 0
                             for item in val:
-                                try:
-                                    total_val += float(item.get("value", 0))
-                                except Exception:
-                                    pass
+                                for value in item.get("values", [item]):
+                                    try:
+                                        total_val += float(value.get("value", 0))
+                                    except Exception:
+                                        pass
                             metrics_dict[m] = total_val
                         elif val is not None:
                             try:
@@ -340,10 +341,11 @@ class MetaAdsConnector(BaseConnector):
             "metrics": [
                 "impressions", 
                 "clicks", 
-                "spend", 
-                "reach", 
+                "spend",
+                "reach",
                 "conversions",
-                "cpc", 
+                "__results__",
+                "cpc",
                 "cpm", 
                 "ctr", 
                 "frequency", 

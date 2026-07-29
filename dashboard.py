@@ -86,6 +86,9 @@ from dashboard.ui import (
     render_dashboard_empty_state,
 )
 
+DASHBOARD_CACHE_VERSION = 1
+
+
 if os.getenv("DASHBOARD_AUTH_SELF_CHECK") == "1":
     dashboard_auth_self_check()
     raise SystemExit("dashboard auth self-check passed")
@@ -808,7 +811,7 @@ for selected_platform_key in selected_platform_keys:
         if not account_id_value:
             st.warning("Selecciona una cuenta.")
             continue
-        schema_key = ("schema", selected_platform_key, api_key)
+        schema_key = ("schema", DASHBOARD_CACHE_VERSION, selected_platform_key, api_key)
         if schema_key not in sidebar_cache:
             sidebar_cache[schema_key] = fetch_schema_from_api(selected_platform_key, api_key)
         schema_data = sidebar_cache[schema_key]
@@ -942,7 +945,7 @@ for cfg in platform_configs:
     dimension_names = [x["name"] for x in cfg["dimensions_list"]]
     request_metrics = list(cfg["selected_metrics"])
     if cfg["platform_type"] == "ads":
-        standard_metrics = ["impressions", "clicks", "spend", "conversions", "reach"]
+        standard_metrics = ["impressions", "clicks", "spend", "conversions", "lead", "reach", "__results__"]
     elif cfg["platform_type"] == "analytics":
         standard_metrics = ["sessions", "users", "pageviews", "bounce_rate"]
     elif cfg["platform_type"] == "app_store":
@@ -965,6 +968,7 @@ for cfg in platform_configs:
     ))
 
 query_key = (
+    DASHBOARD_CACHE_VERSION,
     client_id, user_id,
     start_date.isoformat(), end_date.isoformat(),
     bool(write_to_bq), tuple(query_configs),
@@ -975,6 +979,9 @@ force_query_fetch = st.session_state.pop("force_query_fetch", False)
 if force_query_fetch:
     st.session_state["active_query_key"] = query_key
 active_query_key = st.session_state.get("active_query_key", query_key)
+if active_query_key[0] != DASHBOARD_CACHE_VERSION:
+    active_query_key = query_key
+    st.session_state["active_query_key"] = query_key
 
 if force_query_fetch or active_query_key not in st.session_state["dashboard_query_cache"]:
     curr_frames = []
@@ -1029,6 +1036,10 @@ account_id = active_context["account_id"]
 account_disp = active_context["account_disp"]
 selected_dimensions = active_context["selected_dimensions"]
 opt_filters = active_context["opt_filters"]
+
+for frame in (df_curr, df_prev):
+    if "results" not in frame.columns:
+        frame["results"] = frame.get("__results__", 0)
 
 # Inject JavaScript to automatically collapse the sidebar menu if it is expanded
 import streamlit.components.v1 as components
@@ -1138,7 +1149,7 @@ else:
             detail_opt_filters = dict(active_context.get("opt_filters", {}))
             if detail_filters:
                 detail_opt_filters["filters"] = detail_filters
-            detail_metrics = active_context.get("request_metrics") or ["impressions", "clicks", "spend", "conversions", "reach"]
+            detail_metrics = active_context.get("request_metrics") or ["impressions", "clicks", "spend", "conversions", "reach", "__results__"]
             detail_curr_rows = fetch_campaign_data_from_api(
                 platform_key, client_id, user_id, account_id,
                 start_date, end_date, detail_metrics, detail_dimensions,
@@ -1290,9 +1301,9 @@ st.markdown(f"""
 
 # Primary KPI calculations
 if platform_type == "ads":
-    curr_primary = df_curr["conversions"].sum()
-    prev_primary = df_prev["conversions"].sum() if not df_prev.empty else 0
-    primary_label = "Conversiones Totales"
+    curr_primary = df_curr["lead"].sum()
+    prev_primary = df_prev["lead"].sum() if not df_prev.empty else 0
+    primary_label = "Clientes Potenciales"
 elif platform_type == "analytics":
     curr_primary = df_curr["sessions"].sum()
     prev_primary = df_prev["sessions"].sum() if not df_prev.empty else 0
@@ -1321,26 +1332,24 @@ if platform_type == "ads":
     total_spend_curr = df_curr["spend"].sum()
     total_impressions_curr = df_curr["impressions"].sum()
     total_clicks_curr = df_curr["clicks"].sum()
-    total_conversions_curr = df_curr["conversions"].sum()
+    total_reach_curr = df_curr["reach"].sum()
 
     avg_ctr_curr = total_clicks_curr / total_impressions_curr if total_impressions_curr > 0 else 0.0
     avg_cpc_curr = total_spend_curr / total_clicks_curr if total_clicks_curr > 0 else 0.0
-    cpa_curr = total_spend_curr / total_conversions_curr if total_conversions_curr > 0 else 0.0
 
     total_spend_prev = df_prev["spend"].sum() if not df_prev.empty else 0.0
     total_impressions_prev = df_prev["impressions"].sum() if not df_prev.empty else 0.0
     total_clicks_prev = df_prev["clicks"].sum() if not df_prev.empty else 0.0
-    total_conversions_prev = df_prev["conversions"].sum() if not df_prev.empty else 0.0
+    total_reach_prev = df_prev["reach"].sum() if not df_prev.empty else 0.0
 
     avg_ctr_prev = total_clicks_prev / total_impressions_prev if total_impressions_prev > 0 else 0.0
     avg_cpc_prev = total_spend_prev / total_clicks_prev if total_clicks_prev > 0 else 0.0
-    cpa_prev = total_spend_prev / total_conversions_prev if total_conversions_prev > 0 else 0.0
 
     kpis_layout = '<div class="kpis">\n'
     kpis_layout += get_kpi_card_html("Inversión Total", f"${total_spend_curr:,.2f}", "Gasto total en pauta", total_spend_curr, total_spend_prev, lower_is_better=True) + "\n"
     kpis_layout += get_kpi_card_html("Impresiones Totales", f"{total_impressions_curr:,}", "Vistas acumuladas", total_impressions_curr, total_impressions_prev) + "\n"
     kpis_layout += get_kpi_card_html("Clics", f"{total_clicks_curr:,}", "Interacciones con anuncios", total_clicks_curr, total_clicks_prev) + "\n"
-    kpis_layout += get_kpi_card_html("Costo por Conversión (CPA)", f"${cpa_curr:,.2f}", "Costo unitario", cpa_curr, cpa_prev, lower_is_better=True) + "\n"
+    kpis_layout += get_kpi_card_html("Alcance Total", f"{total_reach_curr:,}", "Usuarios únicos alcanzados", total_reach_curr, total_reach_prev) + "\n"
     kpis_layout += get_kpi_card_html("CTR Promedio", f"{avg_ctr_curr:.2%}", "Tasa de clics/impresión", avg_ctr_curr, avg_ctr_prev) + "\n"
     kpis_layout += get_kpi_card_html("CPC Promedio", f"${avg_cpc_curr:,.2f}", "Costo promedio por clic", avg_cpc_curr, avg_cpc_prev, lower_is_better=True) + "\n"
     kpis_layout += '</div>'
@@ -1482,103 +1491,103 @@ if platform_key == "meta_ads" and st.checkbox("Cargar datos oficiales de Faceboo
     else:
         st.info("Meta no devolvió datos oficiales para este rango.")
 
-# CHARTS SECTION
-st.markdown("### Tendencias Históricas")
-col_chart_left, col_chart_right = st.columns(2)
+# Historical charts disabled; uncomment this block to restore them.
+# st.markdown("### Tendencias Históricas")
+# col_chart_left, col_chart_right = st.columns(2)
 
-with col_chart_left:
-    df_trend = df_curr.groupby("date").agg({
-        "spend": "sum", "conversions": "sum", "sessions": "sum", "pageviews": "sum", "downloads": "sum", "impressions": "sum", "engagement": "sum"
-    }).reset_index().sort_values("date")
+# with col_chart_left:
+#     df_trend = df_curr.groupby("date").agg({
+#         "spend": "sum", "conversions": "sum", "sessions": "sum", "pageviews": "sum", "downloads": "sum", "impressions": "sum", "engagement": "sum"
+#     }).reset_index().sort_values("date")
 
-    # Render custom Altair line chart with Dual Y-Axis so both metrics are visible on their own scale
-    if not df_trend.empty:
-        base = alt.Chart(df_trend).encode(
-            x=alt.X('date:T', axis=alt.Axis(format='%Y-%m-%d', title='Fecha', labelAngle=-45))
-        )
+#     # Render custom Altair line chart with Dual Y-Axis so both metrics are visible on their own scale
+#     if not df_trend.empty:
+#         base = alt.Chart(df_trend).encode(
+#             x=alt.X('date:T', axis=alt.Axis(format='%Y-%m-%d', title='Fecha', labelAngle=-45))
+#         )
 
-        if platform_type == "ads":
-            st.markdown("#### Inversión vs. conversiones diarias (eje dual)")
-            left_line = base.mark_line(color='#1AE08C', strokeWidth=3).encode(
-                y=alt.Y('spend:Q', title='Inversión ($)', axis=alt.Axis(titleColor='#1AE08C', labelColor='#1AE08C'))
-            )
-            right_line = base.mark_line(color='#5C9DFF', strokeWidth=3).encode(
-                y=alt.Y('conversions:Q', title='Conversiones', axis=alt.Axis(titleColor='#5C9DFF', labelColor='#5C9DFF'))
-            )
-            dual_chart = alt.layer(left_line, right_line).resolve_scale(
-                y='independent'
-            ).properties(height=350)
-            st.altair_chart(theme_chart(dual_chart), use_container_width=True)
+#         if platform_type == "ads":
+#             st.markdown("#### Inversión vs. conversiones diarias (eje dual)")
+#             left_line = base.mark_line(color='#1AE08C', strokeWidth=3).encode(
+#                 y=alt.Y('spend:Q', title='Inversión ($)', axis=alt.Axis(titleColor='#1AE08C', labelColor='#1AE08C'))
+#             )
+#             right_line = base.mark_line(color='#5C9DFF', strokeWidth=3).encode(
+#                 y=alt.Y('conversions:Q', title='Conversiones', axis=alt.Axis(titleColor='#5C9DFF', labelColor='#5C9DFF'))
+#             )
+#             dual_chart = alt.layer(left_line, right_line).resolve_scale(
+#                 y='independent'
+#             ).properties(height=350)
+#             st.altair_chart(theme_chart(dual_chart), use_container_width=True)
 
-        elif platform_type == "analytics":
-            st.markdown("#### Sesiones vs. páginas vistas (eje dual)")
-            left_line = base.mark_line(color='#1AE08C', strokeWidth=3).encode(
-                y=alt.Y('sessions:Q', title='Sesiones', axis=alt.Axis(titleColor='#1AE08C', labelColor='#1AE08C'))
-            )
-            right_line = base.mark_line(color='#5C9DFF', strokeWidth=3).encode(
-                y=alt.Y('pageviews:Q', title='Páginas Vistas', axis=alt.Axis(titleColor='#5C9DFF', labelColor='#5C9DFF'))
-            )
-            dual_chart = alt.layer(left_line, right_line).resolve_scale(
-                y='independent'
-            ).properties(height=350)
-            st.altair_chart(theme_chart(dual_chart), use_container_width=True)
+#         elif platform_type == "analytics":
+#             st.markdown("#### Sesiones vs. páginas vistas (eje dual)")
+#             left_line = base.mark_line(color='#1AE08C', strokeWidth=3).encode(
+#                 y=alt.Y('sessions:Q', title='Sesiones', axis=alt.Axis(titleColor='#1AE08C', labelColor='#1AE08C'))
+#             )
+#             right_line = base.mark_line(color='#5C9DFF', strokeWidth=3).encode(
+#                 y=alt.Y('pageviews:Q', title='Páginas Vistas', axis=alt.Axis(titleColor='#5C9DFF', labelColor='#5C9DFF'))
+#             )
+#             dual_chart = alt.layer(left_line, right_line).resolve_scale(
+#                 y='independent'
+#             ).properties(height=350)
+#             st.altair_chart(theme_chart(dual_chart), use_container_width=True)
 
-        elif platform_type == "app_store":
-            st.markdown("#### Descargas Diarias")
-            line_chart = base.mark_line(color='#1AE08C', strokeWidth=3).encode(
-                y=alt.Y('downloads:Q', title='Descargas')
-            ).properties(height=350)
-            st.altair_chart(theme_chart(line_chart), use_container_width=True)
+#         elif platform_type == "app_store":
+#             st.markdown("#### Descargas Diarias")
+#             line_chart = base.mark_line(color='#1AE08C', strokeWidth=3).encode(
+#                 y=alt.Y('downloads:Q', title='Descargas')
+#             ).properties(height=350)
+#             st.altair_chart(theme_chart(line_chart), use_container_width=True)
 
-        else: # organic
-            st.markdown("#### Impresiones vs. interacciones (eje dual)")
-            left_line = base.mark_line(color='#1AE08C', strokeWidth=3).encode(
-                y=alt.Y('impressions:Q', title='Impresiones', axis=alt.Axis(titleColor='#1AE08C', labelColor='#1AE08C'))
-            )
-            right_line = base.mark_line(color='#5C9DFF', strokeWidth=3).encode(
-                y=alt.Y('engagement:Q', title='Interacciones', axis=alt.Axis(titleColor='#5C9DFF', labelColor='#5C9DFF'))
-            )
-            dual_chart = alt.layer(left_line, right_line).resolve_scale(
-                y='independent'
-            ).properties(height=350)
-            st.altair_chart(theme_chart(dual_chart), use_container_width=True)
+#         else: # organic
+#             st.markdown("#### Impresiones vs. interacciones (eje dual)")
+#             left_line = base.mark_line(color='#1AE08C', strokeWidth=3).encode(
+#                 y=alt.Y('impressions:Q', title='Impresiones', axis=alt.Axis(titleColor='#1AE08C', labelColor='#1AE08C'))
+#             )
+#             right_line = base.mark_line(color='#5C9DFF', strokeWidth=3).encode(
+#                 y=alt.Y('engagement:Q', title='Interacciones', axis=alt.Axis(titleColor='#5C9DFF', labelColor='#5C9DFF'))
+#             )
+#             dual_chart = alt.layer(left_line, right_line).resolve_scale(
+#                 y='independent'
+#             ).properties(height=350)
+#             st.altair_chart(theme_chart(dual_chart), use_container_width=True)
 
-with col_chart_right:
-    # Render Campaign Distribution as a Horizontal Bar Chart so long labels are readable
-    if platform_type == "ads":
-        st.markdown("#### Distribución de Conversiones por Campaña")
-        df_camp = df_curr.groupby("campaign_name")["conversions"].sum().reset_index()
-        df_camp = df_camp.sort_values("conversions", ascending=False).head(10)
-        df_camp["campaign_label"] = df_camp["campaign_name"].apply(clean_campaign_name)
+# with col_chart_right:
+#     # Render Campaign Distribution as a Horizontal Bar Chart so long labels are readable
+#     if platform_type == "ads":
+#         st.markdown("#### Distribución de Conversiones por Campaña")
+#         df_camp = df_curr.groupby("campaign_name")["conversions"].sum().reset_index()
+#         df_camp = df_camp.sort_values("conversions", ascending=False).head(10)
+#         df_camp["campaign_label"] = df_camp["campaign_name"].apply(clean_campaign_name)
 
-        chart_camp = alt.Chart(df_camp).mark_bar(color='#5C9DFF', cornerRadiusEnd=6).encode(
-            x=alt.X('conversions:Q', title='Conversiones'),
-            y=alt.Y('campaign_label:N', sort='-x', title=None, axis=alt.Axis(labelLimit=300))
-        ).properties(height=350)
-        st.altair_chart(theme_chart(chart_camp), use_container_width=True)
+#         chart_camp = alt.Chart(df_camp).mark_bar(color='#5C9DFF', cornerRadiusEnd=6).encode(
+#             x=alt.X('conversions:Q', title='Conversiones'),
+#             y=alt.Y('campaign_label:N', sort='-x', title=None, axis=alt.Axis(labelLimit=300))
+#         ).properties(height=350)
+#         st.altair_chart(theme_chart(chart_camp), use_container_width=True)
 
-    elif platform_type == "analytics":
-        st.markdown("#### Sesiones por Campaña/Fuente")
-        df_camp = df_curr.groupby("campaign_name")["sessions"].sum().reset_index()
-        df_camp = df_camp.sort_values("sessions", ascending=False).head(10)
+#     elif platform_type == "analytics":
+#         st.markdown("#### Sesiones por Campaña/Fuente")
+#         df_camp = df_curr.groupby("campaign_name")["sessions"].sum().reset_index()
+#         df_camp = df_camp.sort_values("sessions", ascending=False).head(10)
 
-        chart_camp = alt.Chart(df_camp).mark_bar(color='#5C9DFF', cornerRadiusEnd=6).encode(
-            x=alt.X('sessions:Q', title='Sesiones'),
-            y=alt.Y('campaign_name:N', sort='-x', title=None, axis=alt.Axis(labelLimit=300))
-        ).properties(height=350)
-        st.altair_chart(theme_chart(chart_camp), use_container_width=True)
+#         chart_camp = alt.Chart(df_camp).mark_bar(color='#5C9DFF', cornerRadiusEnd=6).encode(
+#             x=alt.X('sessions:Q', title='Sesiones'),
+#             y=alt.Y('campaign_name:N', sort='-x', title=None, axis=alt.Axis(labelLimit=300))
+#         ).properties(height=350)
+#         st.altair_chart(theme_chart(chart_camp), use_container_width=True)
 
-    else: # organic / app_store
-        st.markdown("#### Alcance / Distribución por Publicación")
-        target_metric = "reach" if platform_type != "app_store" else "downloads"
-        df_camp = df_curr.groupby("campaign_name")[target_metric].sum().reset_index()
-        df_camp = df_camp.sort_values(target_metric, ascending=False).head(10)
+#     else: # organic / app_store
+#         st.markdown("#### Alcance / Distribución por Publicación")
+#         target_metric = "reach" if platform_type != "app_store" else "downloads"
+#         df_camp = df_curr.groupby("campaign_name")[target_metric].sum().reset_index()
+#         df_camp = df_camp.sort_values(target_metric, ascending=False).head(10)
 
-        chart_camp = alt.Chart(df_camp).mark_bar(color='#5C9DFF', cornerRadiusEnd=6).encode(
-            x=alt.X(f"{target_metric}:Q", title='Alcance / Volumen'),
-            y=alt.Y('campaign_name:N', sort='-x', title=None, axis=alt.Axis(labelLimit=300))
-        ).properties(height=350)
-        st.altair_chart(theme_chart(chart_camp), use_container_width=True)
+#         chart_camp = alt.Chart(df_camp).mark_bar(color='#5C9DFF', cornerRadiusEnd=6).encode(
+#             x=alt.X(f"{target_metric}:Q", title='Alcance / Volumen'),
+#             y=alt.Y('campaign_name:N', sort='-x', title=None, axis=alt.Axis(labelLimit=300))
+#         ).properties(height=350)
+#         st.altair_chart(theme_chart(chart_camp), use_container_width=True)
 
 # CAMPAIGN BREAKDOWN TABLE
 st.markdown("### Detalle de Campañas y Resultados")
@@ -1592,27 +1601,46 @@ for dim in selected_dimensions:
 
 if platform_type == "ads":
     df_table = df_table.groupby(group_keys).agg({
-        "spend": "sum", "impressions": "sum", "clicks": "sum", "conversions": "sum"
+        "spend": "sum", "impressions": "sum", "clicks": "sum", "conversions": "sum",
+        "reach": "sum", "results": "sum",
     }).reset_index()
     meta_platforms = set(META_PUBLISHER_LABELS.values()) | {"meta_ads"}
     meta_table = df_table[df_table["platform"].isin(meta_platforms)].copy()
     if platform_key == "meta_ads" and not meta_table.empty:
         meta_table["base_campaign_name"] = meta_table["campaign_name"].apply(meta_base_campaign_name)
         ranked_campaigns = meta_table.groupby(["base_campaign_name", "platform"]).agg({
-            "spend": "sum", "impressions": "sum", "clicks": "sum", "conversions": "sum"
+            "spend": "sum", "impressions": "sum", "clicks": "sum", "conversions": "sum",
+            "reach": "sum", "results": "sum",
         }).reset_index()
-        rank_metric = "conversions" if ranked_campaigns["conversions"].sum() else ("clicks" if ranked_campaigns["clicks"].sum() else "impressions")
-        metric_label = {"conversions": "conversiones", "clicks": "clics", "impressions": "impresiones"}[rank_metric]
+        rank_metric = "results" if ranked_campaigns["results"].sum() else ("clicks" if ranked_campaigns["clicks"].sum() else "impressions")
+        metric_label = {"results": "resultados", "clicks": "clics", "impressions": "impresiones"}[rank_metric]
         ranked_campaigns = ranked_campaigns.sort_values(rank_metric, ascending=False).head(8)
-        campaign_summary = ranked_campaigns[["base_campaign_name", "platform", "impressions", rank_metric]].copy()
+        ranked_campaigns["cost_per_result"] = ranked_campaigns["spend"].div(ranked_campaigns["results"]).where(ranked_campaigns["results"].gt(0), 0)
+        ranked_campaigns["cpm"] = ranked_campaigns["spend"].mul(1000).div(ranked_campaigns["impressions"]).where(ranked_campaigns["impressions"].gt(0), 0)
+        ranked_campaigns["cpc"] = ranked_campaigns["spend"].div(ranked_campaigns["clicks"]).where(ranked_campaigns["clicks"].gt(0), 0)
+        campaign_summary = ranked_campaigns[[
+            "base_campaign_name", "platform", "results", "cost_per_result", "reach",
+            "cpm", "impressions", "clicks", "cpc", "spend",
+        ]].copy()
         campaign_summary["campaign_label"] = campaign_summary["base_campaign_name"].apply(clean_campaign_name)
-        campaign_summary["impressions"] = campaign_summary["impressions"].apply(lambda x: f"{x:,.0f}")
-        campaign_summary[rank_metric] = campaign_summary[rank_metric].apply(lambda x: f"{x:,.0f}")
-        campaign_summary = campaign_summary[["campaign_label", "platform", "impressions", rank_metric]].rename(columns={
+        for column in ("results", "reach", "impressions", "clicks"):
+            campaign_summary[column] = campaign_summary[column].apply(lambda x: f"{x:,.0f}")
+        for column in ("cost_per_result", "cpm", "cpc", "spend"):
+            campaign_summary[column] = campaign_summary[column].apply(lambda x: f"${x:,.2f}")
+        campaign_summary = campaign_summary[[
+            "campaign_label", "platform", "results", "cost_per_result", "reach",
+            "cpm", "impressions", "clicks", "cpc", "spend",
+        ]].rename(columns={
             "campaign_label": "Campaña",
             "platform": "Plataforma",
-            "impressions": "Impresiones",
-            rank_metric: metric_label.capitalize(),
+            "results": "Resultados",
+            "cost_per_result": "Costo por resultado",
+            "reach": "Reach",
+            "cpm": "CPM",
+            "impressions": "Impressions",
+            "clicks": "Clicks",
+            "cpc": "CPC",
+            "spend": "Inversión",
         })
 
         st.markdown("### Desempeño de campañas destacadas")
