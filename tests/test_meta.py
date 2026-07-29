@@ -61,6 +61,10 @@ def test_meta_ads_maps_results_alias(mock_ad_account, mock_api, mock_session):
             "indicator": "actions:lead",
             "values": [{"value": "12"}],
         }],
+        "cost_per_result": [{
+            "indicator": "actions:lead",
+            "values": [{"value": "0.42"}],
+        }],
     }]
 
     connector = MetaAdsConnector()
@@ -72,14 +76,16 @@ def test_meta_ads_maps_results_alias(mock_ad_account, mock_api, mock_session):
             platform="meta_ads",
             start_date=date(2026, 5, 1),
             end_date=date(2026, 5, 7),
-            metrics=["__results__"],
+            metrics=["__results__", "cost_per_result"],
             client_id="test_client",
             user_id="test_user",
             account_id="act_12345",
         ))
 
     assert rows[0].metrics["__results__"] == 12
+    assert rows[0].metrics["cost_per_result"] == 0.42
     assert "results" in account.get_insights.call_args.kwargs["fields"]
+    assert "cost_per_result" in account.get_insights.call_args.kwargs["fields"]
     assert "__results__" not in account.get_insights.call_args.kwargs["fields"]
 
 
@@ -416,6 +422,5 @@ def test_meta_ads_custom_conversion_metrics(mock_ad_account, mock_api, mock_sess
         assert results[0].metrics["12345"] == 15
         assert results[0].metrics["account_created_Sipy_Personas"] == 22
         assert results[0].metrics["account_created_Sipy_Personas_value"] == 220.0
-
 
 

@@ -114,7 +114,7 @@ def test_ads_cards_show_real_leads_and_total_reach():
     )
 
     assert df["lead"].sum() == 7
-    assert 'standard_metrics = ["impressions", "clicks", "spend", "conversions", "lead", "reach", "__results__"]' in SOURCE
+    assert 'standard_metrics = ["impressions", "clicks", "spend", "conversions", "lead", "reach", "__results__", "cost_per_result"]' in SOURCE
     assert 'curr_primary = df_curr["lead"].sum()' in SOURCE
     assert 'primary_label = "Clientes Potenciales"' in SOURCE
     assert 'get_kpi_card_html("Alcance Total", f"{total_reach_curr:,}"' in SOURCE
@@ -128,6 +128,7 @@ def test_featured_campaigns_show_requested_meta_metrics():
             "date": "2026-07-01",
             "metrics": {
                 "__results__": 7,
+                "cost_per_result": 0.42,
                 "reach": 100,
                 "impressions": 200,
                 "clicks": 10,
@@ -140,6 +141,7 @@ def test_featured_campaigns_show_requested_meta_metrics():
     )
 
     assert df["results"].sum() == 7
+    assert df["cost_per_result"].sum() == 0.42
     assert '"__results__"' in SOURCE
     for label in (
         "Resultados",
@@ -152,17 +154,19 @@ def test_featured_campaigns_show_requested_meta_metrics():
         "Inversión",
     ):
         assert f'"{label}"' in SOURCE
-    assert 'ranked_campaigns["cost_per_result"] = ranked_campaigns["spend"].div(ranked_campaigns["results"])' in SOURCE
+    assert '"cost_per_result": "mean"' in SOURCE
+    assert 'ranked_campaigns["cost_per_result"] = ranked_campaigns["spend"].div(ranked_campaigns["results"])' not in SOURCE
     assert 'ranked_campaigns["cpm"] = ranked_campaigns["spend"].mul(1000).div(ranked_campaigns["impressions"])' in SOURCE
     assert 'ranked_campaigns["cpc"] = ranked_campaigns["spend"].div(ranked_campaigns["clicks"])' in SOURCE
 
 
 def test_results_schema_change_invalidates_and_migrates_cached_frames():
-    assert "DASHBOARD_CACHE_VERSION = 1" in SOURCE
+    assert "DASHBOARD_CACHE_VERSION = 2" in SOURCE
     assert 'schema_key = ("schema", DASHBOARD_CACHE_VERSION, selected_platform_key, api_key)' in SOURCE
     assert "query_key = (\n    DASHBOARD_CACHE_VERSION," in SOURCE
     assert "if active_query_key[0] != DASHBOARD_CACHE_VERSION:" in SOURCE
     assert 'frame["results"] = frame.get("__results__", 0)' in SOURCE
+    assert 'frame["cost_per_result"] = 0.0' in SOURCE
 
 
 def test_historical_charts_are_commented_out():

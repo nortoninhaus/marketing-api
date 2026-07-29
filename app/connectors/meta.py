@@ -69,7 +69,7 @@ class MetaAdsConnector(BaseConnector):
         has_action_values = False
         STANDARD_META_FIELDS = {
             "impressions", "clicks", "spend", "reach", "conversions", "cpc", "cpm", "ctr", "frequency",
-            "results", "purchase_roas", "purchase", "lead", "add_to_cart", "initiate_checkout", "roas"
+            "results", "cost_per_result", "purchase_roas", "purchase", "lead", "add_to_cart", "initiate_checkout", "roas"
         }
         for m in request.metrics:
             m_mapped = {"roas": "purchase_roas", "__results__": "results"}.get(m, m)
@@ -345,6 +345,7 @@ class MetaAdsConnector(BaseConnector):
                 "reach",
                 "conversions",
                 "__results__",
+                "cost_per_result",
                 "cpc",
                 "cpm", 
                 "ctr", 

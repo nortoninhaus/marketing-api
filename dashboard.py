@@ -86,7 +86,7 @@ from dashboard.ui import (
     render_dashboard_empty_state,
 )
 
-DASHBOARD_CACHE_VERSION = 1
+DASHBOARD_CACHE_VERSION = 2
 
 
 if os.getenv("DASHBOARD_AUTH_SELF_CHECK") == "1":
@@ -945,7 +945,7 @@ for cfg in platform_configs:
     dimension_names = [x["name"] for x in cfg["dimensions_list"]]
     request_metrics = list(cfg["selected_metrics"])
     if cfg["platform_type"] == "ads":
-        standard_metrics = ["impressions", "clicks", "spend", "conversions", "lead", "reach", "__results__"]
+        standard_metrics = ["impressions", "clicks", "spend", "conversions", "lead", "reach", "__results__", "cost_per_result"]
     elif cfg["platform_type"] == "analytics":
         standard_metrics = ["sessions", "users", "pageviews", "bounce_rate"]
     elif cfg["platform_type"] == "app_store":
@@ -1040,6 +1040,8 @@ opt_filters = active_context["opt_filters"]
 for frame in (df_curr, df_prev):
     if "results" not in frame.columns:
         frame["results"] = frame.get("__results__", 0)
+    if "cost_per_result" not in frame.columns:
+        frame["cost_per_result"] = 0.0
 
 # Inject JavaScript to automatically collapse the sidebar menu if it is expanded
 import streamlit.components.v1 as components
@@ -1602,7 +1604,7 @@ for dim in selected_dimensions:
 if platform_type == "ads":
     df_table = df_table.groupby(group_keys).agg({
         "spend": "sum", "impressions": "sum", "clicks": "sum", "conversions": "sum",
-        "reach": "sum", "results": "sum",
+        "reach": "sum", "results": "sum", "cost_per_result": "mean",
     }).reset_index()
     meta_platforms = set(META_PUBLISHER_LABELS.values()) | {"meta_ads"}
     meta_table = df_table[df_table["platform"].isin(meta_platforms)].copy()
@@ -1610,12 +1612,11 @@ if platform_type == "ads":
         meta_table["base_campaign_name"] = meta_table["campaign_name"].apply(meta_base_campaign_name)
         ranked_campaigns = meta_table.groupby(["base_campaign_name", "platform"]).agg({
             "spend": "sum", "impressions": "sum", "clicks": "sum", "conversions": "sum",
-            "reach": "sum", "results": "sum",
+            "reach": "sum", "results": "sum", "cost_per_result": "mean",
         }).reset_index()
         rank_metric = "results" if ranked_campaigns["results"].sum() else ("clicks" if ranked_campaigns["clicks"].sum() else "impressions")
         metric_label = {"results": "resultados", "clicks": "clics", "impressions": "impresiones"}[rank_metric]
         ranked_campaigns = ranked_campaigns.sort_values(rank_metric, ascending=False).head(8)
-        ranked_campaigns["cost_per_result"] = ranked_campaigns["spend"].div(ranked_campaigns["results"]).where(ranked_campaigns["results"].gt(0), 0)
         ranked_campaigns["cpm"] = ranked_campaigns["spend"].mul(1000).div(ranked_campaigns["impressions"]).where(ranked_campaigns["impressions"].gt(0), 0)
         ranked_campaigns["cpc"] = ranked_campaigns["spend"].div(ranked_campaigns["clicks"]).where(ranked_campaigns["clicks"].gt(0), 0)
         campaign_summary = ranked_campaigns[[
