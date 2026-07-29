@@ -69,6 +69,7 @@ from dashboard.api import (
 from dashboard.utils import (
     extract_metric,
     translate_dimension_value,
+    translate_meta_result_indicator,
     clean_region_name,
     clean_campaign_name,
     meta_base_campaign_name,
@@ -86,7 +87,7 @@ from dashboard.ui import (
     render_dashboard_empty_state,
 )
 
-DASHBOARD_CACHE_VERSION = 2
+DASHBOARD_CACHE_VERSION = 3
 
 
 if os.getenv("DASHBOARD_AUTH_SELF_CHECK") == "1":
@@ -1042,6 +1043,8 @@ for frame in (df_curr, df_prev):
         frame["results"] = frame.get("__results__", 0)
     if "cost_per_result" not in frame.columns:
         frame["cost_per_result"] = 0.0
+    if "result_indicator" not in frame.columns:
+        frame["result_indicator"] = ""
 
 # Inject JavaScript to automatically collapse the sidebar menu if it is expanded
 import streamlit.components.v1 as components
@@ -1602,50 +1605,73 @@ for dim in selected_dimensions:
         group_keys.append(dim)
 
 if platform_type == "ads":
+    if "result_indicator" in df_table.columns and "result_indicator" not in group_keys:
+        group_keys.append("result_indicator")
+    df_table["result_cost_weighted"] = df_table["results"] * df_table["cost_per_result"]
     df_table = df_table.groupby(group_keys).agg({
-        "spend": "sum", "impressions": "sum", "clicks": "sum", "conversions": "sum",
-        "reach": "sum", "results": "sum", "cost_per_result": "mean",
+        "spend": "sum", "impressions": "sum", "clicks": "sum", "conversions": "sum", "lead": "sum",
+        "reach": "sum", "results": "sum", "result_cost_weighted": "sum",
     }).reset_index()
+    df_table["cost_per_result"] = (
+        df_table["result_cost_weighted"]
+        .div(df_table["results"])
+        .where(df_table["results"].gt(0), 0)
+    )
     meta_platforms = set(META_PUBLISHER_LABELS.values()) | {"meta_ads"}
     meta_table = df_table[df_table["platform"].isin(meta_platforms)].copy()
     if platform_key == "meta_ads" and not meta_table.empty:
         meta_table["base_campaign_name"] = meta_table["campaign_name"].apply(meta_base_campaign_name)
-        ranked_campaigns = meta_table.groupby(["base_campaign_name", "platform"]).agg({
-            "spend": "sum", "impressions": "sum", "clicks": "sum", "conversions": "sum",
-            "reach": "sum", "results": "sum", "cost_per_result": "mean",
+        campaign_summary = meta_table.groupby(
+            ["base_campaign_name", "platform", "result_indicator"],
+            dropna=False,
+        ).agg({
+            "spend": "sum", "impressions": "sum", "clicks": "sum",
+            "results": "sum", "result_cost_weighted": "sum",
         }).reset_index()
-        rank_metric = "results" if ranked_campaigns["results"].sum() else ("clicks" if ranked_campaigns["clicks"].sum() else "impressions")
-        metric_label = {"results": "resultados", "clicks": "clics", "impressions": "impresiones"}[rank_metric]
-        ranked_campaigns = ranked_campaigns.sort_values(rank_metric, ascending=False).head(8)
-        ranked_campaigns["cpm"] = ranked_campaigns["spend"].mul(1000).div(ranked_campaigns["impressions"]).where(ranked_campaigns["impressions"].gt(0), 0)
-        ranked_campaigns["cpc"] = ranked_campaigns["spend"].div(ranked_campaigns["clicks"]).where(ranked_campaigns["clicks"].gt(0), 0)
-        campaign_summary = ranked_campaigns[[
-            "base_campaign_name", "platform", "results", "cost_per_result", "reach",
-            "cpm", "impressions", "clicks", "cpc", "spend",
-        ]].copy()
-        campaign_summary["campaign_label"] = campaign_summary["base_campaign_name"].apply(clean_campaign_name)
-        for column in ("results", "reach", "impressions", "clicks"):
+        campaign_summary["cost_per_result"] = (
+            campaign_summary["result_cost_weighted"]
+            .div(campaign_summary["results"])
+            .where(campaign_summary["results"].gt(0), 0)
+        )
+        campaign_summary["result_label"] = campaign_summary["result_indicator"].apply(translate_meta_result_indicator)
+        campaign_summary["cpm"] = campaign_summary["spend"].mul(1000).div(campaign_summary["impressions"]).where(campaign_summary["impressions"].gt(0), 0)
+        campaign_summary["cpc"] = campaign_summary["spend"].div(campaign_summary["clicks"]).where(campaign_summary["clicks"].gt(0), 0)
+        campaign_summary = campaign_summary.sort_values("results", ascending=False)
+        for column in ("results", "impressions", "clicks"):
             campaign_summary[column] = campaign_summary[column].apply(lambda x: f"{x:,.0f}")
         for column in ("cost_per_result", "cpm", "cpc", "spend"):
             campaign_summary[column] = campaign_summary[column].apply(lambda x: f"${x:,.2f}")
         campaign_summary = campaign_summary[[
-            "campaign_label", "platform", "results", "cost_per_result", "reach",
+            "base_campaign_name", "platform", "result_label", "results", "cost_per_result",
             "cpm", "impressions", "clicks", "cpc", "spend",
         ]].rename(columns={
-            "campaign_label": "Campaña",
+            "base_campaign_name": "Campaña",
             "platform": "Plataforma",
+            "result_label": "Tipo de resultado",
             "results": "Resultados",
             "cost_per_result": "Costo por resultado",
-            "reach": "Reach",
             "cpm": "CPM",
-            "impressions": "Impressions",
-            "clicks": "Clicks",
+            "impressions": "Impresiones",
+            "clicks": "Clics",
             "cpc": "CPC",
             "spend": "Inversión",
         })
 
         st.markdown("### Desempeño de campañas destacadas")
         show_theme_table(campaign_summary)
+        ranked_campaigns = (
+            meta_table.groupby("base_campaign_name")
+            .agg(
+                platform=("platform", lambda values: " / ".join(dict.fromkeys(values))),
+                lead=("lead", "sum"),
+                spend=("spend", "sum"),
+                impressions=("impressions", "sum"),
+                clicks=("clicks", "sum"),
+                conversions=("conversions", "sum"),
+            )
+            .reset_index()
+            .sort_values("lead", ascending=False).head(8)
+        )
         preview_names = tuple(dict.fromkeys(ranked_campaigns["base_campaign_name"]))
         # ponytail: Meta previews cost one Graph call each; paginate this if accounts need more than 8 cards.
         preview_cache = st.session_state.setdefault("meta_preview_cache", {})
@@ -1658,7 +1684,7 @@ if platform_type == "ads":
             "spend": "sum", "impressions": "sum", "clicks": "sum", "conversions": "sum"
         }).to_dict("index")
 
-        st.markdown(f"### Ranking: top campañas por {metric_label} (Meta)")
+        st.markdown("### Ranking: top campañas por clientes potenciales (Meta)")
         if preview_error:
             st.info(preview_error)
 
@@ -1671,15 +1697,13 @@ if platform_type == "ads":
             body = preview["body"] if preview else "<div style='height:320px;display:grid;place-items:center;color:#8A97A8;background:#0A0D13;border-radius:10px;'>Preview no disponible</div>"
             raw_ad_name = str(preview.get("ad_name", "")) if preview else ""
             ad_name = html.escape(raw_ad_name)
-            campaign_name = html.escape(clean_campaign_name(row.base_campaign_name))
-            source_text = f" {row.platform} {row.base_campaign_name} {raw_ad_name} ".lower()
-            if row.platform == "Instagram Ads":
+            campaign_name = html.escape(str(row.base_campaign_name))
+            if "Facebook Ads" in row.platform and "Instagram Ads" in row.platform:
+                source = "FB/IG"
+            elif "Instagram Ads" in row.platform:
                 source = "IG"
-            elif row.platform == "Facebook Ads":
-                source = "FB"
             else:
-                    is_ig = any(token in source_text for token in ("instagram", " instagram ", "/ig", " ig ", "-ig", "_ig"))
-                    source = "FB/IG" if "fb-ig" in source_text or "facebook/ig" in source_text else ("IG" if is_ig else "FB")
+                source = "FB"
             source_color = {"IG": "#E1306C", "FB": "#1877F2", "FB/IG": "#4f46e5"}.get(source, "#4f46e5")
             components_html = f"""
             <div style="font-family: Arial, sans-serif; background:#fff; border:1px solid #e5e7eb; border-radius:14px; padding:14px; position:relative; color:#111827;">
@@ -1693,6 +1717,7 @@ if platform_type == "ads":
                 <div style="margin-top:14px; display:grid; gap:8px; font-size:13px;">
                     <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>Inversión</span><b>${row.spend:,.2f}</b></div>
                     <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>Conversiones</span><b>{row.conversions:,.0f}</b></div>
+                    <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>Clientes potenciales</span><b>{row.lead:,.0f}</b></div>
                     <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>Clics</span><b>{row.clicks:,.0f}</b></div>
                     <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>Impresiones</span><b>{row.impressions:,.0f}</b></div>
                     <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>CTR</span><b>{ctr:.2%}</b></div>

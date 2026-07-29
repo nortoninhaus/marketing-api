@@ -91,10 +91,11 @@ def test_regions_are_localized_and_charted():
     assert "region_chart" in SOURCE
 
 
-def test_campaign_names_are_cleaned_for_display():
+def test_campaign_previews_are_cleaned_but_reporting_keeps_full_names():
     assert "clean_campaign_name" in UTILS_SOURCE
     assert '"campaign_label": clean_campaign_name(campaign_name)' in API_SOURCE
-    assert '"campaign_label": "Campaña"' in SOURCE
+    assert '"base_campaign_name": "Campaña"' in SOURCE
+    assert "campaign_name = html.escape(str(row.base_campaign_name))" in SOURCE
 
 
 def test_sidebar_actions_are_ordered_without_a_separator():
@@ -132,8 +133,10 @@ def test_featured_campaigns_show_requested_meta_metrics():
             "campaign_name": "Lead campaign",
             "date": "2026-07-01",
             "metrics": {
+                "result_indicator": "reach",
                 "__results__": 7,
                 "cost_per_result": 0.42,
+                "lead": 3,
                 "reach": 100,
                 "impressions": 200,
                 "clicks": 10,
@@ -147,22 +150,35 @@ def test_featured_campaigns_show_requested_meta_metrics():
 
     assert df["results"].sum() == 7
     assert df["cost_per_result"].sum() == 0.42
+    assert df.loc[0, "result_indicator"] == "reach"
     assert '"__results__"' in SOURCE
+    featured_campaign_source = SOURCE[
+        SOURCE.index("campaign_summary ="):
+        SOURCE.index("preview_names =")
+    ]
     for label in (
+        "Tipo de resultado",
         "Resultados",
         "Costo por resultado",
-        "Reach",
         "CPM",
-        "Impressions",
-        "Clicks",
+        "Impresiones",
+        "Clics",
         "CPC",
         "Inversión",
     ):
-        assert f'"{label}"' in SOURCE
-    assert '"cost_per_result": "mean"' in SOURCE
-    assert 'ranked_campaigns["cost_per_result"] = ranked_campaigns["spend"].div(ranked_campaigns["results"])' not in SOURCE
-    assert 'ranked_campaigns["cpm"] = ranked_campaigns["spend"].mul(1000).div(ranked_campaigns["impressions"])' in SOURCE
-    assert 'ranked_campaigns["cpc"] = ranked_campaigns["spend"].div(ranked_campaigns["clicks"])' in SOURCE
+        assert f'"{label}"' in featured_campaign_source
+    assert '"reach": "Reach"' not in featured_campaign_source
+    assert "campaign_summary = meta_table.groupby(" in SOURCE
+    assert 'campaign_summary["result_label"] = campaign_summary["result_indicator"].apply(translate_meta_result_indicator)' in SOURCE
+    assert '"base_campaign_name": "Campaña"' in featured_campaign_source
+    assert "campaign_summary = ranked_campaigns" not in featured_campaign_source
+
+
+def test_meta_campaign_cards_rank_by_leads_and_keep_full_names():
+    assert '.sort_values("lead", ascending=False).head(8)' in SOURCE
+    assert "Ranking: top campañas por clientes potenciales (Meta)" in SOURCE
+    assert "<span>Clientes potenciales</span>" in SOURCE
+    assert "campaign_name = html.escape(str(row.base_campaign_name))" in SOURCE
 
 
 def test_meta_result_indicator_survives_dashboard_normalization():
@@ -201,12 +217,13 @@ def test_unknown_meta_result_indicator_is_not_humanized():
 
 
 def test_results_schema_change_invalidates_and_migrates_cached_frames():
-    assert "DASHBOARD_CACHE_VERSION = 2" in SOURCE
+    assert "DASHBOARD_CACHE_VERSION = 3" in SOURCE
     assert 'schema_key = ("schema", DASHBOARD_CACHE_VERSION, selected_platform_key, api_key)' in SOURCE
     assert "query_key = (\n    DASHBOARD_CACHE_VERSION," in SOURCE
     assert "if active_query_key[0] != DASHBOARD_CACHE_VERSION:" in SOURCE
     assert 'frame["results"] = frame.get("__results__", 0)' in SOURCE
     assert 'frame["cost_per_result"] = 0.0' in SOURCE
+    assert 'frame["result_indicator"] = ""' in SOURCE
 
 
 def test_historical_charts_are_commented_out():
