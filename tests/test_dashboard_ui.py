@@ -186,6 +186,16 @@ def test_meta_post_engagement_is_requested_and_normalized():
     ]
 
 
+def test_previous_month_fetch_uses_configured_campaign_timeout():
+    previous_month_fetch = SOURCE[
+        SOURCE.index("prev_rows = fetch_campaign_data_from_api("):
+        SOURCE.index("if curr_rows:")
+    ]
+
+    assert "timeout=45" not in previous_month_fetch
+    assert "timeout=CAMPAIGN_DATA_TIMEOUT" in API_SOURCE
+
+
 def test_ads_campaign_table_preserves_post_engagement_for_rankings():
     campaign_table_source = SOURCE[
         SOURCE.index("df_table = df_curr.copy()"):SOURCE.index("meta_table =")

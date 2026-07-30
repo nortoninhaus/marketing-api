@@ -1003,7 +1003,7 @@ if force_query_fetch or active_query_key not in st.session_state["dashboard_quer
         prev_rows = fetch_campaign_data_from_api(
             cfg["platform_key"], client_id, user_id, cfg["account_id"],
             prev_start_date, prev_end_date, cfg["request_metrics"], cfg["request_dimensions"],
-            cfg["opt_filters"], False, api_key, show_errors=False, timeout=45
+            cfg["opt_filters"], False, api_key, show_errors=False
         )
         if curr_rows:
             curr_frames.append(process_api_response(curr_rows, cfg["platform_key"], client_id, user_id))
