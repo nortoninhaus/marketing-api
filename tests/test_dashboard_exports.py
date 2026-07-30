@@ -34,5 +34,15 @@ def test_dashboard_offers_grouped_automatic_pdf_and_csv_downloads():
     assert "height: target.scrollHeight" in SOURCE
     assert 'avoid: [".kpi"' not in SOURCE
     assert "Descargar CSV" in SOURCE
-    assert 'df_curr.to_csv(index=False).encode("utf-8-sig")' in SOURCE
+    assert 'csv_export_frame["frame"].to_csv(index=False).encode("utf-8-sig")' in SOURCE
     assert 'on_click="ignore"' in SOURCE
+
+
+def test_meta_campaign_csv_uses_the_displayed_table_data():
+    total_append = "pd.concat([campaign_summary, pd.DataFrame([total_row])], ignore_index=True)"
+    export_assignment = 'csv_export_frame["frame"] = campaign_summary'
+
+    assert 'csv_export_frame = {"frame": df_curr}' in SOURCE
+    assert "data=lambda:" in SOURCE
+    assert export_assignment in SOURCE
+    assert SOURCE.index(total_append) < SOURCE.index(export_assignment)

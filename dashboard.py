@@ -1231,123 +1231,124 @@ if platform_key == "meta_ads":
 
 export_slug = re.sub(r"[^a-z0-9]+", "-", selected_platform_label.lower()).strip("-")
 export_name = f"{export_slug}_{start_date:%Y-%m-%d}_{end_date:%Y-%m-%d}"
+csv_export_frame = {"frame": df_curr}
 
-with download_slot.container():
-    with st.popover("Descargar", icon=":material/download:"):
-        components.html(f"""
-        <style>
-        body {{ margin: 0; font-family: Manrope, Arial, sans-serif; }}
-        button {{
-            width: 100%;
-            padding: 0.55rem 0.75rem;
-            border: 1px solid #1AE08C;
-            border-radius: 0.5rem;
-            background: #1AE08C;
-            color: #0A0D13;
-            font-weight: 700;
-            cursor: pointer;
-        }}
-        button:disabled {{ cursor: wait; opacity: 0.65; }}
-        #pdf-status {{ min-height: 1rem; margin: 0.3rem 0 0; color: #FF4B4B; font-size: 0.75rem; }}
-        </style>
-        <button id="pdf-download" type="button">Descargar PDF</button>
-        <p id="pdf-status" role="status" aria-live="polite"></p>
-        <script>
-        const parentDoc = window.parent.document;
-        const button = document.getElementById("pdf-download");
-        const status = document.getElementById("pdf-status");
-        const trigger = parentDoc.querySelector('[data-testid="stPopoverButton"]');
-        const exportControl = trigger?.closest('[data-testid="stPopover"]');
-        const popoverBody = window.frameElement?.closest('[data-testid="stPopoverBody"]');
-        const popoverVisibility = popoverBody?.style.visibility || "";
-        if (exportControl) exportControl.dataset.exportControl = "true";
+# with download_slot.container():
+#     with st.popover("Descargar", icon=":material/download:"):
+#         components.html(f"""
+#         <style>
+#         body {{ margin: 0; font-family: Manrope, Arial, sans-serif; }}
+#         button {{
+#             width: 100%;
+#             padding: 0.55rem 0.75rem;
+#             border: 1px solid #1AE08C;
+#             border-radius: 0.5rem;
+#             background: #1AE08C;
+#             color: #0A0D13;
+#             font-weight: 700;
+#             cursor: pointer;
+#         }}
+#         button:disabled {{ cursor: wait; opacity: 0.65; }}
+#         #pdf-status {{ min-height: 1rem; margin: 0.3rem 0 0; color: #FF4B4B; font-size: 0.75rem; }}
+#         </style>
+#         <button id="pdf-download" type="button">Descargar PDF</button>
+#         <p id="pdf-status" role="status" aria-live="polite"></p>
+#         <script>
+#         const parentDoc = window.parent.document;
+#         const button = document.getElementById("pdf-download");
+#         const status = document.getElementById("pdf-status");
+#         const trigger = parentDoc.querySelector('[data-testid="stPopoverButton"]');
+#         const exportControl = trigger?.closest('[data-testid="stPopover"]');
+#         const popoverBody = window.frameElement?.closest('[data-testid="stPopoverBody"]');
+#         const popoverVisibility = popoverBody?.style.visibility || "";
+#         if (exportControl) exportControl.dataset.exportControl = "true";
 
-        const loadHtml2Pdf = () => {{
-            if (window.html2pdf) return Promise.resolve(window.html2pdf);
-            return new Promise((resolve, reject) => {{
-                const script = document.createElement("script");
-                script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
-                script.onload = () => resolve(window.html2pdf);
-                script.onerror = () => reject(new Error("html2pdf failed to load"));
-                document.head.appendChild(script);
-            }});
-        }};
+#         const loadHtml2Pdf = () => {{
+#             if (window.html2pdf) return Promise.resolve(window.html2pdf);
+#             return new Promise((resolve, reject) => {{
+#                 const script = document.createElement("script");
+#                 script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
+#                 script.onload = () => resolve(window.html2pdf);
+#                 script.onerror = () => reject(new Error("html2pdf failed to load"));
+#                 document.head.appendChild(script);
+#             }});
+#         }};
 
-        button.addEventListener("click", async () => {{
-            button.disabled = true;
-            status.textContent = "Generando PDF…";
-            try {{
-                const html2pdf = await loadHtml2Pdf();
-                const target = parentDoc.querySelector('[data-testid="stMainBlockContainer"]');
-                if (!target) throw new Error("Dashboard report container not found");
-                if (popoverBody) popoverBody.style.visibility = "hidden";
+#         button.addEventListener("click", async () => {{
+#             button.disabled = true;
+#             status.textContent = "Generando PDF…";
+#             try {{
+#                 const html2pdf = await loadHtml2Pdf();
+#                 const target = parentDoc.querySelector('[data-testid="stMainBlockContainer"]');
+#                 if (!target) throw new Error("Dashboard report container not found");
+#                 if (popoverBody) popoverBody.style.visibility = "hidden";
 
-                // ponytail: browser capture avoids a server-side Chromium service; upgrade if cross-origin embeds must be exact.
-                await html2pdf().set({{
-                    margin: [8, 8, 8, 8],
-                    filename: "{export_name}.pdf",
-                    image: {{ type: "jpeg", quality: 0.95 }},
-                    html2canvas: {{
-                        scale: 1.5,
-                        useCORS: true,
-                        backgroundColor: "{chart_bg}",
-                        width: target.scrollWidth,
-                        height: target.scrollHeight,
-                        windowWidth: target.scrollWidth,
-                        windowHeight: target.scrollHeight,
-                        onclone: (clonedDoc) => {{
-                            const clonedReport = clonedDoc.querySelector(
-                                '[data-testid="stMainBlockContainer"]'
-                            );
-                            if (clonedReport) clonedReport.style.backgroundColor = "{chart_bg}";
-                            clonedDoc.querySelectorAll(
-                                '[data-testid="stHeader"], [data-testid="stSidebar"], ' +
-                                '[data-testid="stPopoverBody"], [data-export-control="true"], ' +
-                                '[data-testid^="stElementToolbar"], ' +
-                                '[data-testid="stTooltipHoverTarget"], ' +
-                                '[data-testid="stBaseButton-elementToolbar"], ' +
-                                '[data-testid="stVegaLiteChart"] details'
-                            ).forEach((element) => element.remove());
-                            clonedDoc.querySelectorAll("span").forEach((element) => {{
-                                const fontFamily = clonedDoc.defaultView
-                                    ?.getComputedStyle(element).fontFamily || "";
-                                const iconName = element.textContent.trim();
-                                if (
-                                    fontFamily.includes("Material Symbols") ||
-                                    /^(keyboard_|expand_|download$)/.test(iconName)
-                                ) element.remove();
-                            }});
-                            clonedDoc.querySelectorAll('a[href^="#"]')
-                                .forEach((element) => element.remove());
-                        }},
-                        ignoreElements: (element) => Boolean(
-                            element.closest?.('[data-export-control="true"]')
-                        ),
-                    }},
-                    jsPDF: {{ unit: "mm", format: "a4", orientation: "landscape" }},
-                    pagebreak: {{
-                        mode: ["css", "legacy"],
-                    }},
-                }}).from(target).save();
-                status.textContent = "";
-            }} catch (error) {{
-                console.error("PDF export failed", error);
-                status.textContent = "No se pudo generar el PDF.";
-            }} finally {{
-                if (popoverBody) popoverBody.style.visibility = popoverVisibility;
-                button.disabled = false;
-            }}
-        }});
-        </script>
-        """, height=72)
-        st.download_button(
-            "Descargar CSV",
-            data=df_curr.to_csv(index=False).encode("utf-8-sig"),
-            file_name=f"{export_name}.csv",
-            mime="text/csv;charset=utf-8",
-            on_click="ignore",
-            use_container_width=True,
-        )
+#                 // ponytail: browser capture avoids a server-side Chromium service; upgrade if cross-origin embeds must be exact.
+#                 await html2pdf().set({{
+#                     margin: [8, 8, 8, 8],
+#                     filename: "{export_name}.pdf",
+#                     image: {{ type: "jpeg", quality: 0.95 }},
+#                     html2canvas: {{
+#                         scale: 1.5,
+#                         useCORS: true,
+#                         backgroundColor: "{chart_bg}",
+#                         width: target.scrollWidth,
+#                         height: target.scrollHeight,
+#                         windowWidth: target.scrollWidth,
+#                         windowHeight: target.scrollHeight,
+#                         onclone: (clonedDoc) => {{
+#                             const clonedReport = clonedDoc.querySelector(
+#                                 '[data-testid="stMainBlockContainer"]'
+#                             );
+#                             if (clonedReport) clonedReport.style.backgroundColor = "{chart_bg}";
+#                             clonedDoc.querySelectorAll(
+#                                 '[data-testid="stHeader"], [data-testid="stSidebar"], ' +
+#                                 '[data-testid="stPopoverBody"], [data-export-control="true"], ' +
+#                                 '[data-testid^="stElementToolbar"], ' +
+#                                 '[data-testid="stTooltipHoverTarget"], ' +
+#                                 '[data-testid="stBaseButton-elementToolbar"], ' +
+#                                 '[data-testid="stVegaLiteChart"] details'
+#                             ).forEach((element) => element.remove());
+#                             clonedDoc.querySelectorAll("span").forEach((element) => {{
+#                                 const fontFamily = clonedDoc.defaultView
+#                                     ?.getComputedStyle(element).fontFamily || "";
+#                                 const iconName = element.textContent.trim();
+#                                 if (
+#                                     fontFamily.includes("Material Symbols") ||
+#                                     /^(keyboard_|expand_|download$)/.test(iconName)
+#                                 ) element.remove();
+#                             }});
+#                             clonedDoc.querySelectorAll('a[href^="#"]')
+#                                 .forEach((element) => element.remove());
+#                         }},
+#                         ignoreElements: (element) => Boolean(
+#                             element.closest?.('[data-export-control="true"]')
+#                         ),
+#                     }},
+#                     jsPDF: {{ unit: "mm", format: "a4", orientation: "landscape" }},
+#                     pagebreak: {{
+#                         mode: ["css", "legacy"],
+#                     }},
+#                 }}).from(target).save();
+#                 status.textContent = "";
+#             }} catch (error) {{
+#                 console.error("PDF export failed", error);
+#                 status.textContent = "No se pudo generar el PDF.";
+#             }} finally {{
+#                 if (popoverBody) popoverBody.style.visibility = popoverVisibility;
+#                 button.disabled = false;
+#             }}
+#         }});
+#         </script>
+#         """, height=72)
+#         st.download_button(
+#             "Descargar CSV",
+#             data=lambda: csv_export_frame["frame"].to_csv(index=False).encode("utf-8-sig"),
+#             file_name=f"{export_name}.csv",
+#             mime="text/csv;charset=utf-8",
+#             on_click="ignore",
+#             use_container_width=True,
+#         )
 
 # HERO RENDER (Clean, full width, no Sipy logo)
 title_color = "#0F172A" if theme_mode == "Claro" else "#EAF0F7"
@@ -1728,8 +1729,9 @@ if platform_type == "ads":
             "spend": "Inversión",
         })
         campaign_summary = pd.concat([campaign_summary, pd.DataFrame([total_row])], ignore_index=True)
+        csv_export_frame["frame"] = campaign_summary
 
-        show_theme_table(campaign_summary)
+        show_theme_table(campaign_summary, merge_total_cells=True)
         ranking_specs = (
             ("clientes potenciales", "lead", "Clientes potenciales"),
             ("alcance", "reach", "Alcance"),

@@ -11,6 +11,7 @@ from streamlit.testing.v1 import AppTest
 from dashboard import api as dashboard_api
 from dashboard.api import process_api_response
 from dashboard.auth import create_dashboard_token
+from dashboard import ui as dashboard_ui
 from dashboard import utils as dashboard_utils
 
 DASHBOARD_PATH = Path(__file__).resolve().parents[1] / "dashboard.py"
@@ -277,12 +278,13 @@ def test_select_meta_ad_winners_uses_each_ranking_metric():
     assert winners[("post_engagement", "Campaign")]["ad_id"] == "1"
 
 
-def test_campaign_total_row_uses_sums_and_weighted_rates():
+def test_campaign_total_row_uses_sums_and_average_cost():
     frame = pd.DataFrame({
         "result_indicator": ["actions:lead", "actions:lead"],
         "result_label": ["Clientes potenciales", "Clientes potenciales"],
         "results": [10, 30],
         "result_cost_weighted": [20, 120],
+        "cost_per_result": [2, 4],
         "spend": [80, 120],
         "impressions": [4_000, 6_000],
         "clicks": [200, 300],
@@ -292,9 +294,9 @@ def test_campaign_total_row_uses_sums_and_weighted_rates():
 
     assert row == {
         "Campaña": "TOTAL",
-        "Tipo de resultado": "Clientes potenciales",
+        "Tipo de resultado": "",
         "Resultados": "40",
-        "Costo por resultado": "$3.50",
+        "Costo por resultado": "$3.00",
         "CPM": "$20.00",
         "Impresiones": "10,000",
         "Clics": "500",
@@ -303,12 +305,13 @@ def test_campaign_total_row_uses_sums_and_weighted_rates():
     }
 
 
-def test_campaign_total_row_marks_mixed_result_types():
+def test_campaign_total_row_sums_mixed_results_and_averages_cost():
     frame = pd.DataFrame({
         "result_indicator": ["actions:lead", "reach"],
         "result_label": ["Clientes potenciales", "Alcance"],
         "results": [10, 1_000],
         "result_cost_weighted": [20, 30],
+        "cost_per_result": [2, 4],
         "spend": [80, 120],
         "impressions": [4_000, 6_000],
         "clicks": [200, 300],
@@ -316,15 +319,37 @@ def test_campaign_total_row_marks_mixed_result_types():
 
     row = dashboard_utils.build_meta_campaign_total_row(frame)
 
-    assert row["Tipo de resultado"] == "Resultados mixtos"
-    assert row["Resultados"] == "—"
-    assert row["Costo por resultado"] == "—"
+    assert row["Tipo de resultado"] == ""
+    assert row["Resultados"] == "1,010"
+    assert row["Costo por resultado"] == "$3.00"
+
+
+def test_theme_table_merges_total_label_across_two_columns(monkeypatch):
+    rendered = []
+    monkeypatch.setattr(
+        dashboard_ui.st,
+        "markdown",
+        lambda value, **kwargs: rendered.append(value),
+    )
+
+    dashboard_ui.show_theme_table(
+        pd.DataFrame([{
+            "Campaña": "TOTAL",
+            "Tipo de resultado": "",
+            "Resultados": "40",
+        }]),
+        merge_total_cells=True,
+    )
+
+    assert '<td colspan="2">TOTAL</td>' in rendered[0]
 
 
 def test_campaign_total_row_is_appended_after_formatted_campaigns():
     total_append = "pd.concat([campaign_summary, pd.DataFrame([total_row])], ignore_index=True)"
+    total_render = "show_theme_table(campaign_summary, merge_total_cells=True)"
     assert total_append in SOURCE
-    assert SOURCE.index(total_append) < SOURCE.index("show_theme_table(campaign_summary)")
+    assert total_render in SOURCE
+    assert SOURCE.index(total_append) < SOURCE.index(total_render)
 
 
 def test_delivered_meta_campaigns_filter_all_meta_views():

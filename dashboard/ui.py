@@ -25,8 +25,15 @@ def theme_chart(chart):
     )
 
 
-def show_theme_table(df):
-    st.markdown(df.to_html(index=False, classes="theme-table"), unsafe_allow_html=True)
+def show_theme_table(df, merge_total_cells=False):
+    table_html = df.to_html(index=False, classes="theme-table")
+    if merge_total_cells:
+        table_html = table_html.replace(
+            "<td>TOTAL</td>\n      <td></td>",
+            '<td colspan="2">TOTAL</td>',
+            1,
+        )
+    st.markdown(table_html, unsafe_allow_html=True)
 
 
 def get_kpi_card_html(label, value_str, sub_str, curr_val, prev_val, lower_is_better=False):

@@ -77,26 +77,15 @@ def build_meta_campaign_total_row(frame):
     total_spend = frame["spend"].sum()
     total_impressions = frame["impressions"].sum()
     total_clicks = frame["clicks"].sum()
-    indicators = frame["result_indicator"].fillna("").astype(str).str.strip().unique()
-    common_result_type = len(indicators) == 1 and bool(indicators[0])
-    result_label = (
-        frame["result_label"].dropna().iloc[0]
-        if common_result_type and not frame["result_label"].dropna().empty
-        else "Resultados mixtos"
-    )
-    cost_per_result = (
-        frame["result_cost_weighted"].sum() / total_results
-        if total_results > 0
-        else 0
-    )
+    cost_per_result = frame["cost_per_result"].mean()
     cpm = total_spend * 1000 / total_impressions if total_impressions > 0 else 0
     cpc = total_spend / total_clicks if total_clicks > 0 else 0
 
     return {
         "Campaña": "TOTAL",
-        "Tipo de resultado": result_label,
-        "Resultados": f"{total_results:,.0f}" if common_result_type else "—",
-        "Costo por resultado": f"${cost_per_result:,.2f}" if common_result_type else "—",
+        "Tipo de resultado": "",
+        "Resultados": f"{total_results:,.0f}",
+        "Costo por resultado": f"${cost_per_result:,.2f}",
         "CPM": f"${cpm:,.2f}",
         "Impresiones": f"{total_impressions:,.0f}",
         "Clics": f"{total_clicks:,.0f}",
