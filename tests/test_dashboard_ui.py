@@ -277,6 +277,56 @@ def test_select_meta_ad_winners_uses_each_ranking_metric():
     assert winners[("post_engagement", "Campaign")]["ad_id"] == "1"
 
 
+def test_campaign_total_row_uses_sums_and_weighted_rates():
+    frame = pd.DataFrame({
+        "result_indicator": ["actions:lead", "actions:lead"],
+        "result_label": ["Clientes potenciales", "Clientes potenciales"],
+        "results": [10, 30],
+        "result_cost_weighted": [20, 120],
+        "spend": [80, 120],
+        "impressions": [4_000, 6_000],
+        "clicks": [200, 300],
+    })
+
+    row = dashboard_utils.build_meta_campaign_total_row(frame)
+
+    assert row == {
+        "Campaña": "TOTAL",
+        "Tipo de resultado": "Clientes potenciales",
+        "Resultados": "40",
+        "Costo por resultado": "$3.50",
+        "CPM": "$20.00",
+        "Impresiones": "10,000",
+        "Clics": "500",
+        "CPC": "$0.40",
+        "Inversión": "$200.00",
+    }
+
+
+def test_campaign_total_row_marks_mixed_result_types():
+    frame = pd.DataFrame({
+        "result_indicator": ["actions:lead", "reach"],
+        "result_label": ["Clientes potenciales", "Alcance"],
+        "results": [10, 1_000],
+        "result_cost_weighted": [20, 30],
+        "spend": [80, 120],
+        "impressions": [4_000, 6_000],
+        "clicks": [200, 300],
+    })
+
+    row = dashboard_utils.build_meta_campaign_total_row(frame)
+
+    assert row["Tipo de resultado"] == "Resultados mixtos"
+    assert row["Resultados"] == "—"
+    assert row["Costo por resultado"] == "—"
+
+
+def test_campaign_total_row_is_appended_after_formatted_campaigns():
+    total_append = "pd.concat([campaign_summary, pd.DataFrame([total_row])], ignore_index=True)"
+    assert total_append in SOURCE
+    assert SOURCE.index(total_append) < SOURCE.index("show_theme_table(campaign_summary)")
+
+
 def test_delivered_meta_campaigns_filter_all_meta_views():
     eligibility_source = SOURCE[
         SOURCE.index("eligible_campaigns = meta_campaigns_with_impressions(df_curr)"):

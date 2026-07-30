@@ -76,6 +76,7 @@ from dashboard.utils import (
     meta_base_campaign_name,
     meta_campaigns_with_impressions,
     select_meta_ad_winners,
+    build_meta_campaign_total_row,
     dashboard_filter_options,
     apply_dashboard_filters,
     campaign_title,
@@ -1707,6 +1708,7 @@ if platform_type == "ads":
         campaign_summary["cpm"] = campaign_summary["spend"].mul(1000).div(campaign_summary["impressions"]).where(campaign_summary["impressions"].gt(0), 0)
         campaign_summary["cpc"] = campaign_summary["spend"].div(campaign_summary["clicks"]).where(campaign_summary["clicks"].gt(0), 0)
         campaign_summary = campaign_summary.sort_values("results", ascending=False)
+        total_row = build_meta_campaign_total_row(campaign_summary)
         for column in ("results", "impressions", "clicks"):
             campaign_summary[column] = campaign_summary[column].apply(lambda x: f"{x:,.0f}")
         for column in ("cost_per_result", "cpm", "cpc", "spend"):
@@ -1725,6 +1727,7 @@ if platform_type == "ads":
             "cpc": "CPC",
             "spend": "Inversión",
         })
+        campaign_summary = pd.concat([campaign_summary, pd.DataFrame([total_row])], ignore_index=True)
 
         show_theme_table(campaign_summary)
         ranking_specs = (

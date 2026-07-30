@@ -72,6 +72,39 @@ def select_meta_ad_winners(ad_rows, ranked_campaigns_by_metric):
     return winners
 
 
+def build_meta_campaign_total_row(frame):
+    total_results = frame["results"].sum()
+    total_spend = frame["spend"].sum()
+    total_impressions = frame["impressions"].sum()
+    total_clicks = frame["clicks"].sum()
+    indicators = frame["result_indicator"].fillna("").astype(str).str.strip().unique()
+    common_result_type = len(indicators) == 1 and bool(indicators[0])
+    result_label = (
+        frame["result_label"].dropna().iloc[0]
+        if common_result_type and not frame["result_label"].dropna().empty
+        else "Resultados mixtos"
+    )
+    cost_per_result = (
+        frame["result_cost_weighted"].sum() / total_results
+        if total_results > 0
+        else 0
+    )
+    cpm = total_spend * 1000 / total_impressions if total_impressions > 0 else 0
+    cpc = total_spend / total_clicks if total_clicks > 0 else 0
+
+    return {
+        "Campaña": "TOTAL",
+        "Tipo de resultado": result_label,
+        "Resultados": f"{total_results:,.0f}" if common_result_type else "—",
+        "Costo por resultado": f"${cost_per_result:,.2f}" if common_result_type else "—",
+        "CPM": f"${cpm:,.2f}",
+        "Impresiones": f"{total_impressions:,.0f}",
+        "Clics": f"{total_clicks:,.0f}",
+        "CPC": f"${cpc:,.2f}",
+        "Inversión": f"${total_spend:,.2f}",
+    }
+
+
 def dashboard_filter_options(df, column):
     if df.empty or column not in df.columns:
         return ["Todos"]
