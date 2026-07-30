@@ -1622,7 +1622,7 @@ if platform_type == "ads":
     df_table["result_cost_weighted"] = df_table["results"] * df_table["cost_per_result"]
     df_table = df_table.groupby(group_keys).agg({
         "spend": "sum", "impressions": "sum", "clicks": "sum", "conversions": "sum", "lead": "sum",
-        "reach": "sum", "results": "sum", "result_cost_weighted": "sum",
+        "reach": "sum", "post_engagement": "sum", "results": "sum", "result_cost_weighted": "sum",
     }).reset_index()
     df_table["cost_per_result"] = (
         df_table["result_cost_weighted"]

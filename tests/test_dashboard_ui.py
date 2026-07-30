@@ -114,6 +114,23 @@ def test_meta_filters_use_unique_campaigns_and_multiple_adsets():
     assert 'filtered_meta_rows["adset_name"].isin(adset_filter)' in SOURCE
 
 
+def test_meta_base_campaign_name_strips_publisher_platform_suffixes():
+    campaign_name = "BAJAJ / Mayoristas / ALCANCE / JULIO 2026"
+
+    assert {
+        dashboard_utils.meta_base_campaign_name(name)
+        for name in (
+            campaign_name,
+            f"{campaign_name}_facebook",
+            f"{campaign_name}_instagram",
+            f"{campaign_name}_audience_network",
+            f"{campaign_name}_messenger",
+            f"{campaign_name}_whatsapp",
+            f"{campaign_name}_unknown",
+        )
+    } == {campaign_name}
+
+
 def test_dashboard_filters_accept_multiple_adsets():
     frame = pd.DataFrame({
         "campaign_name": ["Campaign"] * 3,
@@ -167,6 +184,14 @@ def test_meta_post_engagement_is_requested_and_normalized():
     assert '"post_engagement"' in SOURCE[
         SOURCE.index("standard_metrics ="):SOURCE.index("query_configs.append")
     ]
+
+
+def test_ads_campaign_table_preserves_post_engagement_for_rankings():
+    campaign_table_source = SOURCE[
+        SOURCE.index("df_table = df_curr.copy()"):SOURCE.index("meta_table =")
+    ]
+
+    assert '"post_engagement": "sum"' in campaign_table_source
 
 
 def test_featured_campaigns_show_requested_meta_metrics():

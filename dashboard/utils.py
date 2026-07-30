@@ -38,7 +38,7 @@ def clean_campaign_name(value):
 
 
 def meta_base_campaign_name(value):
-    return re.sub(r"_(facebook|instagram|audience_network|messenger)$", "", str(value), flags=re.I)
+    return re.sub(r"_(facebook|instagram|audience_network|messenger|whatsapp|unknown)$", "", str(value), flags=re.I)
 
 
 def dashboard_filter_options(df, column):
