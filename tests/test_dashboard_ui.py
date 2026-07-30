@@ -223,8 +223,40 @@ def test_campaign_filters_trigger_scoped_meta_detail_fetch():
     ]
 
     assert 'if applied_campaign_filter or applied_adset_filter or applied_ad_filter != "Todos":' in detail_fetch_source
-    assert 'detail_opt_filters = dict(active_context.get("opt_filters", {}))' in detail_fetch_source
-    assert "detail_curr_rows = fetch_campaign_data_from_api(" in detail_fetch_source
+    assert "detail_curr_rows, detail_prev_rows = fetch_meta_detail_rows(" in detail_fetch_source
+    assert 'active_context.get("opt_filters", {})' in detail_fetch_source
+
+
+def test_meta_detail_fetch_calls_once_per_period_and_keeps_campaign_scope():
+    calls = []
+
+    def fetch(*args, **kwargs):
+        calls.append((args, kwargs))
+        return []
+
+    dashboard_utils.fetch_meta_detail_rows(
+        fetch,
+        "meta_ads",
+        "client_1",
+        "user_1",
+        "account_1",
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+        date(2026, 6, 1),
+        date(2026, 6, 30),
+        ["impressions"],
+        ["campaign_name"],
+        {"filters": {"campaign.id": ["campaign_1"]}},
+        [],
+        "Todos",
+        pd.DataFrame(),
+        pd.DataFrame(),
+        "api-key",
+    )
+
+    assert len(calls) == 2
+    assert all(call[0][7][-2:] == ["adset_name", "ad_name"] for call in calls)
+    assert all(call[0][8]["filters"] == {"campaign.id": ["campaign_1"]} for call in calls)
 
 
 def test_meta_base_campaign_name_strips_publisher_platform_suffixes():

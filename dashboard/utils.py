@@ -72,6 +72,58 @@ def select_meta_ad_winners(ad_rows, ranked_campaigns_by_metric):
     return winners
 
 
+def fetch_meta_detail_rows(
+    fetch_data,
+    platform_key,
+    client_id,
+    user_id,
+    account_id,
+    start_date,
+    end_date,
+    prev_start_date,
+    prev_end_date,
+    request_metrics,
+    request_dimensions,
+    opt_filters,
+    adset_filter,
+    ad_filter,
+    filtered_meta_rows,
+    filtered_ad_rows,
+    api_key,
+):
+    dimensions = list(request_dimensions)
+    for dimension in ("adset_name", "ad_name"):
+        if dimension not in dimensions:
+            dimensions.append(dimension)
+
+    filters = {}
+    if ad_filter != "Todos" and not filtered_ad_rows.empty:
+        filters["ad.id"] = filtered_ad_rows[
+            filtered_ad_rows["ad_name"] == ad_filter
+        ]["ad_id"].dropna().astype(str).tolist()
+    elif adset_filter and not filtered_meta_rows.empty:
+        filters["adset.id"] = filtered_meta_rows[
+            filtered_meta_rows["adset_name"].isin(adset_filter)
+        ]["adset_id"].dropna().astype(str).unique().tolist()
+
+    detail_filters = dict(opt_filters)
+    if filters:
+        detail_filters["filters"] = filters
+    metrics = request_metrics or [
+        "impressions", "clicks", "spend", "conversions", "reach", "__results__"
+    ]
+    current_rows = fetch_data(
+        platform_key, client_id, user_id, account_id,
+        start_date, end_date, metrics, dimensions, detail_filters, False, api_key,
+    )
+    previous_rows = fetch_data(
+        platform_key, client_id, user_id, account_id,
+        prev_start_date, prev_end_date, metrics, dimensions, detail_filters,
+        False, api_key, show_errors=False,
+    )
+    return current_rows, previous_rows
+
+
 def meta_detail_table_config(
     campaign_filter,
     adset_filter,

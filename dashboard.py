@@ -76,6 +76,7 @@ from dashboard.utils import (
     meta_base_campaign_name,
     meta_campaigns_with_impressions,
     select_meta_ad_winners,
+    fetch_meta_detail_rows,
     build_meta_campaign_total_row,
     meta_detail_table_config,
     dashboard_filter_options,
@@ -1171,29 +1172,25 @@ else:
     detail_curr_rows = []
     detail_prev_rows = []
     if applied_campaign_filter or applied_adset_filter or applied_ad_filter != "Todos":
-        detail_dimensions = list(active_context.get("request_dimensions", []))
-        for dim in ("adset_name", "ad_name"):
-            if dim not in detail_dimensions:
-                    detail_dimensions.append(dim)
-            detail_filters = {}
-            if applied_ad_filter != "Todos" and not filtered_ad_rows.empty:
-                detail_filters["ad.id"] = filtered_ad_rows[filtered_ad_rows["ad_name"] == applied_ad_filter]["ad_id"].dropna().astype(str).tolist()
-            elif applied_adset_filter and not filtered_meta_rows.empty:
-                detail_filters["adset.id"] = filtered_meta_rows[filtered_meta_rows["adset_name"].isin(applied_adset_filter)]["adset_id"].dropna().astype(str).unique().tolist()
-            detail_opt_filters = dict(active_context.get("opt_filters", {}))
-            if detail_filters:
-                detail_opt_filters["filters"] = detail_filters
-            detail_metrics = active_context.get("request_metrics") or ["impressions", "clicks", "spend", "conversions", "reach", "__results__"]
-            detail_curr_rows = fetch_campaign_data_from_api(
-                platform_key, client_id, user_id, account_id,
-                start_date, end_date, detail_metrics, detail_dimensions,
-                detail_opt_filters, False, api_key
-            )
-            detail_prev_rows = fetch_campaign_data_from_api(
-                platform_key, client_id, user_id, account_id,
-                prev_start_date, prev_end_date, detail_metrics, detail_dimensions,
-                detail_opt_filters, False, api_key, show_errors=False
-            )
+        detail_curr_rows, detail_prev_rows = fetch_meta_detail_rows(
+            fetch_campaign_data_from_api,
+            platform_key,
+            client_id,
+            user_id,
+            account_id,
+            start_date,
+            end_date,
+            prev_start_date,
+            prev_end_date,
+            active_context.get("request_metrics"),
+            active_context.get("request_dimensions", []),
+            active_context.get("opt_filters", {}),
+            applied_adset_filter,
+            applied_ad_filter,
+            filtered_meta_rows,
+            filtered_ad_rows,
+            api_key,
+        )
         if detail_curr_rows:
             df_curr = process_api_response(detail_curr_rows, platform_key, client_id, user_id)
             df_prev = process_api_response(detail_prev_rows, platform_key, client_id, user_id) if detail_prev_rows else pd.DataFrame()
