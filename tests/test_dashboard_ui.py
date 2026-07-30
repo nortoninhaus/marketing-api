@@ -98,7 +98,7 @@ def test_regions_are_localized_and_charted():
 def test_campaign_previews_are_cleaned_but_reporting_keeps_full_names():
     assert "clean_campaign_name" in UTILS_SOURCE
     assert '"campaign_label": clean_campaign_name(campaign_name)' in API_SOURCE
-    assert '"base_campaign_name": "Campaña"' in SOURCE
+    assert '("base_campaign_name", "Campaña")' in SOURCE
     assert "campaign_name = html.escape(str(row.base_campaign_name))" in SOURCE
 
 
@@ -324,6 +324,73 @@ def test_campaign_total_row_sums_mixed_results_and_averages_cost():
     assert row["Costo por resultado"] == "$3.00"
 
 
+def test_meta_detail_table_config_follows_applied_filter_hierarchy():
+    columns = {"base_campaign_name", "adset_name", "ad_name"}
+
+    assert dashboard_utils.meta_detail_table_config(
+        [], [], "Todos", columns
+    ) == (
+        (("base_campaign_name", "Campaña"),),
+        "Detalle de Campañas y Resultados",
+    )
+    assert dashboard_utils.meta_detail_table_config(
+        ["Campaign A", "Campaign B"], [], "Todos", columns
+    ) == (
+        (
+            ("base_campaign_name", "Campaña"),
+            ("adset_name", "Conjunto de anuncios"),
+        ),
+        "Detalle de Conjuntos de anuncios y Resultados",
+    )
+    assert dashboard_utils.meta_detail_table_config(
+        ["Campaign A"], ["Set A", "Set B"], "Todos", columns
+    ) == (
+        (
+            ("adset_name", "Conjunto de anuncios"),
+            ("ad_name", "Anuncio"),
+        ),
+        "Detalle de Anuncios y Resultados",
+    )
+    assert dashboard_utils.meta_detail_table_config(
+        ["Campaign A"], [], "Ad A", columns
+    )[0] == (
+        ("adset_name", "Conjunto de anuncios"),
+        ("ad_name", "Anuncio"),
+    )
+
+
+def test_meta_detail_table_config_falls_back_when_child_columns_are_missing():
+    assert dashboard_utils.meta_detail_table_config(
+        ["Campaign A"], ["Set A"], "Todos", {"base_campaign_name"}
+    ) == (
+        (("base_campaign_name", "Campaña"),),
+        "Detalle de Campañas y Resultados",
+    )
+
+
+def test_campaign_total_row_supports_two_identity_columns():
+    frame = pd.DataFrame({
+        "results": [10, 30],
+        "cost_per_result": [2, 4],
+        "spend": [80, 120],
+        "impressions": [4_000, 6_000],
+        "clicks": [200, 300],
+    })
+
+    row = dashboard_utils.build_meta_campaign_total_row(
+        frame,
+        identity_labels=("Campaña", "Conjunto de anuncios"),
+    )
+
+    assert list(row)[:3] == [
+        "Campaña",
+        "Conjunto de anuncios",
+        "Tipo de resultado",
+    ]
+    assert row["Campaña"] == "TOTAL"
+    assert row["Conjunto de anuncios"] == ""
+
+
 def test_theme_table_merges_total_label_across_two_columns(monkeypatch):
     rendered = []
     monkeypatch.setattr(
@@ -350,6 +417,24 @@ def test_campaign_total_row_is_appended_after_formatted_campaigns():
     assert total_append in SOURCE
     assert total_render in SOURCE
     assert SOURCE.index(total_append) < SOURCE.index(total_render)
+
+
+def test_meta_detail_table_uses_dynamic_identity_columns():
+    detail_source = SOURCE[
+        SOURCE.index("# CAMPAIGN BREAKDOWN TABLE"):
+        SOURCE.index("ranking_specs = (")
+    ]
+
+    assert "meta_detail_table_config(" in detail_source
+    assert "applied_campaign_filter" in detail_source
+    assert "applied_adset_filter" in detail_source
+    assert "applied_ad_filter" in detail_source
+    assert "groupby(identity_sources)" in detail_source
+    assert "dict(identity_config)" in detail_source
+    assert "build_meta_campaign_total_row(" in detail_source
+    assert "identity_labels=identity_labels" in detail_source
+    assert 'st.markdown(f"### {detail_title}")' in detail_source
+    assert 'csv_export_frame["frame"] = campaign_summary' in detail_source
 
 
 def test_delivered_meta_campaigns_filter_all_meta_views():
@@ -505,9 +590,9 @@ def test_featured_campaigns_show_requested_meta_metrics():
     assert '"reach": "Reach"' not in featured_campaign_source
     assert '.sort_values(["results", "result_indicator"], ascending=[False, False])' in SOURCE
     assert 'campaign_summary["result_label"] = campaign_summary["result_indicator"].apply(translate_meta_result_indicator)' in SOURCE
-    assert '"base_campaign_name": "Campaña"' in featured_campaign_source
+    assert "**dict(identity_config)" in featured_campaign_source
     assert "campaign_summary = ranked_campaigns" not in featured_campaign_source
-    assert 'groupby("base_campaign_name").agg({' in featured_campaign_source
+    assert ".groupby(identity_sources).agg({" in featured_campaign_source
     assert '"result_indicator": "first"' in featured_campaign_source
     assert '"platform": "Plataforma"' not in featured_campaign_source
 

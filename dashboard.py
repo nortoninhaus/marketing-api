@@ -77,6 +77,7 @@ from dashboard.utils import (
     meta_campaigns_with_impressions,
     select_meta_ad_winners,
     build_meta_campaign_total_row,
+    meta_detail_table_config,
     dashboard_filter_options,
     apply_dashboard_filters,
     campaign_title,
@@ -1662,14 +1663,27 @@ if platform_key == "meta_ads" and st.checkbox("Cargar datos oficiales de Faceboo
 #         st.altair_chart(theme_chart(chart_camp), use_container_width=True)
 
 # CAMPAIGN BREAKDOWN TABLE
-st.markdown("### Detalle de Campañas y Resultados")
-
 df_table = df_curr.copy()
+identity_config = (("base_campaign_name", "Campaña"),)
+detail_title = "Detalle de Campañas y Resultados"
+if platform_key == "meta_ads":
+    identity_config, detail_title = meta_detail_table_config(
+        applied_campaign_filter,
+        applied_adset_filter,
+        applied_ad_filter,
+        set(df_table.columns) | {"base_campaign_name"},
+    )
+identity_sources = [column for column, _ in identity_config]
+identity_labels = [label for _, label in identity_config]
+st.markdown(f"### {detail_title}")
 
 group_keys = ["campaign_name", "platform"]
 for dim in selected_dimensions:
     if dim in df_table.columns and dim not in group_keys:
         group_keys.append(dim)
+for column in identity_sources:
+    if column in df_table.columns and column not in group_keys:
+        group_keys.append(column)
 
 if platform_type == "ads":
     ad_hashtag_rows = []
@@ -1692,7 +1706,7 @@ if platform_type == "ads":
         campaign_summary = (
             meta_table
             .sort_values(["results", "result_indicator"], ascending=[False, False])
-            .groupby("base_campaign_name").agg({
+            .groupby(identity_sources).agg({
                 "result_indicator": "first",
                 "spend": "sum", "impressions": "sum", "clicks": "sum",
                 "results": "sum", "result_cost_weighted": "sum",
@@ -1708,16 +1722,27 @@ if platform_type == "ads":
         campaign_summary["cpm"] = campaign_summary["spend"].mul(1000).div(campaign_summary["impressions"]).where(campaign_summary["impressions"].gt(0), 0)
         campaign_summary["cpc"] = campaign_summary["spend"].div(campaign_summary["clicks"]).where(campaign_summary["clicks"].gt(0), 0)
         campaign_summary = campaign_summary.sort_values("results", ascending=False)
-        total_row = build_meta_campaign_total_row(campaign_summary)
+        total_row = build_meta_campaign_total_row(
+            campaign_summary,
+            identity_labels=identity_labels,
+        )
         for column in ("results", "impressions", "clicks"):
             campaign_summary[column] = campaign_summary[column].apply(lambda x: f"{x:,.0f}")
         for column in ("cost_per_result", "cpm", "cpc", "spend"):
             campaign_summary[column] = campaign_summary[column].apply(lambda x: f"${x:,.2f}")
-        campaign_summary = campaign_summary[[
-            "base_campaign_name", "result_label", "results", "cost_per_result",
-            "cpm", "impressions", "clicks", "cpc", "spend",
-        ]].rename(columns={
-            "base_campaign_name": "Campaña",
+        campaign_summary = campaign_summary[
+            identity_sources + [
+                "result_label",
+                "results",
+                "cost_per_result",
+                "cpm",
+                "impressions",
+                "clicks",
+                "cpc",
+                "spend",
+            ]
+        ].rename(columns={
+            **dict(identity_config),
             "result_label": "Tipo de resultado",
             "results": "Resultados",
             "cost_per_result": "Costo por resultado",

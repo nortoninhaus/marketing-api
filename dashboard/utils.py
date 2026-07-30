@@ -72,7 +72,37 @@ def select_meta_ad_winners(ad_rows, ranked_campaigns_by_metric):
     return winners
 
 
-def build_meta_campaign_total_row(frame):
+def meta_detail_table_config(
+    campaign_filter,
+    adset_filter,
+    ad_filter,
+    available_columns,
+):
+    campaign_config = (
+        (("base_campaign_name", "Campaña"),),
+        "Detalle de Campañas y Resultados",
+    )
+    if adset_filter or ad_filter != "Todos":
+        identity_columns = (
+            ("adset_name", "Conjunto de anuncios"),
+            ("ad_name", "Anuncio"),
+        )
+        title = "Detalle de Anuncios y Resultados"
+    elif campaign_filter:
+        identity_columns = (
+            ("base_campaign_name", "Campaña"),
+            ("adset_name", "Conjunto de anuncios"),
+        )
+        title = "Detalle de Conjuntos de anuncios y Resultados"
+    else:
+        return campaign_config
+
+    if not all(column in available_columns for column, _ in identity_columns):
+        return campaign_config
+    return identity_columns, title
+
+
+def build_meta_campaign_total_row(frame, identity_labels=("Campaña",)):
     total_results = frame["results"].sum()
     total_spend = frame["spend"].sum()
     total_impressions = frame["impressions"].sum()
@@ -81,8 +111,9 @@ def build_meta_campaign_total_row(frame):
     cpm = total_spend * 1000 / total_impressions if total_impressions > 0 else 0
     cpc = total_spend / total_clicks if total_clicks > 0 else 0
 
-    return {
-        "Campaña": "TOTAL",
+    row = {label: "" for label in identity_labels}
+    row[identity_labels[0]] = "TOTAL"
+    row.update({
         "Tipo de resultado": "",
         "Resultados": f"{total_results:,.0f}",
         "Costo por resultado": f"${cost_per_result:,.2f}",
@@ -91,7 +122,8 @@ def build_meta_campaign_total_row(frame):
         "Clics": f"{total_clicks:,.0f}",
         "CPC": f"${cpc:,.2f}",
         "Inversión": f"${total_spend:,.2f}",
-    }
+    })
+    return row
 
 
 def dashboard_filter_options(df, column):
