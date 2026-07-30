@@ -1,3 +1,4 @@
+import ast
 from pathlib import Path
 
 
@@ -46,3 +47,17 @@ def test_meta_campaign_csv_uses_the_displayed_table_data():
     assert "data=lambda:" in SOURCE
     assert export_assignment in SOURCE
     assert SOURCE.index(total_append) < SOURCE.index(export_assignment)
+
+
+def test_csv_download_button_is_executable_code():
+    tree = ast.parse(SOURCE)
+
+    assert any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "download_button"
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+        and node.args[0].value == "Descargar CSV"
+        for node in ast.walk(tree)
+    )
