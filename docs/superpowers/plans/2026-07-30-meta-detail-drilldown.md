@@ -7,8 +7,8 @@
 **Goal:** Make the Meta detail table show campaigns, campaign ad sets, or
 ad-set ads according to the applied filter hierarchy.
 
-**Architecture:** Reuse the existing filtered `df_curr` and its requested
-`adset_name` and `ad_name` dimensions. A small pure configuration helper
+**Architecture:** For applied campaigns, reuse the existing scoped detail query
+to obtain `adset_name` and `ad_name` dimensions in `df_curr`. A small pure configuration helper
 selects identity columns and the section title from applied filters; the
 existing aggregation, formatting, TOTAL-row, HTML table, and deferred CSV path
 then consume that configuration.
@@ -25,8 +25,9 @@ then consume that configuration.
 - Applied ad-set filters or a specific ad: `Conjunto de anuncios`, `Anuncio`.
 - Keep all existing metric, sorting, formatting, and TOTAL-row behavior.
 - The Meta CSV must serialize the exact DataFrame rendered by the table.
-- Do not change KPI cards, rankings, backend code, connectors, dependencies, or
-  API request count.
+- Do not change KPI cards, rankings, backend code, connectors, or dependencies.
+- Campaign-only drill-down may execute the existing scoped detail query once
+  more; preserve its existing campaign filter scoping.
 - Work on the existing `fixed-cards` branch.
 - Do not push or deploy.
 - Preserve the existing local TOTAL-row and CSV changes as their own rollback

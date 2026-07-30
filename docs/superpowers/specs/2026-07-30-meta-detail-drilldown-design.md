@@ -2,8 +2,9 @@
 
 ## Goal
 
-Make the Meta Ads detail table follow the applied filter hierarchy without
-requesting additional backend data:
+Make the Meta Ads detail table follow the applied filter hierarchy. Applied
+campaign filters run the existing scoped detail query once more to obtain ad-set
+dimensions:
 
 - No applied campaign filter: show campaigns.
 - Applied campaign filter: show each selected campaign's ad sets.
@@ -15,8 +16,8 @@ CSV parity.
 ## Current Behavior
 
 The filters already cascade from Campaign to Ad set to Ad, and the detail query
-already requests `adset_name` and `ad_name`. After the filters are applied,
-`df_curr` contains the necessary child-level rows.
+requests `adset_name` and `ad_name`. Applied campaign filters reuse that scoped
+detail query so `df_curr` contains the necessary child-level rows.
 
 The detail table still groups the filtered rows back into
 `base_campaign_name`, which discards the ad-set and ad breakdown. This is a
@@ -39,8 +40,8 @@ the ad directly without first selecting an ad set.
 ## Data Flow
 
 1. Keep the current cascading filter widgets and **Aplicar filtros** button.
-2. Keep requesting `adset_name` and `ad_name` in the existing Meta detail
-   query.
+2. For any applied campaign, ad-set, or ad filter, reuse the existing scoped
+   Meta detail query with `adset_name` and `ad_name`.
 3. Apply campaign, ad-set, and ad filters to `df_curr` as today.
 4. Select the table identity columns from the applied filter state.
 5. Add those identity columns to the existing aggregation keys.
@@ -49,7 +50,8 @@ the ad directly without first selecting an ad set.
 7. Assign the final displayed DataFrame to the deferred CSV export holder.
 8. Render that same DataFrame.
 
-No duplicate aggregation path or additional API request is introduced.
+No duplicate aggregation path is introduced. Campaign-only drill-down adds the
+user-authorized execution of the existing scoped detail query.
 
 ## Metrics and Totals
 
@@ -94,10 +96,9 @@ Other platform exports retain their current behavior.
 
 ## Error Handling
 
-The existing empty-data handling remains unchanged. The drill-down introduces
-no new remote failure mode because it uses dimensions already returned by the
-detail query. A missing child-level column falls back to the campaign-level
-identity instead of raising a grouping `KeyError`.
+The existing empty-data handling remains unchanged. Campaign-only drill-down
+uses the existing scoped detail query; a missing child-level column falls back
+to the campaign-level identity instead of raising a grouping `KeyError`.
 
 ## Testing
 

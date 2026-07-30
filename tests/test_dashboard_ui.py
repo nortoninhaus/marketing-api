@@ -216,6 +216,17 @@ def test_meta_filters_use_unique_campaigns_and_multiple_adsets():
     assert 'filtered_meta_rows["adset_name"].isin(adset_filter)' in SOURCE
 
 
+def test_campaign_filters_trigger_scoped_meta_detail_fetch():
+    detail_fetch_source = SOURCE[
+        SOURCE.index("detail_curr_rows = []"):
+        SOURCE.index("current_account_insights = []")
+    ]
+
+    assert 'if applied_campaign_filter or applied_adset_filter or applied_ad_filter != "Todos":' in detail_fetch_source
+    assert 'detail_opt_filters = dict(active_context.get("opt_filters", {}))' in detail_fetch_source
+    assert "detail_curr_rows = fetch_campaign_data_from_api(" in detail_fetch_source
+
+
 def test_meta_base_campaign_name_strips_publisher_platform_suffixes():
     campaign_name = "BAJAJ / Mayoristas / ALCANCE / JULIO 2026"
 

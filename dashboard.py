@@ -1170,7 +1170,7 @@ else:
 
     detail_curr_rows = []
     detail_prev_rows = []
-    if applied_adset_filter or applied_ad_filter != "Todos":
+    if applied_campaign_filter or applied_adset_filter or applied_ad_filter != "Todos":
         detail_dimensions = list(active_context.get("request_dimensions", []))
         for dim in ("adset_name", "ad_name"):
             if dim not in detail_dimensions:
