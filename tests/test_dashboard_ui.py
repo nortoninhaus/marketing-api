@@ -23,7 +23,6 @@ def test_dashboard_has_light_dark_and_spanish_meta_labels():
     assert 'st.sidebar.radio("Tema", ["Claro", "Oscuro"]' not in SOURCE
     assert '"male": "Masculino"' in CONFIG_SOURCE
     assert '"female": "Femenino"' in CONFIG_SOURCE
-    assert "Desempeño de campañas destacadas" in SOURCE
     assert "Ranking de hashtags (Instagram)" in SOURCE
 
 

@@ -1671,7 +1671,6 @@ if platform_type == "ads":
             "spend": "Inversión",
         })
 
-        st.markdown("### Desempeño de campañas destacadas")
         show_theme_table(campaign_summary)
         ranking_specs = (
             ("clientes potenciales", "lead", "Clientes potenciales"),
