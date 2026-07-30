@@ -61,7 +61,8 @@ from dashboard.api import (
     fetch_connections_from_api,
     fetch_schema_from_api,
     fetch_campaign_data_from_api,
-    fetch_meta_campaign_previews,
+    fetch_meta_aggregate_insights,
+    fetch_meta_ad_previews,
     fetch_meta_filter_rows,
     process_api_response,
 )
@@ -73,6 +74,8 @@ from dashboard.utils import (
     clean_region_name,
     clean_campaign_name,
     meta_base_campaign_name,
+    meta_campaigns_with_impressions,
+    select_meta_ad_winners,
     dashboard_filter_options,
     apply_dashboard_filters,
     campaign_title,
@@ -1048,6 +1051,19 @@ for frame in (df_curr, df_prev):
     if "post_engagement" not in frame.columns:
         frame["post_engagement"] = 0
 
+if platform_key == "meta_ads":
+    eligible_campaigns = meta_campaigns_with_impressions(df_curr)
+    eligible_previous_campaigns = meta_campaigns_with_impressions(df_prev)
+    df_curr = df_curr[
+        df_curr["campaign_name"].astype(str).apply(meta_base_campaign_name).isin(eligible_campaigns)
+    ].copy()
+    if not df_prev.empty:
+        df_prev = df_prev[
+            df_prev["campaign_name"].astype(str).apply(meta_base_campaign_name).isin(
+                eligible_previous_campaigns
+            )
+        ].copy()
+
 # Inject JavaScript to automatically collapse the sidebar menu if it is expanded
 import streamlit.components.v1 as components
 components.html("""
@@ -1183,6 +1199,34 @@ else:
         df_prev = apply_dashboard_filters(df_prev, applied_campaign_filter, applied_adset_filter, applied_ad_filter)
         if applied_campaign_filter:
             st.caption(f"Campañas: {campaign_title(applied_campaign_filter, selected_platform_label)}")
+
+current_account_insights = []
+previous_account_insights = []
+campaign_aggregate_insights = []
+ad_aggregate_insights = []
+aggregate_errors = []
+if platform_key == "meta_ads":
+    aggregate_filters = opt_filters.get("filters", {}) if isinstance(opt_filters, dict) else {}
+    for insight_level, period_start, period_end, target in (
+        ("account", start_date, end_date, current_account_insights),
+        ("account", prev_start_date, prev_end_date, previous_account_insights),
+        ("campaign", start_date, end_date, campaign_aggregate_insights),
+        ("ad", start_date, end_date, ad_aggregate_insights),
+    ):
+        insight_rows, insight_error = fetch_meta_aggregate_insights(
+            client_id,
+            account_id,
+            period_start,
+            period_end,
+            insight_level,
+            aggregate_filters,
+            api_key,
+        )
+        target.extend(insight_rows)
+        if insight_error:
+            aggregate_errors.append(insight_error)
+    if aggregate_errors:
+        st.info(aggregate_errors[0])
 
 export_slug = re.sub(r"[^a-z0-9]+", "-", selected_platform_label.lower()).strip("-")
 export_name = f"{export_slug}_{start_date:%Y-%m-%d}_{end_date:%Y-%m-%d}"
@@ -1320,6 +1364,8 @@ if platform_type == "ads":
     curr_primary = df_curr["lead"].sum()
     prev_primary = df_prev["lead"].sum() if not df_prev.empty else 0
     primary_label = "Clientes Potenciales"
+    total_spend_curr = df_curr["spend"].sum()
+    lead_cost_per_result = total_spend_curr / curr_primary if curr_primary > 0 else 0.0
 elif platform_type == "analytics":
     curr_primary = df_curr["sessions"].sum()
     prev_primary = df_prev["sessions"].sum() if not df_prev.empty else 0
@@ -1334,21 +1380,29 @@ else:
     primary_label = "Interacciones totales"
 
 # Draw primary KPI card (Full width summary)
-st.markdown(f"""
-<div class="hero-card">
-    <div class="lab">{primary_label}</div>
-    <div class="big">{curr_primary:,}</div>
-</div>
-""", unsafe_allow_html=True)
+if platform_type == "ads":
+    st.markdown(f"""
+    <div class="hero-card" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;">
+      <div><div class="lab">{primary_label}</div><div class="big">{curr_primary:,.0f}</div></div>
+      <div><div class="lab">Costo por resultado</div><div class="big">${lead_cost_per_result:,.2f}</div></div>
+      <div><div class="lab">Importe gastado</div><div class="big">${total_spend_curr:,.2f}</div></div>
+    </div>
+    """, unsafe_allow_html=True)
+else:
+    st.markdown(f"""
+    <div class="hero-card">
+      <div class="lab">{primary_label}</div>
+      <div class="big">{curr_primary:,}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 # Render grid KPIs based on platform type
 st.markdown("### Métricas clave con comparación")
 
 if platform_type == "ads":
-    total_spend_curr = df_curr["spend"].sum()
     total_impressions_curr = df_curr["impressions"].sum()
     total_clicks_curr = df_curr["clicks"].sum()
-    total_reach_curr = df_curr["reach"].sum()
+    total_reach_curr = current_account_insights[0]["reach"] if current_account_insights else None
 
     avg_ctr_curr = total_clicks_curr / total_impressions_curr if total_impressions_curr > 0 else 0.0
     avg_cpc_curr = total_spend_curr / total_clicks_curr if total_clicks_curr > 0 else 0.0
@@ -1356,7 +1410,7 @@ if platform_type == "ads":
     total_spend_prev = df_prev["spend"].sum() if not df_prev.empty else 0.0
     total_impressions_prev = df_prev["impressions"].sum() if not df_prev.empty else 0.0
     total_clicks_prev = df_prev["clicks"].sum() if not df_prev.empty else 0.0
-    total_reach_prev = df_prev["reach"].sum() if not df_prev.empty else 0.0
+    total_reach_prev = previous_account_insights[0]["reach"] if previous_account_insights else None
 
     avg_ctr_prev = total_clicks_prev / total_impressions_prev if total_impressions_prev > 0 else 0.0
     avg_cpc_prev = total_spend_prev / total_clicks_prev if total_clicks_prev > 0 else 0.0
@@ -1365,7 +1419,8 @@ if platform_type == "ads":
     kpis_layout += get_kpi_card_html("Inversión Total", f"${total_spend_curr:,.2f}", "Gasto total en pauta", total_spend_curr, total_spend_prev, lower_is_better=True) + "\n"
     kpis_layout += get_kpi_card_html("Impresiones Totales", f"{total_impressions_curr:,}", "Vistas acumuladas", total_impressions_curr, total_impressions_prev) + "\n"
     kpis_layout += get_kpi_card_html("Clics", f"{total_clicks_curr:,}", "Interacciones con anuncios", total_clicks_curr, total_clicks_prev) + "\n"
-    kpis_layout += get_kpi_card_html("Alcance Total", f"{total_reach_curr:,}", "Usuarios únicos alcanzados", total_reach_curr, total_reach_prev) + "\n"
+    reach_value = f"{total_reach_curr:,.0f}" if total_reach_curr is not None else "—"
+    kpis_layout += get_kpi_card_html("Alcance Total", reach_value, "Usuarios únicos alcanzados", total_reach_curr or 0.0, total_reach_prev or 0.0) + "\n"
     kpis_layout += get_kpi_card_html("CTR Promedio", f"{avg_ctr_curr:.2%}", "Tasa de clics/impresión", avg_ctr_curr, avg_ctr_prev) + "\n"
     kpis_layout += get_kpi_card_html("CPC Promedio", f"${avg_cpc_curr:,.2f}", "Costo promedio por clic", avg_cpc_curr, avg_cpc_prev, lower_is_better=True) + "\n"
     kpis_layout += '</div>'
@@ -1691,22 +1746,49 @@ if platform_type == "ads":
             )
             .reset_index()
         )
+        campaign_reach_by_name = {
+            meta_base_campaign_name(row["campaign_name"]): row["reach"]
+            for row in campaign_aggregate_insights
+        }
+        campaign_ranking_summary["reach"] = (
+            campaign_ranking_summary["base_campaign_name"]
+            .map(campaign_reach_by_name)
+            .fillna(0)
+        )
         ranked_campaigns_by_metric = {
             metric: campaign_ranking_summary.sort_values(metric, ascending=False).head(3)
             for _, metric, _ in ranking_specs
         }
-        preview_names = tuple(dict.fromkeys(
-            campaign_name
+        ranked_campaign_names = {
+            metric: ranked_campaigns_by_metric[metric]["base_campaign_name"].tolist()
             for _, metric, _ in ranking_specs
-            for campaign_name in ranked_campaigns_by_metric[metric]["base_campaign_name"]
-        ))
-        # ponytail: Meta previews cost one Graph call each; the three rankings need at most nine.
+        }
+        ad_winners = select_meta_ad_winners(ad_aggregate_insights, ranked_campaign_names)
+        preview_targets = tuple(
+            (
+                metric,
+                campaign_name,
+                ad_winners[(metric, campaign_name)]["ad_id"],
+                ad_winners[(metric, campaign_name)]["ad_name"],
+            )
+            for _, metric, _ in ranking_specs
+            for campaign_name in ranked_campaign_names[metric]
+            if (metric, campaign_name) in ad_winners
+        )
         preview_cache = st.session_state.setdefault("meta_preview_cache", {})
-        preview_key = (client_id, account_id, preview_names, api_key)
+        preview_key = (client_id, account_id, preview_targets, api_key)
         if preview_key not in preview_cache:
-            preview_cache[preview_key] = fetch_meta_campaign_previews(client_id, account_id, preview_names, api_key)
+            preview_cache[preview_key] = fetch_meta_ad_previews(
+                client_id,
+                account_id,
+                preview_targets,
+                api_key,
+            )
         previews, preview_error = preview_cache[preview_key]
-        previews_by_campaign = {p["campaign_name"]: p for p in previews}
+        previews_by_campaign = {
+            (p["ranking_metric"], p["campaign_name"]): p
+            for p in previews
+        }
         campaign_metrics = meta_table.groupby("base_campaign_name").agg({
             "spend": "sum", "impressions": "sum", "clicks": "sum", "conversions": "sum"
         }).to_dict("index")
@@ -1726,7 +1808,7 @@ if platform_type == "ads":
             if idx == 1:
                 st.markdown(f"### Ranking: top campañas por {ranking_name} (Meta)")
                 rank_cols = st.columns(3)
-            preview = previews_by_campaign.get(row.base_campaign_name)
+            preview = previews_by_campaign.get((metric, row.base_campaign_name))
             ctr = row.clicks / row.impressions if row.impressions else 0
             cpc = row.spend / row.clicks if row.clicks else 0
             cpa = row.spend / row.conversions if row.conversions else 0
@@ -1750,7 +1832,7 @@ if platform_type == "ads":
                 f"<span>{label}</span><b>{value}</b></div>"
                 for label, value in metric_rows
             )
-            body = preview["body"] if preview else "<div style='height:320px;display:grid;place-items:center;color:#8A97A8;background:#0A0D13;border-radius:10px;'>Preview no disponible</div>"
+            body = preview["body"] if preview and preview.get("body") else "<div style='height:320px;display:grid;place-items:center;color:#8A97A8;background:#0A0D13;border-radius:10px;'>Preview no disponible</div>"
             raw_ad_name = str(preview.get("ad_name", "")) if preview else ""
             ad_name = html.escape(raw_ad_name)
             campaign_name = html.escape(str(row.base_campaign_name))
@@ -1778,7 +1860,7 @@ if platform_type == "ads":
             with rank_cols[(idx - 1) % 4]:
                 components.html(components_html, height=690, scrolling=True)
 
-        for preview in previews:
+        for preview in {p["ad_id"]: p for p in previews}.values():
             metrics = campaign_metrics.get(preview.get("campaign_name"), {})
             text = " ".join([
                 str(preview.get("campaign_name", "")),

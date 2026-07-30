@@ -123,84 +123,200 @@ def fetch_campaign_data_from_api(platform_key, client_id, user_id, account_id, s
         return []
 
 
-# Meta ad previews through the existing backend proxy
-@st.cache_data(ttl=300, show_spinner=False)
-def fetch_meta_campaign_previews(client_id, account_id, campaign_names, api_key):
-    campaign_names = tuple(name for name in campaign_names if name and name != "N/A")
-    if not campaign_names:
-        return [], None
-
-    headers = {
-        "accept": "*/*",
-        "content-type": "application/json",
-        "x-api-key": api_key,
-        "origin": "https://inhaus-marketing-api.web.app",
-        "referer": "https://inhaus-marketing-api.web.app/",
-    }
-    url = f"{DEFAULT_API_URL}/api/v1/meta-proxy"
-    account_edge = account_id if str(account_id).startswith("act_") else f"act_{account_id}"
-
-    def meta_get(path, params, timeout=30):
-        return requests.post(url, headers=headers, json={
+def _meta_proxy_get(client_id, account_id, api_key, path, params, timeout=30):
+    return requests.post(
+        f"{DEFAULT_API_URL}/api/v1/meta-proxy",
+        headers={
+            "accept": "*/*",
+            "content-type": "application/json",
+            "x-api-key": api_key,
+            "origin": "https://inhaus-marketing-api.web.app",
+            "referer": "https://inhaus-marketing-api.web.app/",
+        },
+        json={
             "client_id": client_id,
             "account_id": account_id,
             "path": path,
             "method": "GET",
             "params": params,
-        }, timeout=timeout)
+        },
+        timeout=timeout,
+    )
 
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_meta_aggregate_insights(
+    client_id,
+    account_id,
+    start_date,
+    end_date,
+    level,
+    api_filters,
+    api_key,
+):
+    account_edge = account_id if str(account_id).startswith("act_") else f"act_{account_id}"
+    fields = ["impressions", "reach"]
+    if level in ("campaign", "ad"):
+        fields += ["campaign_id", "campaign_name"]
+    if level == "ad":
+        fields += ["ad_id", "ad_name", "actions"]
+
+    params = {
+        "fields": ",".join(fields),
+        "level": level,
+        "time_range": json.dumps({
+            "since": start_date.isoformat(),
+            "until": end_date.isoformat(),
+        }),
+        "limit": 500,
+    }
+    if api_filters:
+        params["filtering"] = json.dumps([
+            {
+                "field": field,
+                "operator": "IN" if isinstance(value, list) else "EQUAL",
+                "value": value if isinstance(value, list) else [value],
+            }
+            for field, value in api_filters.items()
+        ])
+
+    rows = []
+    seen_cursors = set()
     try:
-        ads_res = meta_get(f"{account_edge}/ads", {
-            "fields": "id,name,campaign{id,name},creative{effective_object_story_id,object_story_spec}",
-            "limit": 200,
-        })
-        if ads_res.status_code != 200:
-            return [], f"No se pudieron cargar anuncios Meta ({ads_res.status_code})."
+        while True:
+            response = _meta_proxy_get(
+                client_id,
+                account_id,
+                api_key,
+                f"{account_edge}/insights",
+                params,
+            )
+            if response.status_code != 200:
+                return [], f"No se pudieron cargar insights Meta ({response.status_code})."
 
-        wanted = set(campaign_names)
-        ads_by_campaign = {}
-        for ad in ads_res.json().get("data", []):
-            campaign_name = (ad.get("campaign") or {}).get("name")
-            if campaign_name in wanted and campaign_name not in ads_by_campaign:
-                ads_by_campaign[campaign_name] = ad
-
-        previews = []
-        for campaign_name in campaign_names:
-            ad = ads_by_campaign.get(campaign_name)
-            if not ad:
-                continue
-            preview_res = meta_get(f"{ad['id']}/previews", {"ad_format": "DESKTOP_FEED_STANDARD"}, timeout=20)
-            if preview_res.status_code != 200:
-                continue
-            body = (preview_res.json().get("data") or [{}])[0].get("body")
-            creative = ad.get("creative") or {}
-            story = creative.get("object_story_spec") or {}
-            post_text = " ".join(str(part or "") for part in [
-                story.get("message"),
-                story.get("link_data", {}).get("message") if isinstance(story.get("link_data"), dict) else "",
-                story.get("video_data", {}).get("message") if isinstance(story.get("video_data"), dict) else "",
-            ])
-            post_id = creative.get("effective_object_story_id")
-            if post_id:
-                post_res = meta_get(post_id, {"fields": "message,story,caption,created_time"}, timeout=20)
-                if post_res.status_code == 200:
-                    post_json = post_res.json()
-                    post_text = " ".join([post_text, str(post_json.get("message") or ""), str(post_json.get("story") or ""), str(post_json.get("caption") or "")])
-            if body:
-                previews.append({
-                    "campaign_name": campaign_name,
-                    "campaign_label": clean_campaign_name(campaign_name),
-                    "ad_name": ad.get("name") or "",
-                    "body": body,
-                    "post_message": post_text,
+            payload = response.json()
+            for insight in payload.get("data", []):
+                actions = insight.get("actions") or []
+                rows.append({
+                    "campaign_id": insight.get("campaign_id") or "",
+                    "campaign_name": insight.get("campaign_name") or "",
+                    "ad_id": insight.get("ad_id") or "",
+                    "ad_name": insight.get("ad_name") or "",
+                    "impressions": extract_metric(insight, ["impressions"]),
+                    "reach": extract_metric(insight, ["reach"]),
+                    "lead": sum(
+                        extract_metric(action, ["value"])
+                        for action in actions
+                        if action.get("action_type") in {
+                            "lead",
+                            "onsite_conversion.lead_grouped",
+                            "offsite_conversion.fb_pixel_lead",
+                        }
+                    ),
+                    "post_engagement": sum(
+                        extract_metric(action, ["value"])
+                        for action in actions
+                        if action.get("action_type") == "post_engagement"
+                    ),
                 })
 
-        return previews, None if previews else "No se encontraron previews para las campañas del resultado."
+            after = (payload.get("paging") or {}).get("cursors", {}).get("after")
+            if not after or after in seen_cursors:
+                break
+            seen_cursors.add(after)
+            params["after"] = after
+        return rows, None
+    except Exception as e:
+        return [], f"Error cargando insights Meta: {e}"
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_meta_ad_previews(client_id, account_id, preview_targets, api_key):
+    targets = tuple(target for target in preview_targets if target[2])
+    if not targets:
+        return [], None
+
+    hydrated_ads = {}
+    previews = []
+    try:
+        for ranking_metric, campaign_name, ad_id, fallback_ad_name in targets:
+            if ad_id not in hydrated_ads:
+                ad_response = _meta_proxy_get(
+                    client_id,
+                    account_id,
+                    api_key,
+                    str(ad_id),
+                    {
+                        "fields": (
+                            "id,name,campaign{id,name},"
+                            "creative{effective_object_story_id,object_story_spec}"
+                        )
+                    },
+                )
+                if ad_response.status_code != 200:
+                    continue
+                ad = ad_response.json()
+
+                preview_response = _meta_proxy_get(
+                    client_id,
+                    account_id,
+                    api_key,
+                    f"{ad_id}/previews",
+                    {"ad_format": "DESKTOP_FEED_STANDARD"},
+                )
+                preview_data = (
+                    preview_response.json().get("data", [])
+                    if preview_response.status_code == 200
+                    else []
+                )
+                body = preview_data[0].get("body", "") if preview_data else ""
+
+                creative = ad.get("creative") or {}
+                story = creative.get("object_story_spec") or {}
+                post_text = " ".join(filter(None, (
+                    story.get("message"),
+                    (story.get("link_data") or {}).get("message"),
+                    (story.get("video_data") or {}).get("message"),
+                )))
+                post_id = creative.get("effective_object_story_id")
+                if post_id:
+                    post_response = _meta_proxy_get(
+                        client_id,
+                        account_id,
+                        api_key,
+                        post_id,
+                        {"fields": "message,story,caption,created_time"},
+                        timeout=20,
+                    )
+                    if post_response.status_code == 200:
+                        post = post_response.json()
+                        post_text = " ".join(filter(None, (
+                            post_text,
+                            post.get("message"),
+                            post.get("story"),
+                            post.get("caption"),
+                        )))
+
+                hydrated_ads[ad_id] = {
+                    "ad_name": ad.get("name") or fallback_ad_name or "",
+                    "body": body,
+                    "post_message": post_text,
+                }
+
+            hydrated = hydrated_ads[ad_id]
+            previews.append({
+                "ranking_metric": ranking_metric,
+                "campaign_name": campaign_name,
+                "campaign_label": clean_campaign_name(campaign_name),
+                "ad_id": ad_id,
+                **hydrated,
+            })
+
+        return previews, None if previews else "No se encontraron previews para los anuncios seleccionados."
     except Exception as e:
         return [], f"Error cargando previews Meta: {e}"
 
 
-# Process the API result list into a pandas dataframe
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_meta_filter_rows(client_id, account_id, api_key):
     headers = {

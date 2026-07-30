@@ -1,4 +1,5 @@
 import ast
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -7,6 +8,7 @@ import pandas as pd
 import requests
 from streamlit.testing.v1 import AppTest
 
+from dashboard import api as dashboard_api
 from dashboard.api import process_api_response
 from dashboard.auth import create_dashboard_token
 from dashboard import utils as dashboard_utils
@@ -81,6 +83,7 @@ def test_dashboard_hashtag_ranking_uses_returned_post_text():
     assert 'preview.get("post_message", "")' in SOURCE
     assert 'text_col = "caption" if "caption" in df_curr.columns else "campaign_name"' in SOURCE
     assert 're.findall(r"#[\\wáéíóúÁÉÍÓÚñÑ]+", text)' in SOURCE
+    assert 'for preview in {p["ad_id"]: p for p in previews}.values():' in SOURCE
     assert "No se encontraron hashtags" not in SOURCE
 
 
@@ -96,6 +99,105 @@ def test_campaign_previews_are_cleaned_but_reporting_keeps_full_names():
     assert '"campaign_label": clean_campaign_name(campaign_name)' in API_SOURCE
     assert '"base_campaign_name": "Campaña"' in SOURCE
     assert "campaign_name = html.escape(str(row.base_campaign_name))" in SOURCE
+
+
+def test_meta_aggregate_insights_preserves_reach_and_paginates_actions(monkeypatch):
+    responses = [
+        {
+            "data": [{
+                "campaign_name": "Campaign",
+                "ad_id": "ad-1",
+                "ad_name": "First",
+                "impressions": "100",
+                "reach": "80",
+                "actions": [
+                    {"action_type": "lead", "value": "5"},
+                    {"action_type": "post_engagement", "value": "7"},
+                ],
+            }],
+            "paging": {"cursors": {"after": "next-page"}},
+        },
+        {
+            "data": [{
+                "campaign_name": "Campaign",
+                "ad_id": "ad-2",
+                "ad_name": "Second",
+                "impressions": "50",
+                "reach": "45",
+                "actions": [],
+            }],
+        },
+    ]
+    calls = []
+
+    def fake_post(*args, **kwargs):
+        calls.append(kwargs["json"])
+        return SimpleNamespace(status_code=200, json=lambda: responses[len(calls) - 1])
+
+    monkeypatch.setattr(dashboard_api.requests, "post", fake_post)
+
+    rows, error = dashboard_api.fetch_meta_aggregate_insights(
+        "client_1",
+        "123",
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+        "ad",
+        {"campaign.id": ["campaign-1"]},
+        "api-key",
+    )
+
+    assert error is None
+    assert [row["ad_id"] for row in rows] == ["ad-1", "ad-2"]
+    assert rows[0]["reach"] == 80
+    assert rows[0]["lead"] == 5
+    assert rows[0]["post_engagement"] == 7
+    assert calls[0]["params"]["level"] == "ad"
+    assert "time_increment" not in calls[0]["params"]
+    assert "breakdowns" not in calls[0]["params"]
+    assert calls[1]["params"]["after"] == "next-page"
+
+
+def test_targeted_meta_ad_previews_use_requested_ad_id(monkeypatch):
+    def fake_post(*args, **kwargs):
+        path = kwargs["json"]["path"]
+        if path == "ad-2":
+            payload = {
+                "id": "ad-2",
+                "name": "Winning ad",
+                "campaign": {"name": "Campaign"},
+                "creative": {
+                    "effective_object_story_id": "post-2",
+                    "object_story_spec": {
+                        "message": "Story text",
+                        "link_data": {"message": "Creative text"},
+                    },
+                },
+            }
+        elif path == "ad-2/previews":
+            payload = {"data": [{"body": "<div>Winning preview</div>"}]}
+        else:
+            payload = {"message": "Published text"}
+        return SimpleNamespace(status_code=200, json=lambda: payload)
+
+    monkeypatch.setattr(dashboard_api.requests, "post", fake_post)
+
+    previews, error = dashboard_api.fetch_meta_ad_previews(
+        "client_1",
+        "123",
+        (("lead", "Campaign", "ad-2", "Winning ad"),),
+        "api-key",
+    )
+
+    assert error is None
+    assert previews == [{
+        "ranking_metric": "lead",
+        "campaign_name": "Campaign",
+        "campaign_label": dashboard_utils.clean_campaign_name("Campaign"),
+        "ad_id": "ad-2",
+        "ad_name": "Winning ad",
+        "body": "<div>Winning preview</div>",
+        "post_message": "Story text Creative text Published text",
+    }]
 
 
 def test_sidebar_actions_are_ordered_without_a_separator():
@@ -128,6 +230,87 @@ def test_meta_base_campaign_name_strips_publisher_platform_suffixes():
             f"{campaign_name}_unknown",
         )
     } == {campaign_name}
+
+
+def test_meta_campaigns_with_impressions_uses_positive_campaign_total():
+    frame = pd.DataFrame({
+        "campaign_name": [
+            "Delivered_facebook",
+            "Delivered_instagram",
+            "Empty_facebook",
+        ],
+        "impressions": [0, 12, 0],
+    })
+
+    assert dashboard_utils.meta_campaigns_with_impressions(frame) == {"Delivered"}
+
+
+def test_select_meta_ad_winners_uses_each_ranking_metric():
+    rows = [
+        {
+            "campaign_name": "Campaign",
+            "ad_id": "2",
+            "impressions": 100,
+            "lead": 9,
+            "reach": 20,
+            "post_engagement": 1,
+        },
+        {
+            "campaign_name": "Campaign",
+            "ad_id": "1",
+            "impressions": 200,
+            "lead": 2,
+            "reach": 80,
+            "post_engagement": 7,
+        },
+    ]
+    ranked = {
+        "lead": ["Campaign"],
+        "reach": ["Campaign"],
+        "post_engagement": ["Campaign"],
+    }
+
+    winners = dashboard_utils.select_meta_ad_winners(rows, ranked)
+
+    assert winners[("lead", "Campaign")]["ad_id"] == "2"
+    assert winners[("reach", "Campaign")]["ad_id"] == "1"
+    assert winners[("post_engagement", "Campaign")]["ad_id"] == "1"
+
+
+def test_delivered_meta_campaigns_filter_all_meta_views():
+    eligibility_source = SOURCE[
+        SOURCE.index("eligible_campaigns = meta_campaigns_with_impressions(df_curr)"):
+        SOURCE.index("# Inject JavaScript")
+    ]
+    assert "eligible_previous_campaigns = meta_campaigns_with_impressions(df_prev)" in eligibility_source
+    assert 'df_curr["campaign_name"].astype(str).apply(meta_base_campaign_name)' in eligibility_source
+    assert ".isin(eligible_campaigns)" in eligibility_source
+    assert "if not df_prev.empty:" in eligibility_source
+
+
+def test_aggregate_meta_reach_uses_entity_level_rows():
+    assert 'fetch_meta_aggregate_insights(' in SOURCE
+    assert '"account"' in SOURCE
+    assert '"campaign"' in SOURCE
+    assert '"ad"' in SOURCE
+    assert "total_reach_curr = current_account_insights[0][\"reach\"]" in SOURCE
+    assert "campaign_reach_by_name" in SOURCE
+    assert 'campaign_ranking_summary["reach"]' in SOURCE
+
+
+def test_lead_summary_cost_and_spend_render_together():
+    assert "lead_cost_per_result = total_spend_curr / curr_primary" in SOURCE
+    assert "Costo por resultado" in SOURCE
+    assert "Importe gastado" in SOURCE
+
+
+def test_metric_specific_preview_uses_ad_winners():
+    assert "select_meta_ad_winners(" in SOURCE
+    assert "fetch_meta_ad_previews(" in SOURCE
+    assert 'previews_by_campaign = {' in SOURCE
+    assert '(p["ranking_metric"], p["campaign_name"])' in SOURCE
+    assert "previews_by_campaign.get((metric, row.base_campaign_name))" in SOURCE
+    assert 'preview["body"] if preview and preview.get("body") else' in SOURCE
 
 
 def test_dashboard_filters_accept_multiple_adsets():
@@ -163,7 +346,8 @@ def test_ads_cards_show_real_leads_and_total_reach():
     assert 'standard_metrics = ["impressions", "clicks", "spend", "conversions", "lead", "reach", "post_engagement", "__results__", "cost_per_result"]' in SOURCE
     assert 'curr_primary = df_curr["lead"].sum()' in SOURCE
     assert 'primary_label = "Clientes Potenciales"' in SOURCE
-    assert 'get_kpi_card_html("Alcance Total", f"{total_reach_curr:,}"' in SOURCE
+    assert 'get_kpi_card_html("Alcance Total", reach_value' in SOURCE
+    assert 'total_reach_curr = current_account_insights[0]["reach"]' in SOURCE
     assert '"Costo por Conversión (CPA)"' not in SOURCE
 
 
@@ -230,7 +414,7 @@ def test_featured_campaigns_show_requested_meta_metrics():
     assert '"__results__"' in SOURCE
     featured_campaign_source = SOURCE[
         SOURCE.index("campaign_summary ="):
-        SOURCE.index("preview_names =")
+        SOURCE.index("ranking_specs =")
     ]
     for label in (
         "Tipo de resultado",
@@ -256,7 +440,8 @@ def test_featured_campaigns_show_requested_meta_metrics():
 def test_meta_campaign_cards_render_three_top_three_rankings():
     assert "ranking_specs = (" in SOURCE
     ranking_source = SOURCE[
-        SOURCE.index("ranking_specs ="):SOURCE.index("for preview in previews:")
+        SOURCE.index("ranking_specs ="):
+        SOURCE.index('for preview in {p["ad_id"]: p for p in previews}.values():')
     ]
 
     for title, metric, label in (

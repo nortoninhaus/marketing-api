@@ -41,6 +41,37 @@ def meta_base_campaign_name(value):
     return re.sub(r"_(facebook|instagram|audience_network|messenger|whatsapp|unknown|threads)$", "", str(value), flags=re.I)
 
 
+def meta_campaigns_with_impressions(frame):
+    if frame.empty or not {"campaign_name", "impressions"}.issubset(frame.columns):
+        return set()
+
+    totals = pd.to_numeric(frame["impressions"], errors="coerce").fillna(0).groupby(
+        frame["campaign_name"].map(meta_base_campaign_name)
+    ).sum()
+    return set(totals[totals > 0].index)
+
+
+def select_meta_ad_winners(ad_rows, ranked_campaigns_by_metric):
+    winners = {}
+    for metric, campaign_names in ranked_campaigns_by_metric.items():
+        for campaign_name in campaign_names:
+            candidates = [
+                row
+                for row in ad_rows
+                if meta_base_campaign_name(row.get("campaign_name", "")) == campaign_name
+            ]
+            if candidates:
+                winners[(metric, campaign_name)] = min(
+                    candidates,
+                    key=lambda row: (
+                        -extract_metric(row, [metric]),
+                        -extract_metric(row, ["impressions"]),
+                        str(row.get("ad_id") or ""),
+                    ),
+                )
+    return winners
+
+
 def dashboard_filter_options(df, column):
     if df.empty or column not in df.columns:
         return ["Todos"]
