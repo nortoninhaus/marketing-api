@@ -304,7 +304,8 @@ div[data-testid="stElementContainer"]:has([data-testid="stPopover"]) > div,
     display: inline-flex !important;
 }
 
-[data-testid="stPopoverButton"] button {
+[data-testid="stPopoverButton"] button,
+[data-testid="stDownloadButton"] button {
     background-color: #02569e !important;
     color: #FFFFFF !important;
     border: none !important;
@@ -319,6 +320,15 @@ div[data-testid="stElementContainer"]:has([data-testid="stPopover"]) > div,
     align-items: center !important;
     gap: 6px !important;
     box-shadow: 0 2px 6px rgba(2, 86, 158, 0.3) !important;
+}
+[data-testid="stPopoverButton"] button *,
+[data-testid="stDownloadButton"] button * {
+    color: #FFFFFF !important;
+    fill: #FFFFFF !important;
+    stroke: #FFFFFF !important;
+}
+[data-testid="stPopoverBody"] {
+    background-color: #FFFFFF !important;
 }
 
 /* Sidebar Wrapper */
@@ -770,7 +780,7 @@ if theme_mode == "Claro":
     [data-baseweb="select"] [data-baseweb="placeholder"],
     [data-baseweb="select"] input::placeholder,
     [data-baseweb="select"] [role="combobox"] * {
-        color: #475569 !important;
+        color: #0F172A !important;
     }
     
     /* Ensure inner selectbox containers don't create opaque white overlays over tags */
@@ -1475,7 +1485,7 @@ else:
             if isinstance(current_adset_filter, str):
                 current_adset_filter = [] if current_adset_filter == "Todos" else [current_adset_filter]
             st.session_state["meta_adset_filter"] = [value for value in current_adset_filter if value in adset_options]
-            adset_filter = st.multiselect("Conjuntos de anuncios", adset_options, key="meta_adset_filter")
+            adset_filter = st.multiselect("Conjuntos de anuncios", adset_options, placeholder="Todos", key="meta_adset_filter")
 
         filtered_ad_rows = filtered_meta_rows
         if adset_filter and not filtered_ad_rows.empty:
@@ -1652,7 +1662,7 @@ with download_slot.container():
     with st.popover("Descargar", icon=":material/download:"):
         components.html(f"""
         <style>
-        body {{ margin: 0; font-family: Manrope, Arial, sans-serif; }}
+        html, body {{ margin: 0; font-family: Manrope, Arial, sans-serif; background: #FFFFFF; }}
         button {{
             width: 100%;
             padding: 0.55rem 0.75rem;

@@ -277,8 +277,16 @@ def test_sidebar_actions_are_ordered_without_a_separator():
 
 def test_meta_filters_use_unique_campaigns_and_multiple_adsets():
     assert "campaign_options = sorted({" in SOURCE
-    assert 'st.multiselect("Conjuntos de anuncios", adset_options, key="meta_adset_filter")' in SOURCE
+    assert (
+        'st.multiselect("Conjuntos de anuncios", adset_options, '
+        'placeholder="Todos", key="meta_adset_filter")'
+    ) in SOURCE
     assert 'filtered_meta_rows["adset_name"].isin(adset_filter)' in SOURCE
+    placeholder_style = SOURCE[
+        SOURCE.index("/* Fix selectbox placeholders"):
+        SOURCE.index("/* Ensure inner selectbox containers")
+    ]
+    assert "color: #0F172A !important;" in placeholder_style
 
 
 def test_campaign_filters_trigger_scoped_meta_detail_fetch():

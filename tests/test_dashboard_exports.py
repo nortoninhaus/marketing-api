@@ -37,6 +37,12 @@ def test_dashboard_offers_grouped_automatic_pdf_and_csv_downloads():
     assert "Descargar CSV" in SOURCE
     assert 'csv_export_frame["frame"].to_csv(index=False).encode("utf-8-sig")' in SOURCE
     assert 'on_click="ignore"' in SOURCE
+    assert '[data-testid="stPopoverBody"] {' in SOURCE
+    assert '[data-testid="stDownloadButton"] button *' in SOURCE
+    assert 'html, body {{' in SOURCE
+    assert 'background: #FFFFFF;' in SOURCE[
+        SOURCE.index('with st.popover("Descargar"'):SOURCE.index("# HERO RENDER")
+    ]
 
 
 def test_meta_campaign_csv_uses_the_displayed_table_data():
