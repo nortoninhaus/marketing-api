@@ -304,7 +304,7 @@ div[data-testid="stElementContainer"]:has([data-testid="stPopover"]) > div,
     display: inline-flex !important;
 }
 
-[data-testid="stPopoverButton"] button,
+[data-testid="stPopoverButton"],
 [data-testid="stDownloadButton"] button {
     background-color: #02569e !important;
     color: #FFFFFF !important;
@@ -321,13 +321,16 @@ div[data-testid="stElementContainer"]:has([data-testid="stPopover"]) > div,
     gap: 6px !important;
     box-shadow: 0 2px 6px rgba(2, 86, 158, 0.3) !important;
 }
-[data-testid="stPopoverButton"] button *,
+[data-testid="stPopoverButton"] *,
 [data-testid="stDownloadButton"] button * {
     color: #FFFFFF !important;
     fill: #FFFFFF !important;
     stroke: #FFFFFF !important;
 }
 [data-testid="stPopoverBody"] {
+    background-color: #FFFFFF !important;
+}
+[data-testid="stPopoverBody"] > div {
     background-color: #FFFFFF !important;
 }
 
@@ -786,6 +789,7 @@ if theme_mode == "Claro":
     /* Ensure inner selectbox containers don't create opaque white overlays over tags */
     [data-baseweb="select"] div:not([data-baseweb="tag"]):not([data-baseweb="tag"] *) {
         background-color: transparent !important;
+        color: #0F172A !important;
     }
     
     /* Ensure text inside selectbox container is dark, except multiselect tags */

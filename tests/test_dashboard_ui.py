@@ -287,6 +287,11 @@ def test_meta_filters_use_unique_campaigns_and_multiple_adsets():
         SOURCE.index("/* Ensure inner selectbox containers")
     ]
     assert "color: #0F172A !important;" in placeholder_style
+    inner_select_style = SOURCE[
+        SOURCE.index("/* Ensure inner selectbox containers"):
+        SOURCE.index("/* Ensure text inside selectbox container")
+    ]
+    assert "color: #0F172A !important;" in inner_select_style
 
 
 def test_campaign_filters_trigger_scoped_meta_detail_fetch():
