@@ -513,6 +513,31 @@ def test_meta_summary_enrichment_uses_detail_id_for_budget_metadata(
         assert tuple(result.loc[0, ["budget_display", "budget_total"]]) == expected_budget
 
 
+def test_meta_summary_enrichment_fallbacks_to_spend_divided_by_results():
+    frame = pd.DataFrame({
+        "base_campaign_name": ["Campaign A"],
+        "adset_name": ["Adset 1"],
+        "results": [617.0],
+        "spend": [1851.0],
+    })
+    aggregate_rows = [
+        {
+            "campaign_name": "Campaign A_facebook",
+            "adset_name": "Adset 1",
+            "cost_per_result": None,
+        }
+    ]
+    filter_rows = []
+
+    result = dashboard_utils.enrich_meta_campaign_summary(
+        frame, aggregate_rows, filter_rows, "adset"
+    )
+
+    assert result.loc[0, "cost_per_result"] == 3.0
+    total_row = dashboard_utils.build_meta_campaign_total_row(result)
+    assert total_row["Costo por resultado"] == "$3.00"
+
+
 def test_meta_campaigns_with_impressions_uses_positive_campaign_total():
     frame = pd.DataFrame({
         "campaign_name": [

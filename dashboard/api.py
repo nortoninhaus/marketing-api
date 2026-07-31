@@ -146,13 +146,24 @@ def _meta_proxy_get(client_id, account_id, api_key, path, params, timeout=30):
 
 def _meta_indicator_value(entries, indicator):
     for entry in entries or []:
-        if str(entry.get("indicator") or "") != indicator:
+        if indicator and str(entry.get("indicator") or "") != indicator:
             continue
         values = entry.get("values") or []
-        try:
-            return float(values[0]["value"])
-        except (IndexError, KeyError, TypeError, ValueError):
-            return None
+        if values and isinstance(values, list) and len(values) > 0:
+            try:
+                first = values[0]
+                val = first.get("value") if isinstance(first, dict) else first
+                if val is not None:
+                    return float(val)
+            except (KeyError, TypeError, ValueError):
+                pass
+        if "value" in entry and entry["value"] is not None:
+            try:
+                return float(entry["value"])
+            except (TypeError, ValueError):
+                pass
+    if indicator and entries:
+        return _meta_indicator_value(entries, "")
     return None
 
 
@@ -436,6 +447,8 @@ def process_api_response(api_data, platform_key, client_id, user_id):
         post_engagement = extract_metric(metrics, ["post_engagement"])
         results = extract_metric(metrics, ["__results__", "results"])
         cost_per_result = extract_metric(metrics, ["cost_per_result"])
+        if results > 0 and not cost_per_result:
+            cost_per_result = spend / results
         result_indicator = str(metrics.get("result_indicator") or "")
 
         sessions = extract_metric(metrics, ["sessions"])

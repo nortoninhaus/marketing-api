@@ -207,11 +207,16 @@ def enrich_meta_campaign_summary(frame, aggregate_rows, filter_rows, level):
         if value in known_campaigns:
             return value
         matches = sorted(
-            (name for name in known_campaigns if value.startswith(f"{name}_")),
+            (
+                name for name in known_campaigns
+                if value.startswith(f"{name}_")
+                or name.startswith(f"{value}_")
+                or meta_base_campaign_name(name) == value
+            ),
             key=len,
             reverse=True,
         )
-        if not matches or len(matches) > 1 and len(matches[0]) == len(matches[1]):
+        if not matches or (len(matches) > 1 and len(matches[0]) == len(matches[1])):
             return None
         return matches[0]
 
@@ -258,7 +263,7 @@ def enrich_meta_campaign_summary(frame, aggregate_rows, filter_rows, level):
     keys = [record_key(row, True) for _, row in result.iterrows()]
     costs = []
     budget_values = []
-    for key in keys:
+    for idx, key in enumerate(keys):
         native_matches = native_by_key.get(key, []) if key is not None else []
         budget_matches = budget_by_key.get(key, []) if key is not None else []
         native_ids = {identity for identity, _ in native_matches if identity}
@@ -266,24 +271,32 @@ def enrich_meta_campaign_summary(frame, aggregate_rows, filter_rows, level):
         ambiguous = len(native_ids) > 1 or (
             not native_ids and len(budget_ids) > 1
         )
-        if ambiguous:
-            costs.append(None)
-            budget_values.append(("N/D", 0.0))
-            continue
+        cost_val = None
+        if not ambiguous:
+            stable_id = next(iter(native_ids or budget_ids), None)
+            cost_val = source_value(
+                native_matches,
+                native_by_id,
+                stable_id,
+                None,
+            )
 
-        stable_id = next(iter(native_ids or budget_ids), None)
-        costs.append(source_value(
-            native_matches,
-            native_by_id,
-            stable_id,
-            None,
-        ))
-        budget_values.append(source_value(
-            budget_matches,
-            budget_by_id,
-            stable_id,
-            ("N/D", 0.0),
-        ))
+        if cost_val is None or (isinstance(cost_val, (int, float)) and pd.isna(cost_val)):
+            row_data = result.iloc[idx]
+            row_results = float(row_data.get("results") or 0)
+            row_spend = float(row_data.get("spend") or 0)
+            if row_results > 0:
+                cost_val = row_spend / row_results
+
+        costs.append(cost_val)
+        budget_values.append(
+            source_value(
+                budget_matches,
+                budget_by_id,
+                next(iter(native_ids or budget_ids), None) if not ambiguous else None,
+                ("N/D", 0.0),
+            ) if not ambiguous else ("N/D", 0.0)
+        )
 
     result["cost_per_result"] = costs
     result["budget_display"] = [value[0] for value in budget_values]
@@ -292,12 +305,14 @@ def enrich_meta_campaign_summary(frame, aggregate_rows, filter_rows, level):
 
 
 def build_meta_campaign_total_row(frame, identity_labels=("Campaña",)):
-    total_results = frame["results"].sum()
-    total_spend = frame["spend"].sum()
-    total_impressions = frame["impressions"].sum()
-    total_clicks = frame["clicks"].sum()
+    total_results = frame["results"].sum() if "results" in frame.columns else 0.0
+    total_spend = frame["spend"].sum() if "spend" in frame.columns else 0.0
+    total_impressions = frame["impressions"].sum() if "impressions" in frame.columns else 0.0
+    total_clicks = frame["clicks"].sum() if "clicks" in frame.columns else 0.0
     cost_values = pd.to_numeric(frame["cost_per_result"], errors="coerce")
     cost_per_result = cost_values.mean()
+    if pd.isna(cost_per_result) and total_results > 0:
+        cost_per_result = total_spend / total_results
     budget_total = pd.to_numeric(
         frame.get("budget_total", pd.Series(dtype=float)), errors="coerce"
     ).fillna(0).sum()

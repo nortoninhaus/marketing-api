@@ -134,14 +134,118 @@ footer {visibility: hidden !important;}
 
 /* Clean up header background and shadow so it's transparent, but keep container
    intact so the sidebar toggle/hamburger button is visible in the top-left */
-[data-testid="stHeader"] {
-background-color: transparent !important;
-box-shadow: none !important;
+/* When sidebar is expanded, hide stHeader completely so it never creates a ghost/double button */
+.stApp:has([data-testid="stSidebar"][aria-expanded="true"]) [data-testid="stHeader"] {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
 }
-[data-testid="stHeader"] button, [data-testid="stHeader"] svg {
-color: #EAF0F7 !important;
-fill: #EAF0F7 !important;
-stroke: #EAF0F7 !important;
+
+/* Reset stSidebarCollapseButton span container to prevent double borders */
+[data-testid="stSidebarCollapseButton"],
+span[data-testid="stSidebarCollapseButton"] {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+/* Sidebar collapse/expand toggle button styling & position */
+[data-testid="stHeader"] {
+    background-color: transparent !important;
+    box-shadow: none !important;
+    height: 0px !important;
+    min-height: 0px !important;
+    overflow: visible !important;
+    position: absolute !important;
+    top: 21px !important;
+    left: 16px !important;
+    z-index: 9999 !important;
+}
+
+[data-testid="stHeader"] button,
+[data-testid="stHeader"] [data-testid="stSidebarCollapseButton"] button {
+    background: rgba(2, 86, 158, 0.12) !important;
+    border: 1px solid rgba(2, 86, 158, 0.3) !important;
+    border-radius: 8px !important;
+    color: #02569e !important;
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    min-height: 32px !important;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+}
+
+[data-testid="stHeader"] button:hover,
+[data-testid="stHeader"] [data-testid="stSidebarCollapseButton"] button:hover {
+    background: #02569e !important;
+    color: #FFFFFF !important;
+    border-color: #02569e !important;
+}
+
+[data-testid="stHeader"] button svg,
+[data-testid="stHeader"] [data-testid="stSidebarCollapseButton"] button svg {
+    color: currentColor !important;
+    fill: currentColor !important;
+    stroke: currentColor !important;
+    width: 18px !important;
+    height: 18px !important;
+}
+
+/* Sidebar close button inside sidebar header */
+[data-testid="stSidebarHeader"] {
+    min-height: 0px !important;
+    height: auto !important;
+    padding: 12px 16px 0px 16px !important;
+    display: flex !important;
+    justify-content: flex-end !important;
+    align-items: center !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] button,
+[data-testid="stSidebarHeader"] [data-testid="stSidebarCollapseButton"] button,
+[data-testid="stSidebarHeader"] button {
+    position: static !important;
+    top: auto !important;
+    left: auto !important;
+    margin: 0 !important;
+    background: rgba(255, 255, 255, 0.06) !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    border-radius: 8px !important;
+    color: #8A97A8 !important;
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    min-height: 32px !important;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] button:hover,
+[data-testid="stSidebarHeader"] [data-testid="stSidebarCollapseButton"] button:hover,
+[data-testid="stSidebarHeader"] button:hover {
+    background: rgba(255, 255, 255, 0.14) !important;
+    color: #FFFFFF !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] button svg,
+[data-testid="stSidebarHeader"] button svg {
+    color: currentColor !important;
+    fill: currentColor !important;
+    stroke: currentColor !important;
+    width: 18px !important;
+    height: 18px !important;
 }
 
 /* Hide the 3-dots Menu button specifically */
@@ -155,9 +259,66 @@ stroke: #EAF0F7 !important;
 }
 
 /* Remove default Streamlit top padding and container margins */
-.block-container {
-    padding-top: 1.5rem !important;
+.block-container,
+[data-testid="stMainBlockContainer"] {
+    padding-top: 0.5rem !important;
     padding-bottom: 2rem !important;
+    position: relative !important;
+}
+
+/* Collapse empty download slot container completely in block flow */
+.block-container > div:first-child:has(> div:empty),
+.block-container > div[data-testid="stElementContainer"]:has(> div:empty),
+[data-testid="stMainBlockContainer"] > div:first-child:has(> div:empty) {
+    display: none !important;
+    height: 0px !important;
+    margin: 0px !important;
+    padding: 0px !important;
+}
+
+/* Position download slot inline inside header next to API Directa */
+.block-container > div[data-testid="stElementContainer"]:has([data-testid="stPopover"]),
+[data-testid="stMainBlockContainer"] > div[data-testid="stElementContainer"]:has([data-testid="stPopover"]),
+div[data-testid="stElementContainer"]:has([data-testid="stPopover"]),
+div[data-testid="stElementContainer"]:has([data-testid="stPopoverButton"]) {
+    position: absolute !important;
+    left: auto !important;
+    right: 140px !important;
+    top: 22px !important;
+    z-index: 9999 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: auto !important;
+    height: 0 !important;
+    display: flex !important;
+    justify-content: flex-end !important;
+}
+
+div[data-testid="stElementContainer"]:has([data-testid="stPopover"]) > div,
+[data-testid="stPopover"],
+[data-testid="stPopoverButton"] {
+    position: relative !important;
+    left: auto !important;
+    right: auto !important;
+    width: auto !important;
+    display: inline-flex !important;
+}
+
+[data-testid="stPopoverButton"] button {
+    background-color: #02569e !important;
+    color: #FFFFFF !important;
+    border: none !important;
+    border-radius: 6px !important;
+    padding: 4px 12px !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    height: 28px !important;
+    min-height: 28px !important;
+    line-height: 1 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    box-shadow: 0 2px 6px rgba(2, 86, 158, 0.3) !important;
 }
 
 /* Sidebar Wrapper */
@@ -287,11 +448,21 @@ h1, h2, h3, .sipy-word {
     padding: 16px 0px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     margin-bottom: 30px;
+    position: relative;
+}
+.custom-header-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    min-width: fit-content !important;
 }
 .agency {
     display: flex;
     align-items: center;
     gap: 12px;
+    margin-left: 44px;
 }
 .agency img {
 height: 26px;
@@ -315,19 +486,22 @@ width: auto;
     font-size: 12px;
     color: #8A97A8;
     font-weight: 600;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    min-width: fit-content !important;
 }
 .stamp .live {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #1AE08C;
-    box-shadow: 0 0 0 0 rgba(26,224,140,0.6);
+    background: #02569e;
+    box-shadow: 0 0 0 0 rgba(2,86,158,0.6);
     animation: pulse 2s infinite;
 }
 @keyframes pulse {
-0% { box-shadow: 0 0 0 0 rgba(26,224,140,0.5); }
-70% { box-shadow: 0 0 0 8px rgba(26,224,140,0); }
-100% { box-shadow: 0 0 0 0 rgba(26,224,140,0); }
+0% { box-shadow: 0 0 0 0 rgba(2,86,158,0.5); }
+70% { box-shadow: 0 0 0 8px rgba(2,86,158,0); }
+100% { box-shadow: 0 0 0 0 rgba(2,86,158,0); }
 }
 
 .loading-overlay {
@@ -345,7 +519,7 @@ justify-content: center;
 }
 .loading-text {
 font-family: 'Sora', sans-serif;
-color: #1AE08C;
+color: #02569e;
 font-size: 24px;
 margin-top: 20px;
 font-weight: 800;
@@ -355,7 +529,7 @@ border: 6px solid rgba(255, 255, 255, 0.1);
 width: 70px;
 height: 70px;
 border-radius: 50%;
-border-left-color: #1AE08C;
+border-left-color: #02569e;
 animation: spin 1s linear infinite;
 }
 @keyframes spin {
@@ -369,7 +543,7 @@ animation: spin 1s linear infinite;
     font-weight: 800;
     letter-spacing: .2em;
     text-transform: uppercase;
-    color: #1AE08C;
+    color: #02569e;
 }
 .lede {
     color: #8A97A8;
@@ -403,7 +577,7 @@ animation: spin 1s linear infinite;
     line-height: .9;
     letter-spacing: -.04em;
     margin-top: 6px;
-    color: #1AE08C;
+    color: #02569e;
 }
 
 /* KPI Grid Styling */
@@ -464,8 +638,8 @@ animation: spin 1s linear infinite;
     width: fit-content;
 }
 .delta.up {
-    background: rgba(26,224,140,0.14);
-    color: #1AE08C;
+    background: rgba(2,86,158,0.14);
+    color: #02569e;
 }
 .delta.down {
 background: rgba(255,107,107,0.14);
@@ -498,6 +672,43 @@ color: #8A97A8;
 font-weight: 800;
 }
 
+/* Multiselect tag styling */
+[data-baseweb="tag"],
+[data-baseweb="select"] [data-baseweb="tag"] {
+    background-color: #02569e !important;
+    border-radius: 6px !important;
+    max-width: 100% !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    padding: 2px 8px !important;
+    box-sizing: border-box !important;
+}
+[data-baseweb="tag"] *,
+[data-baseweb="select"] [data-baseweb="tag"] *,
+[data-baseweb="select"] [data-baseweb="tag"] span,
+[data-baseweb="select"] [data-baseweb="tag"] div,
+[data-baseweb="select"] [data-baseweb="tag"] svg,
+[data-baseweb="select"] [data-baseweb="tag"] path {
+    color: #FFFFFF !important;
+    fill: #FFFFFF !important;
+    stroke: #FFFFFF !important;
+}
+[data-baseweb="tag"] > span,
+[data-baseweb="tag"] [title],
+[data-baseweb="select"] [data-baseweb="tag"] span {
+    text-align: left !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    max-width: 180px !important;
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
+    margin: 0 !important;
+    padding: 0 4px 0 2px !important;
+    display: inline-block !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -511,30 +722,111 @@ if theme_mode == "Claro":
     [data-testid="stSidebar"] img {
         filter: invert(1) brightness(0.25) !important;
     }
+
+    /* Fix sidebar close button (<<) in Light Mode */
+    [data-testid="stSidebarHeader"] button,
+    [data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] button {
+        background: #F1F5F9 !important;
+        border: 1px solid rgba(15,23,42,0.15) !important;
+        color: #0F172A !important;
+    }
+    [data-testid="stSidebarHeader"] button svg,
+    [data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] button svg {
+        fill: #0F172A !important;
+        stroke: #0F172A !important;
+        color: #0F172A !important;
+    }
+    [data-testid="stSidebarHeader"] button:hover,
+    [data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] button:hover {
+        background: #02569e !important;
+        color: #FFFFFF !important;
+        border-color: #02569e !important;
+    }
+    [data-testid="stSidebarHeader"] button:hover svg,
+    [data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] button:hover svg {
+        fill: #FFFFFF !important;
+        stroke: #FFFFFF !important;
+        color: #FFFFFF !important;
+    }
     
     /* Globally override input, textarea, and select box colors in light mode */
     input,
     textarea,
+    [data-baseweb="input"],
     [data-baseweb="input"] > div,
-    [data-baseweb="select"] > div {
+    [data-baseweb="select"],
+    [data-baseweb="select"] > div:first-child,
+    [data-testid="stDateInput"] > div {
         background: #FFFFFF !important;
         color: #0F172A !important;
-        border-color: rgba(15,23,42,0.14) !important;
+        border-color: rgba(15,23,42,0.16) !important;
     }
     input::placeholder,
-    textarea::placeholder { color: #64748B !important; }
+    textarea::placeholder { color: #475569 !important; }
+
+    /* Fix selectbox placeholders and value containers in Light Mode */
+    [data-baseweb="select"] [data-baseweb="value-container"] div:not([data-baseweb="tag"]):not([data-baseweb="tag"] *),
+    [data-baseweb="select"] [data-baseweb="value-container"] span:not([data-baseweb="tag"]):not([data-baseweb="tag"] *),
+    [data-baseweb="select"] [data-baseweb="placeholder"],
+    [data-baseweb="select"] input::placeholder,
+    [data-baseweb="select"] [role="combobox"] * {
+        color: #475569 !important;
+    }
     
-    /* Ensure text inside dropdowns / selectboxes is dark */
-    [data-baseweb="select"] span,
-    [data-baseweb="select"] div,
+    /* Ensure inner selectbox containers don't create opaque white overlays over tags */
+    [data-baseweb="select"] div:not([data-baseweb="tag"]):not([data-baseweb="tag"] *) {
+        background-color: transparent !important;
+    }
+    
+    /* Ensure text inside selectbox container is dark, except multiselect tags */
+    [data-baseweb="select"] span:not([data-baseweb="tag"]):not([data-baseweb="tag"] *),
     [data-baseweb="select"] input {
         color: #0F172A !important;
     }
-    [data-baseweb="tag"] {
-        background: #10B981 !important;
+    [data-baseweb="select"] svg:not([data-baseweb="tag"] *):not([data-baseweb="tag"]) {
+        fill: #0F172A !important;
     }
-    [data-baseweb="tag"] * {
+    
+    /* Multiselect tags in light mode */
+    [data-baseweb="tag"],
+    [data-baseweb="select"] [data-baseweb="tag"],
+    [data-baseweb="select"] span[data-baseweb="tag"] {
+        background: #02569e !important;
+        background-color: #02569e !important;
+        border-radius: 6px !important;
+        max-width: 100% !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        padding: 2px 8px !important;
+        margin: 2px 4px 2px 0 !important;
+        box-sizing: border-box !important;
+        position: relative !important;
+        z-index: 2 !important;
+    }
+    [data-baseweb="tag"] *,
+    [data-baseweb="select"] [data-baseweb="tag"] *,
+    [data-baseweb="select"] [data-baseweb="tag"] span,
+    [data-baseweb="select"] [data-baseweb="tag"] div,
+    [data-baseweb="select"] [data-baseweb="tag"] svg,
+    [data-baseweb="select"] [data-baseweb="tag"] path {
         color: #FFFFFF !important;
+        fill: #FFFFFF !important;
+        stroke: #FFFFFF !important;
+    }
+    [data-baseweb="tag"] > span,
+    [data-baseweb="tag"] [title],
+    [data-baseweb="select"] [data-baseweb="tag"] span {
+        text-align: left !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        max-width: 180px !important;
+        min-width: 0 !important;
+        flex: 1 1 auto !important;
+        margin: 0 !important;
+        padding: 0 4px 0 2px !important;
+        display: inline-block !important;
     }
     
     /* Dropdown popover menu in light mode */
@@ -552,10 +844,71 @@ if theme_mode == "Claro":
     [data-baseweb="menu"] [role="option"]:hover,
     [data-baseweb="menu"] [role="option"][aria-selected="true"] {
         background-color: #F1F5F9 !important;
-        color: #0F172A !important;
+        color: #02569e !important;
     }
     
+    /* Expander / Accordion styling in Light Mode */
+    [data-testid="stExpander"],
+    details,
+    [data-baseweb="accordion"],
+    div[data-testid="stExpanderDetails"] {
+        background-color: #FFFFFF !important;
+        border: 1px solid rgba(15,23,42,0.12) !important;
+        border-radius: 10px !important;
+        color: #0F172A !important;
+    }
+    summary,
+    details summary,
+    [data-testid="stExpander"] summary {
+        background-color: #F8F9FC !important;
+        color: #0F172A !important;
+        border-radius: 10px !important;
+    }
+    summary *,
+    details summary *,
+    [data-testid="stExpander"] summary * {
+        color: #0F172A !important;
+        fill: #0F172A !important;
+        stroke: #0F172A !important;
+    }
+    
+    /* Buttons in Light Mode (Consultar API, submit buttons, form buttons) */
+    .stButton > button,
+    [data-testid="stFormSubmitButton"] > button,
+    button[kind="primary"],
+    button[kind="secondary"] {
+        background-color: #02569e !important;
+        color: #FFFFFF !important;
+        border: 1px solid #02569e !important;
+        border-radius: 10px !important;
+        font-weight: 700 !important;
+    }
+    .stButton > button *,
+    [data-testid="stFormSubmitButton"] > button * {
+        color: #FFFFFF !important;
+        fill: #FFFFFF !important;
+    }
+    .stButton > button:hover,
+    [data-testid="stFormSubmitButton"] > button:hover {
+        background-color: #01437d !important;
+        border-color: #01437d !important;
+        color: #FFFFFF !important;
+    }
+
+    /* Checkbox labels and icons in Light Mode */
+    [data-testid="stCheckbox"] label,
+    [data-testid="stCheckbox"] span,
+    [data-testid="stCheckbox"] p {
+        color: #0F172A !important;
+    }
+    [data-testid="stCheckbox"] input:checked + div {
+        background-color: #02569e !important;
+        border-color: #02569e !important;
+    }
+
     /* Sidebar collapse button and all header/sidebar icon SVGs */
+    [data-testid="stExpandSidebarButton"],
+    [data-testid="stExpandSidebarButton"] *,
     button[aria-label="Close sidebar"] svg,
     button[aria-label="Open sidebar"] svg,
     [data-testid="stSidebarCollapseButton"] svg,
@@ -584,21 +937,6 @@ if theme_mode == "Claro":
         fill: #FFFFFF !important;
         stroke: #FFFFFF !important;
     }
-    [data-testid="stExpandSidebarButton"],
-    [data-testid="stExpandSidebarButton"] *,
-    button[aria-label="Close sidebar"],
-    button[aria-label="Open sidebar"],
-    [data-testid="stSidebarCollapseButton"] button,
-    [data-testid="stSidebarHeader"] button,
-    button[title="Close sidebar"],
-    .stSidebarCollapseButton button,
-    [data-testid="stSidebar"] button,
-    [data-testid="stSidebar"] svg {
-        color: #0F172A !important;
-        fill: #0F172A !important;
-        stroke: #0F172A !important;
-        opacity: 1 !important;
-    }
     
     /* Keep tooltip content readable (white text on dark background) */
     div[data-testid="stTooltipContent"] *,
@@ -614,13 +952,13 @@ if theme_mode == "Claro":
     .agency .div-bar { background: rgba(15,23,42,0.12); }
     .agency .who, .stamp, .lede, .kpi .lab, .hero-card .lab { color: #64748B; }
     .loading-overlay { background-color: rgba(248,249,252,0.95); }
-    .spinner { border-color: rgba(15,23,42,0.08); border-left-color: #059669; }
-    .loading-text, .eyebrow, .hero-card .big { color: #059669; }
+    .spinner { border-color: rgba(15,23,42,0.08); border-left-color: #02569e; }
+    .loading-text, .eyebrow, .hero-card .big { color: #02569e; }
     .hero-card { background: linear-gradient(165deg, #FFFFFF, #F1F5F9); border-color: rgba(15,23,42,0.08); color: #1E293B; box-shadow: 0 4px 15px rgba(15,23,42,0.04); }
     .kpi, .stTable { background: #FFFFFF !important; border-color: rgba(15,23,42,0.08) !important; color: #1E293B; box-shadow: 0 4px 12px rgba(15,23,42,0.03); }
     .kpi .val { color: #0F172A; }
     .kpi .sub { color: #94A3B8; }
-    .delta.up { background: rgba(5,150,105,0.1); color: #059669; }
+    .delta.up { background: rgba(2,86,158,0.1); color: #02569e; }
     .delta.down { background: rgba(220,38,38,0.1); color: #DC2626; }
     .stApp label, .stApp p, [data-testid="stWidgetLabel"], [data-testid="stMarkdownContainer"] { color: #0F172A; }
     [data-testid="stDataFrame"] { background: #FFFFFF !important; color: #0F172A !important; }
@@ -632,9 +970,11 @@ if theme_mode == "Claro":
     .inhaus-logout-btn {
         color: #FF4B4B !important;
         background-color: transparent !important;
+        border-color: rgba(255, 75, 75, 0.4) !important;
     }
     .inhaus-logout-btn:hover {
         background-color: rgba(255, 75, 75, 0.1) !important;
+        border-color: #FF4B4B !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -929,7 +1269,9 @@ st.markdown(f"""
         <span class="div-bar"></span>
         <span class="who">Dashboard de Pauta &middot; Conexión de API</span>
     </div>
-    <span class="stamp"><span class="live"></span> API Directa</span>
+    <div class="custom-header-right">
+        <span class="stamp"><span class="live"></span> API Directa</span>
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1097,7 +1439,11 @@ else:
     applied_adset_filter = []
     applied_ad_filter = "Todos"
     if platform_key == "meta_ads":
-        filter_rows, filter_error = fetch_meta_filter_rows(client_id, account_id, api_key)
+        st.session_state.setdefault("meta_filter_rows_cache", {})
+        filter_cache_key = (client_id, account_id, api_key)
+        if force_query_fetch or filter_cache_key not in st.session_state["meta_filter_rows_cache"]:
+            st.session_state["meta_filter_rows_cache"][filter_cache_key] = fetch_meta_filter_rows(client_id, account_id, api_key)
+        filter_rows, filter_error = st.session_state["meta_filter_rows_cache"][filter_cache_key]
         meta_filter_df = pd.DataFrame(filter_rows)
         if not meta_filter_df.empty:
             campaign_names = set(df_curr["campaign_name"].dropna().astype(str).apply(meta_base_campaign_name))
@@ -1175,25 +1521,38 @@ else:
     detail_curr_rows = []
     detail_prev_rows = []
     if applied_campaign_filter or applied_adset_filter or applied_ad_filter != "Todos":
-        detail_curr_rows, detail_prev_rows = fetch_meta_detail_rows(
-            fetch_campaign_data_from_api,
-            platform_key,
-            client_id,
-            user_id,
-            account_id,
-            start_date,
-            end_date,
-            prev_start_date,
-            prev_end_date,
-            active_context.get("request_metrics"),
-            active_context.get("request_dimensions", []),
-            active_context.get("opt_filters", {}),
-            applied_adset_filter,
+        st.session_state.setdefault("meta_detail_cache", {})
+        detail_cache_key = (
+            active_query_key,
+            tuple(applied_campaign_filter),
+            tuple(applied_adset_filter),
             applied_ad_filter,
-            filtered_meta_rows,
-            filtered_ad_rows,
-            api_key,
+            tuple(filtered_meta_rows["campaign_id"].dropna().astype(str).unique().tolist()) if not filtered_meta_rows.empty else (),
+            tuple(filtered_ad_rows["adset_id"].dropna().astype(str).unique().tolist()) if not filtered_ad_rows.empty else (),
         )
+        if force_query_fetch or detail_cache_key not in st.session_state["meta_detail_cache"]:
+            detail_curr_rows, detail_prev_rows = fetch_meta_detail_rows(
+                fetch_campaign_data_from_api,
+                platform_key,
+                client_id,
+                user_id,
+                account_id,
+                start_date,
+                end_date,
+                prev_start_date,
+                prev_end_date,
+                active_context.get("request_metrics"),
+                active_context.get("request_dimensions", []),
+                active_context.get("opt_filters", {}),
+                applied_adset_filter,
+                applied_ad_filter,
+                filtered_meta_rows,
+                filtered_ad_rows,
+                api_key,
+            )
+            st.session_state["meta_detail_cache"][detail_cache_key] = (detail_curr_rows, detail_prev_rows)
+        else:
+            detail_curr_rows, detail_prev_rows = st.session_state["meta_detail_cache"][detail_cache_key]
         if detail_curr_rows:
             df_curr = process_api_response(detail_curr_rows, platform_key, client_id, user_id)
             df_prev = process_api_response(detail_prev_rows, platform_key, client_id, user_id) if detail_prev_rows else pd.DataFrame()
@@ -1230,34 +1589,58 @@ if platform_key == "meta_ads":
         **aggregate_filters,
         **st.session_state.get("meta_applied_api_filters", {}),
     }
-    aggregate_requests = [
-        ("account", start_date, end_date, current_account_insights, aggregate_filters),
-        ("account", prev_start_date, prev_end_date, previous_account_insights, aggregate_filters),
-        ("campaign", start_date, end_date, campaign_aggregate_insights, applied_aggregate_filters),
-        ("ad", start_date, end_date, ad_aggregate_insights, applied_aggregate_filters),
-    ]
-    if meta_detail_level == "adset":
-        aggregate_requests.append((
-            "adset",
-            start_date,
-            end_date,
-            adset_aggregate_insights,
-            applied_aggregate_filters,
-        ))
+    st.session_state.setdefault("meta_insights_cache", {})
+    insights_cache_key = (
+        active_query_key,
+        meta_detail_level,
+        json.dumps(applied_aggregate_filters, sort_keys=True),
+    )
+    if force_query_fetch or insights_cache_key not in st.session_state["meta_insights_cache"]:
+        aggregate_requests = [
+            ("account", start_date, end_date, current_account_insights, aggregate_filters),
+            ("account", prev_start_date, prev_end_date, previous_account_insights, aggregate_filters),
+            ("campaign", start_date, end_date, campaign_aggregate_insights, applied_aggregate_filters),
+            ("ad", start_date, end_date, ad_aggregate_insights, applied_aggregate_filters),
+        ]
+        if meta_detail_level == "adset":
+            aggregate_requests.append((
+                "adset",
+                start_date,
+                end_date,
+                adset_aggregate_insights,
+                applied_aggregate_filters,
+            ))
 
-    for insight_level, period_start, period_end, target, request_filters in aggregate_requests:
-        insight_rows, insight_error = fetch_meta_aggregate_insights(
-            client_id,
-            account_id,
-            period_start,
-            period_end,
-            insight_level,
-            request_filters,
-            api_key,
+        for insight_level, period_start, period_end, target, request_filters in aggregate_requests:
+            insight_rows, insight_error = fetch_meta_aggregate_insights(
+                client_id,
+                account_id,
+                period_start,
+                period_end,
+                insight_level,
+                request_filters,
+                api_key,
+            )
+            target.extend(insight_rows)
+            if insight_error:
+                aggregate_errors.append(insight_error)
+        st.session_state["meta_insights_cache"][insights_cache_key] = (
+            current_account_insights,
+            previous_account_insights,
+            campaign_aggregate_insights,
+            adset_aggregate_insights,
+            ad_aggregate_insights,
+            aggregate_errors,
         )
-        target.extend(insight_rows)
-        if insight_error:
-            aggregate_errors.append(insight_error)
+    else:
+        (
+            current_account_insights,
+            previous_account_insights,
+            campaign_aggregate_insights,
+            adset_aggregate_insights,
+            ad_aggregate_insights,
+            aggregate_errors,
+        ) = st.session_state["meta_insights_cache"][insights_cache_key]
     if aggregate_errors:
         st.info(aggregate_errors[0])
 
@@ -1273,10 +1656,10 @@ with download_slot.container():
         button {{
             width: 100%;
             padding: 0.55rem 0.75rem;
-            border: 1px solid #1AE08C;
+            border: 1px solid #02569e;
             border-radius: 0.5rem;
-            background: #1AE08C;
-            color: #0A0D13;
+            background: #02569e;
+            color: #FFFFFF;
             font-weight: 700;
             cursor: pointer;
         }}
@@ -1296,18 +1679,19 @@ with download_slot.container():
         if (exportControl) exportControl.dataset.exportControl = "true";
 
         const loadHtml2Pdf = () => {{
-            if (window.html2pdf) return Promise.resolve(window.html2pdf);
+            if (window.parent.html2pdf || window.html2pdf) return Promise.resolve(window.parent.html2pdf || window.html2pdf);
             return new Promise((resolve, reject) => {{
-                const script = document.createElement("script");
+                const script = parentDoc.createElement("script");
                 script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
-                script.onload = () => resolve(window.html2pdf);
+                script.onload = () => resolve(window.parent.html2pdf || window.html2pdf);
                 script.onerror = () => reject(new Error("html2pdf failed to load"));
-                document.head.appendChild(script);
+                parentDoc.head.appendChild(script);
             }});
         }};
 
         button.addEventListener("click", async () => {{
             button.disabled = true;
+            status.style.color = "#02569e";
             status.textContent = "Generando PDF…";
             try {{
                 const html2pdf = await loadHtml2Pdf();
@@ -1319,15 +1703,16 @@ with download_slot.container():
                 await html2pdf().set({{
                     margin: [8, 8, 8, 8],
                     filename: "{export_name}.pdf",
-                    image: {{ type: "jpeg", quality: 0.95 }},
+                    image: {{ type: "jpeg", quality: 0.98 }},
                     html2canvas: {{
                         scale: 1.5,
                         useCORS: true,
+                        allowTaint: true,
                         backgroundColor: "{chart_bg}",
                         width: target.scrollWidth,
                         height: target.scrollHeight,
-                        windowWidth: target.scrollWidth,
-                        windowHeight: target.scrollHeight,
+                        scrollX: 0,
+                        scrollY: 0,
                         onclone: (clonedDoc) => {{
                             const clonedReport = clonedDoc.querySelector(
                                 '[data-testid="stMainBlockContainer"]'
@@ -1362,9 +1747,12 @@ with download_slot.container():
                         mode: ["css", "legacy"],
                     }},
                 }}).from(target).save();
-                status.textContent = "";
+                status.style.color = "#10B981";
+                status.textContent = "¡PDF generado con éxito!";
+                setTimeout(() => {{ status.textContent = ""; }}, 3000);
             }} catch (error) {{
                 console.error("PDF export failed", error);
+                status.style.color = "#FF4B4B";
                 status.textContent = "No se pudo generar el PDF.";
             }} finally {{
                 if (popoverBody) popoverBody.style.visibility = popoverVisibility;
@@ -1505,7 +1893,7 @@ else: # organic
 
 st.markdown(kpis_layout, unsafe_allow_html=True)
 
-if platform_key == "meta_ads" and st.checkbox("Cargar datos oficiales de Facebook Ads (puede tardar)", value=False):
+if platform_key == "meta_ads" and st.checkbox("Cargar datos demográficos", value=False):
     official_key = (
         platform_key, client_id, user_id, account_id,
         start_date.isoformat(), end_date.isoformat(),
