@@ -191,26 +191,101 @@ def enrich_meta_campaign_summary(frame, aggregate_rows, filter_rows, level):
         ),
         "ad": (("adset_name", "adset_name"), ("ad_name", "ad_name")),
     }[level]
+    id_field = {
+        "campaign": "campaign_id",
+        "adset": "adset_id",
+        "ad": "ad_id",
+    }[level]
+    known_campaigns = {
+        str(row.get("campaign_name"))
+        for row in aggregate_rows + filter_rows
+        if row.get("campaign_name")
+    }
+
+    def canonical_campaign(value):
+        value = str(value)
+        if value in known_campaigns:
+            return value
+        matches = sorted(
+            (name for name in known_campaigns if value.startswith(f"{name}_")),
+            key=len,
+            reverse=True,
+        )
+        if not matches or len(matches) > 1 and len(matches[0]) == len(matches[1]):
+            return None
+        return matches[0]
 
     def record_key(record, summary_side):
         values = []
         for summary_field, meta_field in field_pairs:
             field = summary_field if summary_side else meta_field
             value = record.get(field, "")
-            if meta_field == "campaign_name":
-                value = meta_base_campaign_name(value)
+            if summary_side and meta_field == "campaign_name":
+                value = canonical_campaign(value)
+                if value is None:
+                    return None
             values.append(str(value))
         return tuple(values)
 
-    native_by_key = {record_key(row, False): row for row in aggregate_rows}
-    budget_by_key = {record_key(row, False): row for row in filter_rows}
+    def record_id(record):
+        return str(record.get(id_field) or "")
+
+    def index_values(rows, value_for_row):
+        by_key = {}
+        by_id = {}
+        for row in rows:
+            identity = record_id(row)
+            value = value_for_row(row)
+            by_key.setdefault(record_key(row, False), []).append((identity, value))
+            if identity:
+                by_id.setdefault(identity, set()).add(value)
+        return by_key, by_id
+
+    def source_value(matches, by_id, stable_id, unavailable):
+        values = by_id.get(stable_id, set()) if stable_id else set()
+        if not values and len(matches) == 1 and not matches[0][0]:
+            values = {matches[0][1]}
+        return next(iter(values)) if len(values) == 1 else unavailable
+
+    native_by_key, native_by_id = index_values(
+        aggregate_rows, lambda row: row.get("cost_per_result")
+    )
+    budget_by_key, budget_by_id = index_values(
+        filter_rows, lambda row: meta_budget_display(level, row)
+    )
 
     result = frame.copy()
     keys = [record_key(row, True) for _, row in result.iterrows()]
-    result["cost_per_result"] = [
-        (native_by_key.get(key) or {}).get("cost_per_result") for key in keys
-    ]
-    budget_values = [meta_budget_display(level, budget_by_key.get(key)) for key in keys]
+    costs = []
+    budget_values = []
+    for key in keys:
+        native_matches = native_by_key.get(key, []) if key is not None else []
+        budget_matches = budget_by_key.get(key, []) if key is not None else []
+        native_ids = {identity for identity, _ in native_matches if identity}
+        budget_ids = {identity for identity, _ in budget_matches if identity}
+        ambiguous = len(native_ids) > 1 or (
+            not native_ids and len(budget_ids) > 1
+        )
+        if ambiguous:
+            costs.append(None)
+            budget_values.append(("N/D", 0.0))
+            continue
+
+        stable_id = next(iter(native_ids or budget_ids), None)
+        costs.append(source_value(
+            native_matches,
+            native_by_id,
+            stable_id,
+            None,
+        ))
+        budget_values.append(source_value(
+            budget_matches,
+            budget_by_id,
+            stable_id,
+            ("N/D", 0.0),
+        ))
+
+    result["cost_per_result"] = costs
     result["budget_display"] = [value[0] for value in budget_values]
     result["budget_total"] = [value[1] for value in budget_values]
     return result

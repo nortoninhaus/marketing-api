@@ -381,6 +381,138 @@ def test_meta_summary_enrichment_uses_native_cost_and_budget_metadata():
     assert result["budget_total"].tolist() == [1250.0, 0.0]
 
 
+@pytest.mark.parametrize("summary_name", [
+    "Campaign_Audience",
+    "Campaign_Audience_18-24",
+    "Campaign_Audience_18-24_facebook",
+])
+def test_meta_summary_enrichment_uses_exact_or_longest_known_campaign(summary_name):
+    frame = pd.DataFrame({"base_campaign_name": [summary_name]})
+    aggregate_rows = [
+        {"campaign_id": "target", "campaign_name": "Campaign_Audience", "cost_per_result": 7.5},
+        {"campaign_id": "prefix", "campaign_name": "Campaign", "cost_per_result": 1.0},
+    ]
+    filter_rows = [
+        {"campaign_id": "other", "campaign_name": "Campaign_Audience", "campaign_lifetime_budget": 999.0},
+        {"campaign_id": "target", "campaign_name": "Campaign_Audience", "campaign_lifetime_budget": 640.0, "ad_id": "1"},
+        {"campaign_id": "target", "campaign_name": "Campaign_Audience", "campaign_lifetime_budget": 640.0, "ad_id": "2"},
+    ]
+
+    for rows in (filter_rows, list(reversed(filter_rows))):
+        result = dashboard_utils.enrich_meta_campaign_summary(
+            frame, aggregate_rows, rows, "campaign"
+        )
+        assert tuple(result.loc[0, [
+            "cost_per_result", "budget_display", "budget_total"
+        ]]) == (7.5, "$640.00", 640.0)
+
+
+@pytest.mark.parametrize(
+    ("level", "frame_row", "name_fields", "id_field"),
+    [
+        (
+            "campaign",
+            {"base_campaign_name": "Shared"},
+            {"campaign_name": "Shared"},
+            "campaign_id",
+        ),
+        (
+            "campaign",
+            {"base_campaign_name": "Shared"},
+            {"campaign_name": "Shared"},
+            None,
+        ),
+        (
+            "adset",
+            {"base_campaign_name": "Campaign", "adset_name": "Shared"},
+            {"campaign_name": "Campaign", "adset_name": "Shared"},
+            "adset_id",
+        ),
+        (
+            "ad",
+            {"adset_name": "Shared Set", "ad_name": "Shared"},
+            {"adset_name": "Shared Set", "ad_name": "Shared"},
+            "ad_id",
+        ),
+    ],
+    ids=["campaign-ids", "campaign-no-ids", "adset-ids", "ad-ids"],
+)
+def test_meta_summary_enrichment_returns_unavailable_for_ambiguous_identity(
+    level, frame_row, name_fields, id_field
+):
+    identities = ({id_field: "entity-1"}, {id_field: "entity-2"}) if id_field else ({}, {})
+    aggregate_rows = [
+        {**name_fields, **identities[0], "cost_per_result": 2.0},
+        {**name_fields, **identities[1], "cost_per_result": 9.0},
+    ]
+    filter_rows = [
+        {
+            **name_fields,
+            **identities[0],
+            "campaign_lifetime_budget": 100.0,
+            "adset_lifetime_budget": 100.0,
+        },
+        {
+            **name_fields,
+            **identities[1],
+            "campaign_lifetime_budget": 200.0,
+            "adset_lifetime_budget": 200.0,
+        },
+    ]
+
+    result = dashboard_utils.enrich_meta_campaign_summary(
+        pd.DataFrame([frame_row]), aggregate_rows, filter_rows, level
+    )
+
+    assert pd.isna(result.loc[0, "cost_per_result"])
+    assert result.loc[0, "budget_display"] == "N/D"
+    assert result.loc[0, "budget_total"] == 0.0
+
+
+@pytest.mark.parametrize(
+    (
+        "level", "frame_row", "name_fields", "id_field",
+        "target_budget", "other_budget", "expected_budget",
+    ),
+    [
+        (
+            "adset",
+            {"base_campaign_name": "Campaign", "adset_name": "Shared Set"},
+            {"campaign_name": "Campaign", "adset_name": "Shared Set"},
+            "adset_id",
+            {"adset_lifetime_budget": 800.0},
+            {"adset_daily_budget": 5.0},
+            ("$800.00", 800.0),
+        ),
+        (
+            "ad",
+            {"adset_name": "Shared Set", "ad_name": "Shared Ad"},
+            {"adset_name": "Shared Set", "ad_name": "Shared Ad"},
+            "ad_id",
+            {"adset_daily_budget": 25.0},
+            {},
+            ("Se administra a nivel de conjuntos", 0.0),
+        ),
+    ],
+    ids=["adset", "ad"],
+)
+def test_meta_summary_enrichment_uses_detail_id_for_budget_metadata(
+    level, frame_row, name_fields, id_field,
+    target_budget, other_budget, expected_budget,
+):
+    aggregate_rows = [{**name_fields, id_field: "target", "cost_per_result": 4.5}]
+    filter_rows = [
+        {**name_fields, id_field: "other", **other_budget},
+        {**name_fields, id_field: "target", **target_budget},
+    ]
+    for rows in (filter_rows, list(reversed(filter_rows))):
+        result = dashboard_utils.enrich_meta_campaign_summary(
+            pd.DataFrame([frame_row]), aggregate_rows, rows, level
+        )
+        assert result.loc[0, "cost_per_result"] == 4.5
+        assert tuple(result.loc[0, ["budget_display", "budget_total"]]) == expected_budget
+
+
 def test_meta_campaigns_with_impressions_uses_positive_campaign_total():
     frame = pd.DataFrame({
         "campaign_name": [
