@@ -1202,11 +1202,21 @@ else:
         if applied_campaign_filter:
             st.caption(f"Campañas: {campaign_title(applied_campaign_filter, selected_platform_label)}")
 
+identity_config = (("base_campaign_name", "Campaña"),)
+detail_title = "Detalle de Campañas y Resultados"
 meta_detail_level = "campaign"
-if applied_adset_filter or applied_ad_filter != "Todos":
-    meta_detail_level = "ad"
-elif applied_campaign_filter:
-    meta_detail_level = "adset"
+if platform_key == "meta_ads":
+    identity_config, detail_title = meta_detail_table_config(
+        applied_campaign_filter,
+        applied_adset_filter,
+        applied_ad_filter,
+        set(df_curr.columns) | {"base_campaign_name"},
+    )
+    meta_detail_level = {
+        "base_campaign_name": "campaign",
+        "adset_name": "adset",
+        "ad_name": "ad",
+    }[identity_config[-1][0]]
 
 current_account_insights = []
 previous_account_insights = []
@@ -1224,7 +1234,7 @@ if platform_key == "meta_ads":
         ("account", start_date, end_date, current_account_insights, aggregate_filters),
         ("account", prev_start_date, prev_end_date, previous_account_insights, aggregate_filters),
         ("campaign", start_date, end_date, campaign_aggregate_insights, aggregate_filters),
-        ("ad", start_date, end_date, ad_aggregate_insights, aggregate_filters),
+        ("ad", start_date, end_date, ad_aggregate_insights, applied_aggregate_filters),
     ]
     if meta_detail_level == "adset":
         aggregate_requests.append((
@@ -1685,15 +1695,6 @@ if platform_key == "meta_ads" and st.checkbox("Cargar datos oficiales de Faceboo
 
 # CAMPAIGN BREAKDOWN TABLE
 df_table = df_curr.copy()
-identity_config = (("base_campaign_name", "Campaña"),)
-detail_title = "Detalle de Campañas y Resultados"
-if platform_key == "meta_ads":
-    identity_config, detail_title = meta_detail_table_config(
-        applied_campaign_filter,
-        applied_adset_filter,
-        applied_ad_filter,
-        set(df_table.columns) | {"base_campaign_name"},
-    )
 identity_sources = [column for column, _ in identity_config]
 identity_labels = [label for _, label in identity_config]
 st.markdown(f"### {detail_title}")

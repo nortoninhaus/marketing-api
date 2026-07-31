@@ -570,15 +570,19 @@ def test_campaign_total_row_is_appended_after_formatted_campaigns():
 
 
 def test_meta_detail_table_uses_dynamic_identity_columns():
+    resolution_source = SOURCE[
+        SOURCE.index('identity_config = (("base_campaign_name", "Campaña"),)'):
+        SOURCE.index("current_account_insights =")
+    ]
     detail_source = SOURCE[
         SOURCE.index("# CAMPAIGN BREAKDOWN TABLE"):
         SOURCE.index("ranking_specs = (")
     ]
 
-    assert "meta_detail_table_config(" in detail_source
-    assert "applied_campaign_filter" in detail_source
-    assert "applied_adset_filter" in detail_source
-    assert "applied_ad_filter" in detail_source
+    assert "meta_detail_table_config(" in resolution_source
+    assert "applied_campaign_filter" in resolution_source
+    assert "applied_adset_filter" in resolution_source
+    assert "applied_ad_filter" in resolution_source
     assert "groupby(identity_sources)" in detail_source
     assert "dict(identity_config)" in detail_source
     assert "build_meta_campaign_total_row(" in detail_source
@@ -764,6 +768,33 @@ def test_meta_table_uses_native_period_cost_and_level_budget():
     assert '"spend": "Importe gastado"' in table_source
     assert column_source.index('"budget_display"') < column_source.index('"spend"')
     assert "adset_aggregate_insights" in SOURCE
+
+
+def test_meta_ad_aggregate_request_uses_applied_filters():
+    request_source = SOURCE[
+        SOURCE.index("aggregate_requests ="):
+        SOURCE.index("for insight_level, period_start, period_end")
+    ]
+
+    assert (
+        '("ad", start_date, end_date, ad_aggregate_insights, '
+        'applied_aggregate_filters)'
+    ) in request_source
+
+
+def test_meta_aggregate_level_follows_resolved_table_identity():
+    resolution_index = SOURCE.index("meta_detail_table_config(")
+    request_index = SOURCE.index("aggregate_requests =")
+    table_source = SOURCE[
+        SOURCE.index("# CAMPAIGN BREAKDOWN TABLE"):
+        SOURCE.index("ranking_specs =")
+    ]
+
+    assert SOURCE.count("meta_detail_table_config(") == 1
+    assert resolution_index < request_index
+    assert '"base_campaign_name": "campaign"' in SOURCE[resolution_index:request_index]
+    assert '}[identity_config[-1][0]]' in SOURCE[resolution_index:request_index]
+    assert "meta_detail_table_config(" not in table_source
 
 
 def test_meta_campaign_cards_render_three_top_three_rankings():
