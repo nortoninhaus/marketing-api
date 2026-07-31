@@ -118,6 +118,14 @@ def test_meta_aggregate_insights_preserves_reach_and_paginates_actions(monkeypat
                 "ad_name": "First",
                 "impressions": "100",
                 "reach": "80",
+                "results": [{
+                    "indicator": "actions:lead",
+                    "values": [{"value": "5"}],
+                }],
+                "cost_per_result": [{
+                    "indicator": "actions:lead",
+                    "values": [{"value": "12.34"}],
+                }],
                 "actions": [
                     {"action_type": "lead", "value": "5"},
                     {"action_type": "post_engagement", "value": "7"},
@@ -159,10 +167,60 @@ def test_meta_aggregate_insights_preserves_reach_and_paginates_actions(monkeypat
     assert rows[0]["reach"] == 80
     assert rows[0]["lead"] == 5
     assert rows[0]["post_engagement"] == 7
+    assert rows[0]["result_indicator"] == "actions:lead"
+    assert rows[0]["results"] == 5.0
+    assert rows[0]["cost_per_result"] == 12.34
+    requested_fields = calls[0]["params"]["fields"].split(",")
+    assert "results" in requested_fields
+    assert "cost_per_result" in requested_fields
+    assert "adset_id" in requested_fields
+    assert "adset_name" in requested_fields
     assert calls[0]["params"]["level"] == "ad"
     assert "time_increment" not in calls[0]["params"]
     assert "breakdowns" not in calls[0]["params"]
     assert calls[1]["params"]["after"] == "next-page"
+
+
+def test_meta_filter_rows_include_normalized_campaign_and_adset_budgets(monkeypatch):
+    dashboard_api.fetch_meta_filter_rows.clear()
+    payload = {
+        "data": [{
+            "id": "ad-1",
+            "name": "Ad One",
+            "campaign": {
+                "id": "campaign-1",
+                "name": "Campaign One",
+                "daily_budget": "0",
+                "lifetime_budget": "125000",
+            },
+            "adset": {
+                "id": "adset-1",
+                "name": "Set One",
+                "daily_budget": "5000",
+                "lifetime_budget": "0",
+            },
+        }],
+    }
+    calls = []
+
+    def fake_post(*args, **kwargs):
+        calls.append(kwargs["json"])
+        return SimpleNamespace(status_code=200, json=lambda: payload)
+
+    monkeypatch.setattr(dashboard_api.requests, "post", fake_post)
+
+    rows, error = dashboard_api.fetch_meta_filter_rows(
+        "budget-client", "budget-account", "budget-key"
+    )
+
+    assert error is None
+    assert rows[0]["campaign_lifetime_budget"] == 1250.0
+    assert rows[0]["campaign_daily_budget"] == 0.0
+    assert rows[0]["adset_lifetime_budget"] == 0.0
+    assert rows[0]["adset_daily_budget"] == 50.0
+    fields = calls[0]["params"]["fields"]
+    assert "campaign{id,name,daily_budget,lifetime_budget}" in fields
+    assert "adset{id,name,daily_budget,lifetime_budget}" in fields
 
 
 def test_targeted_meta_ad_previews_use_requested_ad_id(monkeypatch):

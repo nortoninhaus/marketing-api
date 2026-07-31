@@ -144,6 +144,27 @@ def _meta_proxy_get(client_id, account_id, api_key, path, params, timeout=30):
     )
 
 
+def _meta_indicator_value(entries, indicator):
+    for entry in entries or []:
+        if str(entry.get("indicator") or "") != indicator:
+            continue
+        values = entry.get("values") or []
+        try:
+            return float(values[0]["value"])
+        except (IndexError, KeyError, TypeError, ValueError):
+            return None
+    return None
+
+
+def _meta_minor_currency(value):
+    if value in (None, ""):
+        return None
+    try:
+        return float(value) / 100
+    except (TypeError, ValueError):
+        return None
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_meta_aggregate_insights(
     client_id,
@@ -155,9 +176,11 @@ def fetch_meta_aggregate_insights(
     api_key,
 ):
     account_edge = account_id if str(account_id).startswith("act_") else f"act_{account_id}"
-    fields = ["impressions", "reach"]
-    if level in ("campaign", "ad"):
+    fields = ["impressions", "reach", "results", "cost_per_result"]
+    if level in ("campaign", "adset", "ad"):
         fields += ["campaign_id", "campaign_name"]
+    if level in ("adset", "ad"):
+        fields += ["adset_id", "adset_name"]
     if level == "ad":
         fields += ["ad_id", "ad_name", "actions"]
 
@@ -197,13 +220,27 @@ def fetch_meta_aggregate_insights(
             payload = response.json()
             for insight in payload.get("data", []):
                 actions = insight.get("actions") or []
+                result_entries = insight.get("results") or []
+                result_indicator = (
+                    str(result_entries[0].get("indicator") or "")
+                    if result_entries else ""
+                )
+                result_value = _meta_indicator_value(result_entries, result_indicator)
+                result_cost = _meta_indicator_value(
+                    insight.get("cost_per_result"), result_indicator
+                )
                 rows.append({
                     "campaign_id": insight.get("campaign_id") or "",
                     "campaign_name": insight.get("campaign_name") or "",
+                    "adset_id": insight.get("adset_id") or "",
+                    "adset_name": insight.get("adset_name") or "",
                     "ad_id": insight.get("ad_id") or "",
                     "ad_name": insight.get("ad_name") or "",
                     "impressions": extract_metric(insight, ["impressions"]),
                     "reach": extract_metric(insight, ["reach"]),
+                    "result_indicator": result_indicator,
+                    "results": result_value,
+                    "cost_per_result": result_cost,
                     "lead": sum(
                         extract_metric(action, ["value"])
                         for action in actions
@@ -334,7 +371,11 @@ def fetch_meta_filter_rows(client_id, account_id, api_key):
         # ponytail: cap option hydration at 5 pages; paginate more if accounts exceed ~2500 ads.
         for _ in range(5):
             params = {
-                "fields": "id,name,campaign{id,name},adset{id,name}",
+                "fields": (
+                    "id,name,"
+                    "campaign{id,name,daily_budget,lifetime_budget},"
+                    "adset{id,name,daily_budget,lifetime_budget}"
+                ),
                 "limit": 500,
             }
             if after:
@@ -360,6 +401,18 @@ def fetch_meta_filter_rows(client_id, account_id, api_key):
                         "adset_name": adset.get("name", ""),
                         "ad_id": ad.get("id", ""),
                         "ad_name": ad.get("name", ""),
+                        "campaign_daily_budget": _meta_minor_currency(
+                            campaign.get("daily_budget")
+                        ),
+                        "campaign_lifetime_budget": _meta_minor_currency(
+                            campaign.get("lifetime_budget")
+                        ),
+                        "adset_daily_budget": _meta_minor_currency(
+                            adset.get("daily_budget")
+                        ),
+                        "adset_lifetime_budget": _meta_minor_currency(
+                            adset.get("lifetime_budget")
+                        ),
                     })
             paging = body.get("paging", {})
             after = (paging.get("cursors") or {}).get("after")
