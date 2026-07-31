@@ -341,6 +341,46 @@ def test_meta_base_campaign_name_strips_publisher_platform_suffixes():
     } == {campaign_name}
 
 
+@pytest.mark.parametrize(("level", "metadata", "expected"), [
+    ("campaign", {"campaign_lifetime_budget": 1250.0}, ("$1,250.00", 1250.0)),
+    ("campaign", {"campaign_daily_budget": 50.0}, ("Presupuesto diario", 0.0)),
+    ("campaign", {}, ("Se administra a nivel de conjuntos", 0.0)),
+    ("adset", {"adset_lifetime_budget": 800.0}, ("$800.00", 800.0)),
+    ("adset", {"adset_daily_budget": 25.0}, ("Presupuesto diario", 0.0)),
+    ("adset", {}, ("Se administra a nivel campaña", 0.0)),
+    ("ad", {"adset_daily_budget": 25.0}, ("Se administra a nivel de conjuntos", 0.0)),
+    ("ad", {}, ("Se administra a nivel campaña", 0.0)),
+    ("campaign", None, ("N/D", 0.0)),
+])
+def test_meta_budget_display_follows_owner_level(level, metadata, expected):
+    assert dashboard_utils.meta_budget_display(level, metadata) == expected
+
+
+def test_meta_summary_enrichment_uses_native_cost_and_budget_metadata():
+    frame = pd.DataFrame({
+        "base_campaign_name": ["Campaign A", "Campaign B"],
+        "cost_per_result": [999.0, 999.0],
+    })
+    aggregate_rows = [{
+        "campaign_name": "Campaign A",
+        "result_indicator": "actions:lead",
+        "cost_per_result": 12.34,
+    }]
+    filter_rows = [
+        {"campaign_name": "Campaign A", "campaign_lifetime_budget": 1250.0},
+        {"campaign_name": "Campaign B", "campaign_daily_budget": 50.0},
+    ]
+
+    result = dashboard_utils.enrich_meta_campaign_summary(
+        frame, aggregate_rows, filter_rows, "campaign"
+    )
+
+    assert result.loc[0, "cost_per_result"] == 12.34
+    assert pd.isna(result.loc[1, "cost_per_result"])
+    assert result["budget_display"].tolist() == ["$1,250.00", "Presupuesto diario"]
+    assert result["budget_total"].tolist() == [1250.0, 0.0]
+
+
 def test_meta_campaigns_with_impressions_uses_positive_campaign_total():
     frame = pd.DataFrame({
         "campaign_name": [
@@ -391,8 +431,8 @@ def test_campaign_total_row_uses_sums_and_average_cost():
         "result_indicator": ["actions:lead", "actions:lead"],
         "result_label": ["Clientes potenciales", "Clientes potenciales"],
         "results": [10, 30],
-        "result_cost_weighted": [20, 120],
         "cost_per_result": [2, 4],
+        "budget_total": [1000.0, 250.0],
         "spend": [80, 120],
         "impressions": [4_000, 6_000],
         "clicks": [200, 300],
@@ -405,11 +445,12 @@ def test_campaign_total_row_uses_sums_and_average_cost():
         "Tipo de resultado": "",
         "Resultados": "40",
         "Costo por resultado": "$3.00",
+        "Presupuesto": "$1,250.00",
         "CPM": "$20.00",
         "Impresiones": "10,000",
         "Clics": "500",
         "CPC": "$0.40",
-        "Inversión": "$200.00",
+        "Importe gastado": "$200.00",
     }
 
 
@@ -418,8 +459,8 @@ def test_campaign_total_row_sums_mixed_results_and_averages_cost():
         "result_indicator": ["actions:lead", "reach"],
         "result_label": ["Clientes potenciales", "Alcance"],
         "results": [10, 1_000],
-        "result_cost_weighted": [20, 30],
         "cost_per_result": [2, 4],
+        "budget_total": [1000.0, 250.0],
         "spend": [80, 120],
         "impressions": [4_000, 6_000],
         "clicks": [200, 300],
@@ -480,6 +521,7 @@ def test_campaign_total_row_supports_two_identity_columns():
     frame = pd.DataFrame({
         "results": [10, 30],
         "cost_per_result": [2, 4],
+        "budget_total": [1000.0, 250.0],
         "spend": [80, 120],
         "impressions": [4_000, 6_000],
         "clicks": [200, 300],

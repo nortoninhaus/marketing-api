@@ -154,12 +154,79 @@ def meta_detail_table_config(
     return identity_columns, title
 
 
+def meta_budget_display(level, metadata):
+    if metadata is None:
+        return "N/D", 0.0
+
+    campaign_lifetime = float(metadata.get("campaign_lifetime_budget") or 0)
+    campaign_daily = float(metadata.get("campaign_daily_budget") or 0)
+    adset_lifetime = float(metadata.get("adset_lifetime_budget") or 0)
+    adset_daily = float(metadata.get("adset_daily_budget") or 0)
+
+    if level == "campaign":
+        if campaign_lifetime > 0:
+            return f"${campaign_lifetime:,.2f}", campaign_lifetime
+        if campaign_daily > 0:
+            return "Presupuesto diario", 0.0
+        return "Se administra a nivel de conjuntos", 0.0
+
+    if level == "adset":
+        if adset_lifetime > 0:
+            return f"${adset_lifetime:,.2f}", adset_lifetime
+        if adset_daily > 0:
+            return "Presupuesto diario", 0.0
+        return "Se administra a nivel campaña", 0.0
+
+    if adset_lifetime > 0 or adset_daily > 0:
+        return "Se administra a nivel de conjuntos", 0.0
+    return "Se administra a nivel campaña", 0.0
+
+
+def enrich_meta_campaign_summary(frame, aggregate_rows, filter_rows, level):
+    field_pairs = {
+        "campaign": (("base_campaign_name", "campaign_name"),),
+        "adset": (
+            ("base_campaign_name", "campaign_name"),
+            ("adset_name", "adset_name"),
+        ),
+        "ad": (("adset_name", "adset_name"), ("ad_name", "ad_name")),
+    }[level]
+
+    def record_key(record, summary_side):
+        values = []
+        for summary_field, meta_field in field_pairs:
+            field = summary_field if summary_side else meta_field
+            value = record.get(field, "")
+            if meta_field == "campaign_name":
+                value = meta_base_campaign_name(value)
+            values.append(str(value))
+        return tuple(values)
+
+    native_by_key = {record_key(row, False): row for row in aggregate_rows}
+    budget_by_key = {record_key(row, False): row for row in filter_rows}
+
+    result = frame.copy()
+    keys = [record_key(row, True) for _, row in result.iterrows()]
+    result["cost_per_result"] = [
+        (native_by_key.get(key) or {}).get("cost_per_result") for key in keys
+    ]
+    budget_values = [meta_budget_display(level, budget_by_key.get(key)) for key in keys]
+    result["budget_display"] = [value[0] for value in budget_values]
+    result["budget_total"] = [value[1] for value in budget_values]
+    return result
+
+
 def build_meta_campaign_total_row(frame, identity_labels=("Campaña",)):
     total_results = frame["results"].sum()
     total_spend = frame["spend"].sum()
     total_impressions = frame["impressions"].sum()
     total_clicks = frame["clicks"].sum()
-    cost_per_result = frame["cost_per_result"].mean()
+    cost_values = pd.to_numeric(frame["cost_per_result"], errors="coerce")
+    cost_per_result = cost_values.mean()
+    budget_total = pd.to_numeric(
+        frame.get("budget_total", pd.Series(dtype=float)), errors="coerce"
+    ).fillna(0).sum()
+    cost_display = f"${cost_per_result:,.2f}" if pd.notna(cost_per_result) else "N/D"
     cpm = total_spend * 1000 / total_impressions if total_impressions > 0 else 0
     cpc = total_spend / total_clicks if total_clicks > 0 else 0
 
@@ -168,12 +235,13 @@ def build_meta_campaign_total_row(frame, identity_labels=("Campaña",)):
     row.update({
         "Tipo de resultado": "",
         "Resultados": f"{total_results:,.0f}",
-        "Costo por resultado": f"${cost_per_result:,.2f}",
+        "Costo por resultado": cost_display,
+        "Presupuesto": f"${budget_total:,.2f}",
         "CPM": f"${cpm:,.2f}",
         "Impresiones": f"{total_impressions:,.0f}",
         "Clics": f"{total_clicks:,.0f}",
         "CPC": f"${cpc:,.2f}",
-        "Inversión": f"${total_spend:,.2f}",
+        "Importe gastado": f"${total_spend:,.2f}",
     })
     return row
 
