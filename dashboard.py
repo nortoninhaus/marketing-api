@@ -583,6 +583,8 @@ if theme_mode == "Claro":
         fill: #FFFFFF !important;
         stroke: #FFFFFF !important;
     }
+    [data-testid="stExpandSidebarButton"],
+    [data-testid="stExpandSidebarButton"] *,
     button[aria-label="Close sidebar"],
     button[aria-label="Open sidebar"],
     [data-testid="stSidebarCollapseButton"] button,

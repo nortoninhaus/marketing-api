@@ -76,6 +76,13 @@ def test_charts_and_header_follow_selected_theme():
     assert ".agency img { filter:" in SOURCE
 
 
+def test_light_theme_styles_streamlit_expand_sidebar_button():
+    assert (
+        '[data-testid="stExpandSidebarButton"],\n'
+        '    [data-testid="stExpandSidebarButton"] *,'
+    ) in SOURCE
+
+
 def test_dashboard_hashtag_ranking_uses_returned_post_text():
     assert "ad_hashtag_rows" in SOURCE
     assert "effective_object_story_id" in API_SOURCE
