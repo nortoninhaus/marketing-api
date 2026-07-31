@@ -749,10 +749,14 @@ def test_meta_detail_table_uses_dynamic_identity_columns():
 
 
 def test_delivered_meta_campaigns_filter_all_meta_views():
+    eligibility_start = SOURCE.index(
+        "eligible_campaigns = meta_campaigns_with_impressions(df_curr)"
+    )
     eligibility_source = SOURCE[
-        SOURCE.index("eligible_campaigns = meta_campaigns_with_impressions(df_curr)"):
+        eligibility_start - 80:
         SOURCE.index("# Inject JavaScript")
     ]
+    assert 'if platform_key == "meta_ads" and not df_curr.empty:' in eligibility_source
     assert "eligible_previous_campaigns = meta_campaigns_with_impressions(df_prev)" in eligibility_source
     assert 'df_curr["campaign_name"].astype(str).apply(meta_base_campaign_name)' in eligibility_source
     assert ".isin(eligible_campaigns)" in eligibility_source

@@ -1399,7 +1399,7 @@ for frame in (df_curr, df_prev):
     if "post_engagement" not in frame.columns:
         frame["post_engagement"] = 0
 
-if platform_key == "meta_ads":
+if platform_key == "meta_ads" and not df_curr.empty:
     eligible_campaigns = meta_campaigns_with_impressions(df_curr)
     eligible_previous_campaigns = meta_campaigns_with_impressions(df_prev)
     df_curr = df_curr[
