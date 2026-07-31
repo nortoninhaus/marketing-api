@@ -734,7 +734,8 @@ def test_featured_campaigns_show_requested_meta_metrics():
         "Impresiones",
         "Clics",
         "CPC",
-        "Inversión",
+        "Presupuesto",
+        "Importe gastado",
     ):
         assert f'"{label}"' in featured_campaign_source
     assert '"reach": "Reach"' not in featured_campaign_source
@@ -745,6 +746,24 @@ def test_featured_campaigns_show_requested_meta_metrics():
     assert ".groupby(identity_sources).agg({" in featured_campaign_source
     assert '"result_indicator": "first"' in featured_campaign_source
     assert '"platform": "Plataforma"' not in featured_campaign_source
+
+
+def test_meta_table_uses_native_period_cost_and_level_budget():
+    table_source = SOURCE[
+        SOURCE.index("# CAMPAIGN BREAKDOWN TABLE"):
+        SOURCE.index("ranking_specs =")
+    ]
+    column_source = table_source[
+        table_source.index("campaign_summary = campaign_summary["):
+        table_source.index("].rename(columns={")
+    ]
+
+    assert "enrich_meta_campaign_summary(" in table_source
+    assert "result_cost_weighted" not in table_source
+    assert '"budget_display": "Presupuesto"' in table_source
+    assert '"spend": "Importe gastado"' in table_source
+    assert column_source.index('"budget_display"') < column_source.index('"spend"')
+    assert "adset_aggregate_insights" in SOURCE
 
 
 def test_meta_campaign_cards_render_three_top_three_rankings():

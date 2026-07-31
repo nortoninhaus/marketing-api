@@ -47,6 +47,8 @@ def test_meta_campaign_csv_uses_the_displayed_table_data():
     assert "data=lambda:" in SOURCE
     assert export_assignment in SOURCE
     assert SOURCE.index(total_append) < SOURCE.index(export_assignment)
+    assert '"budget_display": "Presupuesto"' in SOURCE
+    assert '"spend": "Importe gastado"' in SOURCE
 
 
 def test_csv_download_button_is_executable_code():

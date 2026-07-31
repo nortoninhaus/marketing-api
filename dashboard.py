@@ -77,6 +77,7 @@ from dashboard.utils import (
     meta_campaigns_with_impressions,
     select_meta_ad_winners,
     fetch_meta_detail_rows,
+    enrich_meta_campaign_summary,
     build_meta_campaign_total_row,
     meta_detail_table_config,
     dashboard_filter_options,
@@ -1201,26 +1202,47 @@ else:
         if applied_campaign_filter:
             st.caption(f"Campañas: {campaign_title(applied_campaign_filter, selected_platform_label)}")
 
+meta_detail_level = "campaign"
+if applied_adset_filter or applied_ad_filter != "Todos":
+    meta_detail_level = "ad"
+elif applied_campaign_filter:
+    meta_detail_level = "adset"
+
 current_account_insights = []
 previous_account_insights = []
 campaign_aggregate_insights = []
+adset_aggregate_insights = []
 ad_aggregate_insights = []
 aggregate_errors = []
 if platform_key == "meta_ads":
     aggregate_filters = opt_filters.get("filters", {}) if isinstance(opt_filters, dict) else {}
-    for insight_level, period_start, period_end, target in (
-        ("account", start_date, end_date, current_account_insights),
-        ("account", prev_start_date, prev_end_date, previous_account_insights),
-        ("campaign", start_date, end_date, campaign_aggregate_insights),
-        ("ad", start_date, end_date, ad_aggregate_insights),
-    ):
+    applied_aggregate_filters = {
+        **aggregate_filters,
+        **st.session_state.get("meta_applied_api_filters", {}),
+    }
+    aggregate_requests = [
+        ("account", start_date, end_date, current_account_insights, aggregate_filters),
+        ("account", prev_start_date, prev_end_date, previous_account_insights, aggregate_filters),
+        ("campaign", start_date, end_date, campaign_aggregate_insights, aggregate_filters),
+        ("ad", start_date, end_date, ad_aggregate_insights, aggregate_filters),
+    ]
+    if meta_detail_level == "adset":
+        aggregate_requests.append((
+            "adset",
+            start_date,
+            end_date,
+            adset_aggregate_insights,
+            applied_aggregate_filters,
+        ))
+
+    for insight_level, period_start, period_end, target, request_filters in aggregate_requests:
         insight_rows, insight_error = fetch_meta_aggregate_insights(
             client_id,
             account_id,
             period_start,
             period_end,
             insight_level,
-            aggregate_filters,
+            request_filters,
             api_key,
         )
         target.extend(insight_rows)
@@ -1688,16 +1710,10 @@ if platform_type == "ads":
     ad_hashtag_rows = []
     if "result_indicator" in df_table.columns and "result_indicator" not in group_keys:
         group_keys.append("result_indicator")
-    df_table["result_cost_weighted"] = df_table["results"] * df_table["cost_per_result"]
     df_table = df_table.groupby(group_keys).agg({
         "spend": "sum", "impressions": "sum", "clicks": "sum", "conversions": "sum", "lead": "sum",
-        "reach": "sum", "post_engagement": "sum", "results": "sum", "result_cost_weighted": "sum",
+        "reach": "sum", "post_engagement": "sum", "results": "sum", "cost_per_result": "mean",
     }).reset_index()
-    df_table["cost_per_result"] = (
-        df_table["result_cost_weighted"]
-        .div(df_table["results"])
-        .where(df_table["results"].gt(0), 0)
-    )
     meta_platforms = set(META_PUBLISHER_LABELS.values()) | {"meta_ads"}
     meta_table = df_table[df_table["platform"].isin(meta_platforms)].copy()
     if platform_key == "meta_ads" and not meta_table.empty:
@@ -1708,26 +1724,35 @@ if platform_type == "ads":
             .groupby(identity_sources).agg({
                 "result_indicator": "first",
                 "spend": "sum", "impressions": "sum", "clicks": "sum",
-                "results": "sum", "result_cost_weighted": "sum",
+                "results": "sum", "cost_per_result": "mean",
             })
             .reset_index()
-        )
-        campaign_summary["cost_per_result"] = (
-            campaign_summary["result_cost_weighted"]
-            .div(campaign_summary["results"])
-            .where(campaign_summary["results"].gt(0), 0)
         )
         campaign_summary["result_label"] = campaign_summary["result_indicator"].apply(translate_meta_result_indicator)
         campaign_summary["cpm"] = campaign_summary["spend"].mul(1000).div(campaign_summary["impressions"]).where(campaign_summary["impressions"].gt(0), 0)
         campaign_summary["cpc"] = campaign_summary["spend"].div(campaign_summary["clicks"]).where(campaign_summary["clicks"].gt(0), 0)
         campaign_summary = campaign_summary.sort_values("results", ascending=False)
+        native_rows_by_level = {
+            "campaign": campaign_aggregate_insights,
+            "adset": adset_aggregate_insights,
+            "ad": ad_aggregate_insights,
+        }
+        campaign_summary = enrich_meta_campaign_summary(
+            campaign_summary,
+            native_rows_by_level[meta_detail_level],
+            filter_rows,
+            meta_detail_level,
+        )
         total_row = build_meta_campaign_total_row(
             campaign_summary,
             identity_labels=identity_labels,
         )
         for column in ("results", "impressions", "clicks"):
             campaign_summary[column] = campaign_summary[column].apply(lambda x: f"{x:,.0f}")
-        for column in ("cost_per_result", "cpm", "cpc", "spend"):
+        campaign_summary["cost_per_result"] = campaign_summary["cost_per_result"].apply(
+            lambda value: f"${value:,.2f}" if pd.notna(value) else "N/D"
+        )
+        for column in ("cpm", "cpc", "spend"):
             campaign_summary[column] = campaign_summary[column].apply(lambda x: f"${x:,.2f}")
         campaign_summary = campaign_summary[
             identity_sources + [
@@ -1738,6 +1763,7 @@ if platform_type == "ads":
                 "impressions",
                 "clicks",
                 "cpc",
+                "budget_display",
                 "spend",
             ]
         ].rename(columns={
@@ -1749,7 +1775,8 @@ if platform_type == "ads":
             "impressions": "Impresiones",
             "clicks": "Clics",
             "cpc": "CPC",
-            "spend": "Inversión",
+            "budget_display": "Presupuesto",
+            "spend": "Importe gastado",
         })
         campaign_summary = pd.concat([campaign_summary, pd.DataFrame([total_row])], ignore_index=True)
         csv_export_frame["frame"] = campaign_summary
