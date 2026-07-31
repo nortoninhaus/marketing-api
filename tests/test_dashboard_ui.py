@@ -782,6 +782,18 @@ def test_meta_ad_aggregate_request_uses_applied_filters():
     ) in request_source
 
 
+def test_meta_campaign_aggregate_request_uses_applied_filters():
+    request_source = SOURCE[
+        SOURCE.index("aggregate_requests ="):
+        SOURCE.index("for insight_level, period_start, period_end")
+    ]
+
+    assert (
+        '("campaign", start_date, end_date, campaign_aggregate_insights, '
+        'applied_aggregate_filters)'
+    ) in request_source
+
+
 def test_meta_aggregate_level_follows_resolved_table_identity():
     resolution_index = SOURCE.index("meta_detail_table_config(")
     request_index = SOURCE.index("aggregate_requests =")

@@ -1233,7 +1233,7 @@ if platform_key == "meta_ads":
     aggregate_requests = [
         ("account", start_date, end_date, current_account_insights, aggregate_filters),
         ("account", prev_start_date, prev_end_date, previous_account_insights, aggregate_filters),
-        ("campaign", start_date, end_date, campaign_aggregate_insights, aggregate_filters),
+        ("campaign", start_date, end_date, campaign_aggregate_insights, applied_aggregate_filters),
         ("ad", start_date, end_date, ad_aggregate_insights, applied_aggregate_filters),
     ]
     if meta_detail_level == "adset":
