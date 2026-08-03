@@ -1434,6 +1434,8 @@ for frame in (df_curr, df_prev):
     if "post_engagement" not in frame.columns:
         frame["post_engagement"] = 0
 
+raw_df_curr = df_curr.copy()
+
 if platform_key == "meta_ads" and not df_curr.empty:
     eligible_campaigns = meta_campaigns_with_impressions(df_curr)
     eligible_previous_campaigns = meta_campaigns_with_impressions(df_prev)
@@ -1467,7 +1469,10 @@ components.html("""
 """, height=0, width=0)
 
 if df_curr.empty:
-    st.error("No se recibió información de la API para el periodo actual. Verifica las credenciales, plataforma o ID de cuenta en el menú lateral.")
+    if not raw_df_curr.empty:
+        st.warning("ℹ️ La API retornó registros para el periodo seleccionado, pero ninguna campaña registra impresiones o métricas de alcance relevantes en estas fechas. Intenta ajustar el rango de fechas o los filtros.")
+    else:
+        st.error("No se recibió información de la API para el periodo actual. Verifica las credenciales, plataforma o ID de cuenta en el menú lateral.")
     st.stop()
 else:
     applied_campaign_filter = []
