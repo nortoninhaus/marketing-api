@@ -5,46 +5,25 @@ from pathlib import Path
 SOURCE = Path(__file__).resolve().parents[1].joinpath("dashboard.py").read_text()
 
 
-def test_dashboard_offers_grouped_automatic_pdf_and_csv_downloads():
+def test_dashboard_offers_compact_csv_download():
     assert "download_slot = st.empty()" in SOURCE
     assert SOURCE.index("download_slot = st.empty()") < SOURCE.index('<div class="custom-header">')
-    assert 'with st.popover("Descargar"' in SOURCE
-    assert "Descargar PDF" in SOURCE
-    assert "html2pdf.bundle.min.js" in SOURCE
-    assert ".from(target).save()" in SOURCE
-    assert "data-export-control" in SOURCE
-    assert 'querySelector(\'[data-testid="stMainBlockContainer"]\')' in SOURCE
-    assert '[data-testid="stPopoverButton"]' in SOURCE
-    assert "closest('[data-testid=\"stPopover\"]')" in SOURCE
-    assert '[data-testid="stPopoverBody"]' in SOURCE
-    assert 'popoverBody.style.visibility = "hidden";' in SOURCE
-    assert "popoverBody.style.visibility = popoverVisibility;" in SOURCE
-    assert "trigger?.click();" not in SOURCE
-    assert "onclone: (clonedDoc)" in SOURCE
-    assert 'fontFamily.includes("Material Symbols")' in SOURCE
-    assert 'a[href^="#"]' in SOURCE
-    assert '[data-testid^="stElementToolbar"]' in SOURCE
-    assert '[data-testid="stTooltipHoverTarget"]' in SOURCE
-    assert '[data-testid="stBaseButton-elementToolbar"]' in SOURCE
-    assert '[data-testid="stVegaLiteChart"] details' in SOURCE
-    assert 'textContent.includes("Aplicar filtros")' not in SOURCE
-    assert 'img[src^="http"]' not in SOURCE
-    assert 'querySelectorAll("iframe")' not in SOURCE
-    assert 'querySelectorAll("button")' not in SOURCE
-    assert "width: target.scrollWidth" in SOURCE
-    assert "height: target.scrollHeight" in SOURCE
-    assert 'avoid: [".kpi"' not in SOURCE
-    assert "Descargar CSV" in SOURCE
+    export_block = SOURCE[SOURCE.index('with download_slot.container():'):SOURCE.index("# HERO RENDER")]
+
+    assert 'with st.popover("Descargar", icon=":material/download:", width="content")' in export_block
+    assert "Descargar PDF" not in export_block
+    assert "html2pdf.bundle.min.js" not in export_block
+    assert "components.html" not in export_block
+    assert "Descargar CSV" in export_block
     assert 'csv_export_frame["frame"].to_csv(index=False).encode("utf-8-sig")' in SOURCE
     assert 'on_click="ignore"' in SOURCE
+    assert 'icon=":material/download:"' in export_block
+    assert 'width="stretch"' in export_block
+    assert "use_container_width" not in export_block
     assert '[data-testid="stPopoverBody"] {' in SOURCE
     assert '[data-testid="stPopoverBody"] > div {' in SOURCE
     assert '[data-testid="stPopoverButton"] *' in SOURCE
     assert '[data-testid="stDownloadButton"] button *' in SOURCE
-    assert 'html, body {{' in SOURCE
-    assert 'background: #FFFFFF;' in SOURCE[
-        SOURCE.index('with st.popover("Descargar"'):SOURCE.index("# HERO RENDER")
-    ]
 
 
 def test_meta_campaign_csv_uses_the_displayed_table_data():

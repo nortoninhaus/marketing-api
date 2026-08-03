@@ -1270,7 +1270,7 @@ if st.sidebar.button("🔒 Cerrar Sesión", key="logout_button", use_container_w
     st.session_state.pop("dashboard_auth_token", None)
     st.session_state.pop("dashboard_user", None)
     dashboard_auth_cookie_bridge(clear=True)
-    st.rerun()
+    st.stop()
 
 # MAIN DISPLAY (Occupies full wide screen)
 download_slot = st.empty()
@@ -1663,125 +1663,16 @@ export_name = f"{export_slug}_{start_date:%Y-%m-%d}_{end_date:%Y-%m-%d}"
 csv_export_frame = {"frame": df_curr}
 
 with download_slot.container():
-    with st.popover("Descargar", icon=":material/download:"):
-        components.html(f"""
-        <style>
-        html, body {{ margin: 0; font-family: Manrope, Arial, sans-serif; background: #FFFFFF; }}
-        button {{
-            width: 100%;
-            padding: 0.55rem 0.75rem;
-            border: 1px solid #02569e;
-            border-radius: 0.5rem;
-            background: #02569e;
-            color: #FFFFFF;
-            font-weight: 700;
-            cursor: pointer;
-        }}
-        button:disabled {{ cursor: wait; opacity: 0.65; }}
-        #pdf-status {{ min-height: 1rem; margin: 0.3rem 0 0; color: #FF4B4B; font-size: 0.75rem; }}
-        </style>
-        <button id="pdf-download" type="button">Descargar PDF</button>
-        <p id="pdf-status" role="status" aria-live="polite"></p>
-        <script>
-        const parentDoc = window.parent.document;
-        const button = document.getElementById("pdf-download");
-        const status = document.getElementById("pdf-status");
-        const trigger = parentDoc.querySelector('[data-testid="stPopoverButton"]');
-        const exportControl = trigger?.closest('[data-testid="stPopover"]');
-        const popoverBody = window.frameElement?.closest('[data-testid="stPopoverBody"]');
-        const popoverVisibility = popoverBody?.style.visibility || "";
-        if (exportControl) exportControl.dataset.exportControl = "true";
-
-        const loadHtml2Pdf = () => {{
-            if (window.parent.html2pdf || window.html2pdf) return Promise.resolve(window.parent.html2pdf || window.html2pdf);
-            return new Promise((resolve, reject) => {{
-                const script = parentDoc.createElement("script");
-                script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
-                script.onload = () => resolve(window.parent.html2pdf || window.html2pdf);
-                script.onerror = () => reject(new Error("html2pdf failed to load"));
-                parentDoc.head.appendChild(script);
-            }});
-        }};
-
-        button.addEventListener("click", async () => {{
-            button.disabled = true;
-            status.style.color = "#02569e";
-            status.textContent = "Generando PDF…";
-            try {{
-                const html2pdf = await loadHtml2Pdf();
-                const target = parentDoc.querySelector('[data-testid="stMainBlockContainer"]');
-                if (!target) throw new Error("Dashboard report container not found");
-                if (popoverBody) popoverBody.style.visibility = "hidden";
-
-                // ponytail: browser capture avoids a server-side Chromium service; upgrade if cross-origin embeds must be exact.
-                await html2pdf().set({{
-                    margin: [8, 8, 8, 8],
-                    filename: "{export_name}.pdf",
-                    image: {{ type: "jpeg", quality: 0.98 }},
-                    html2canvas: {{
-                        scale: 1.5,
-                        useCORS: true,
-                        allowTaint: true,
-                        backgroundColor: "{chart_bg}",
-                        width: target.scrollWidth,
-                        height: target.scrollHeight,
-                        scrollX: 0,
-                        scrollY: 0,
-                        onclone: (clonedDoc) => {{
-                            const clonedReport = clonedDoc.querySelector(
-                                '[data-testid="stMainBlockContainer"]'
-                            );
-                            if (clonedReport) clonedReport.style.backgroundColor = "{chart_bg}";
-                            clonedDoc.querySelectorAll(
-                                '[data-testid="stHeader"], [data-testid="stSidebar"], ' +
-                                '[data-testid="stPopoverBody"], [data-export-control="true"], ' +
-                                '[data-testid^="stElementToolbar"], ' +
-                                '[data-testid="stTooltipHoverTarget"], ' +
-                                '[data-testid="stBaseButton-elementToolbar"], ' +
-                                '[data-testid="stVegaLiteChart"] details'
-                            ).forEach((element) => element.remove());
-                            clonedDoc.querySelectorAll("span").forEach((element) => {{
-                                const fontFamily = clonedDoc.defaultView
-                                    ?.getComputedStyle(element).fontFamily || "";
-                                const iconName = element.textContent.trim();
-                                if (
-                                    fontFamily.includes("Material Symbols") ||
-                                    /^(keyboard_|expand_|download$)/.test(iconName)
-                                ) element.remove();
-                            }});
-                            clonedDoc.querySelectorAll('a[href^="#"]')
-                                .forEach((element) => element.remove());
-                        }},
-                        ignoreElements: (element) => Boolean(
-                            element.closest?.('[data-export-control="true"]')
-                        ),
-                    }},
-                    jsPDF: {{ unit: "mm", format: "a4", orientation: "landscape" }},
-                    pagebreak: {{
-                        mode: ["css", "legacy"],
-                    }},
-                }}).from(target).save();
-                status.style.color = "#10B981";
-                status.textContent = "¡PDF generado con éxito!";
-                setTimeout(() => {{ status.textContent = ""; }}, 3000);
-            }} catch (error) {{
-                console.error("PDF export failed", error);
-                status.style.color = "#FF4B4B";
-                status.textContent = "No se pudo generar el PDF.";
-            }} finally {{
-                if (popoverBody) popoverBody.style.visibility = popoverVisibility;
-                button.disabled = false;
-            }}
-        }});
-        </script>
-        """, height=72)
+    with st.popover("Descargar", icon=":material/download:", width="content"):
+        # ponytail: PDF export stays disabled until browser capture is reliable.
         st.download_button(
             "Descargar CSV",
             data=lambda: csv_export_frame["frame"].to_csv(index=False).encode("utf-8-sig"),
             file_name=f"{export_name}.csv",
             mime="text/csv;charset=utf-8",
             on_click="ignore",
-            use_container_width=True,
+            icon=":material/download:",
+            width="stretch",
         )
 # HERO RENDER (Clean, full width, no Sipy logo)
 title_color = "#0F172A" if theme_mode == "Claro" else "#EAF0F7"
@@ -2132,6 +2023,17 @@ if platform_type == "ads":
             .reset_index()
         )
         campaign_summary["result_label"] = campaign_summary["result_indicator"].apply(translate_meta_result_indicator)
+        result_type_options = dashboard_filter_options(campaign_summary, "result_label")[1:]
+        selected_result_types = st.multiselect(
+            "Tipo de resultado",
+            result_type_options,
+            placeholder="Todos",
+            key=f"meta_result_type_filter_{meta_detail_level}",
+        )
+        if selected_result_types:
+            campaign_summary = campaign_summary[
+                campaign_summary["result_label"].isin(selected_result_types)
+            ].copy()
         campaign_summary["cpm"] = campaign_summary["spend"].mul(1000).div(campaign_summary["impressions"]).where(campaign_summary["impressions"].gt(0), 0)
         campaign_summary["cpc"] = campaign_summary["spend"].div(campaign_summary["clicks"]).where(campaign_summary["clicks"].gt(0), 0)
         campaign_summary = campaign_summary.sort_values("results", ascending=False)

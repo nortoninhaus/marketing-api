@@ -275,6 +275,17 @@ def test_sidebar_actions_are_ordered_without_a_separator():
     assert ".inhaus-logout-container {" not in SOURCE
 
 
+def test_logout_waits_for_cookie_clear_instead_of_rerunning():
+    logout_block = SOURCE[
+        SOURCE.index('if st.sidebar.button("🔒 Cerrar Sesión"'):
+        SOURCE.index("# MAIN DISPLAY")
+    ]
+
+    assert "dashboard_auth_cookie_bridge(clear=True)" in logout_block
+    assert "st.stop()" in logout_block
+    assert "st.rerun()" not in logout_block
+
+
 def test_meta_filters_use_unique_campaigns_and_multiple_adsets():
     assert "campaign_options = sorted({" in SOURCE
     assert (
@@ -739,6 +750,26 @@ def test_campaign_total_row_is_appended_after_formatted_campaigns():
     assert SOURCE.index(total_append) < SOURCE.index(total_render)
 
 
+def test_meta_table_filters_multiple_result_types_before_total_and_csv():
+    detail_source = SOURCE[
+        SOURCE.index("campaign_summary[\"result_label\"] ="):
+        SOURCE.index("ranking_specs = (")
+    ]
+
+    options = 'dashboard_filter_options(campaign_summary, "result_label")[1:]'
+    widget = 'st.multiselect(\n            "Tipo de resultado",'
+    filtered = 'campaign_summary["result_label"].isin(selected_result_types)'
+    total = "build_meta_campaign_total_row("
+    export = 'csv_export_frame["frame"] = campaign_summary'
+
+    assert options in detail_source
+    assert widget in detail_source
+    assert 'placeholder="Todos"' in detail_source
+    assert filtered in detail_source
+    assert detail_source.index(filtered) < detail_source.index(total)
+    assert detail_source.index(total) < detail_source.index(export)
+
+
 def test_meta_detail_table_uses_dynamic_identity_columns():
     resolution_source = SOURCE[
         SOURCE.index('identity_config = (("base_campaign_name", "Campaña"),)'):
@@ -932,7 +963,7 @@ def test_meta_table_uses_native_period_cost_and_level_budget():
         SOURCE.index("ranking_specs =")
     ]
     column_source = table_source[
-        table_source.index("campaign_summary = campaign_summary["):
+        table_source.index("campaign_summary = campaign_summary[\n            identity_sources + ["):
         table_source.index("].rename(columns={")
     ]
 
