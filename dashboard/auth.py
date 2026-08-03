@@ -183,7 +183,7 @@ def connection_account_label(connection, platform_key):
     return f"{account_name} ({account_id})"
 
 
-def require_dashboard_login():
+def require_dashboard_login(theme_icon, on_theme_change):
     session_token = st.session_state.get("dashboard_auth_token")
     if not session_token:
         dashboard_auth_cookie_bridge()
@@ -206,25 +206,63 @@ def require_dashboard_login():
         dashboard_auth_cookie_bridge(clear=True)
         st.stop()
 
-    st.markdown("## Acceso al dashboard")
-    with st.form("dashboard_login_form"):
-        username = st.text_input("Usuario")
-        password = st.text_input("Contraseña", type="password")
-        submitted = st.form_submit_button("Ingresar")
-    if submitted:
-        try:
-            user = authenticate_dashboard_user(username, password)
-        except Exception as exc:
-            st.error(f"No se pudo validar el usuario en Firebase: {exc}")
-        else:
-            if user:
-                token = create_dashboard_token(user)
-                st.session_state["dashboard_auth_token"] = token
-                st.session_state["dashboard_user"] = user
-                st.session_state["query_run"] = False
-                st.query_params[DASHBOARD_AUTH_QUERY_PARAM] = token
-                st.rerun()
-            st.error("Usuario o contraseña incorrectos.")
+    with st.container(horizontal_alignment="right"):
+        st.button(
+            theme_icon,
+            key="theme_switch_button",
+            help="Cambiar tema",
+            on_click=on_theme_change,
+        )
+
+    with st.container(horizontal_alignment="center"):
+        with st.container(border=True, width=480, key="login_card"):
+            with st.container(horizontal_alignment="center", gap=None):
+                st.html("""
+                    <img src="https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/69691ca0d848087449f86454.svg"
+                         alt="Inhaus" class="inhaus-login-logo"
+                         style="display:block;width:180px;margin:0 auto 0.75rem;">
+                """)
+                st.markdown("## Acceso al dashboard", text_alignment="center")
+                st.caption(
+                    "Ingresa tus credenciales para consultar tus reportes de pauta.",
+                    text_alignment="center",
+                )
+
+            with st.form("dashboard_login_form", border=False):
+                username = st.text_input(
+                    "Usuario",
+                    placeholder="Ingresa tu usuario",
+                    autocomplete="username",
+                    icon=":material/person:",
+                )
+                password = st.text_input(
+                    "Contraseña",
+                    type="password",
+                    placeholder="Ingresa tu contraseña",
+                    autocomplete="current-password",
+                    icon=":material/lock:",
+                )
+                submitted = st.form_submit_button(
+                    "Ingresar al dashboard",
+                    type="primary",
+                    icon=":material/login:",
+                    width="stretch",
+                )
+
+            if submitted:
+                try:
+                    user = authenticate_dashboard_user(username, password)
+                except Exception as exc:
+                    st.error(f"No se pudo validar el usuario en Firebase: {exc}")
+                else:
+                    if user:
+                        token = create_dashboard_token(user)
+                        st.session_state["dashboard_auth_token"] = token
+                        st.session_state["dashboard_user"] = user
+                        st.session_state["query_run"] = False
+                        st.query_params[DASHBOARD_AUTH_QUERY_PARAM] = token
+                        st.rerun()
+                    st.error("Usuario o contraseña incorrectos.")
     st.stop()
 
 

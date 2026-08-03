@@ -61,7 +61,8 @@ from dashboard.api import (
     fetch_connections_from_api,
     fetch_schema_from_api,
     fetch_campaign_data_from_api,
-    fetch_meta_campaign_previews,
+    fetch_meta_aggregate_insights,
+    fetch_meta_ad_previews,
     fetch_meta_filter_rows,
     process_api_response,
 )
@@ -69,9 +70,16 @@ from dashboard.api import (
 from dashboard.utils import (
     extract_metric,
     translate_dimension_value,
+    translate_meta_result_indicator,
     clean_region_name,
     clean_campaign_name,
     meta_base_campaign_name,
+    meta_campaigns_with_impressions,
+    select_meta_ad_winners,
+    fetch_meta_detail_rows,
+    enrich_meta_campaign_summary,
+    build_meta_campaign_total_row,
+    meta_detail_table_config,
     dashboard_filter_options,
     apply_dashboard_filters,
     campaign_title,
@@ -86,9 +94,17 @@ from dashboard.ui import (
     render_dashboard_empty_state,
 )
 
+DASHBOARD_CACHE_VERSION = 4
+
+
 if os.getenv("DASHBOARD_AUTH_SELF_CHECK") == "1":
     dashboard_auth_self_check()
     raise SystemExit("dashboard auth self-check passed")
+
+
+def toggle_theme():
+    st.session_state["theme_switch"] = not st.session_state.get("theme_switch", True)
+
 
 # Determine sidebar collapse state dynamically to hide it automatically once query runs
 initial_sidebar = "collapsed" if st.session_state.get("query_run", False) else "expanded"
@@ -118,14 +134,118 @@ footer {visibility: hidden !important;}
 
 /* Clean up header background and shadow so it's transparent, but keep container
    intact so the sidebar toggle/hamburger button is visible in the top-left */
-[data-testid="stHeader"] {
-background-color: transparent !important;
-box-shadow: none !important;
+/* When sidebar is expanded, hide stHeader completely so it never creates a ghost/double button */
+.stApp:has([data-testid="stSidebar"][aria-expanded="true"]) [data-testid="stHeader"] {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
 }
-[data-testid="stHeader"] button, [data-testid="stHeader"] svg {
-color: #EAF0F7 !important;
-fill: #EAF0F7 !important;
-stroke: #EAF0F7 !important;
+
+/* Reset stSidebarCollapseButton span container to prevent double borders */
+[data-testid="stSidebarCollapseButton"],
+span[data-testid="stSidebarCollapseButton"] {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+/* Sidebar collapse/expand toggle button styling & position */
+[data-testid="stHeader"] {
+    background-color: transparent !important;
+    box-shadow: none !important;
+    height: 0px !important;
+    min-height: 0px !important;
+    overflow: visible !important;
+    position: absolute !important;
+    top: 21px !important;
+    left: 16px !important;
+    z-index: 9999 !important;
+}
+
+[data-testid="stHeader"] button,
+[data-testid="stHeader"] [data-testid="stSidebarCollapseButton"] button {
+    background: rgba(2, 86, 158, 0.12) !important;
+    border: 1px solid rgba(2, 86, 158, 0.3) !important;
+    border-radius: 8px !important;
+    color: #02569e !important;
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    min-height: 32px !important;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+}
+
+[data-testid="stHeader"] button:hover,
+[data-testid="stHeader"] [data-testid="stSidebarCollapseButton"] button:hover {
+    background: #02569e !important;
+    color: #FFFFFF !important;
+    border-color: #02569e !important;
+}
+
+[data-testid="stHeader"] button svg,
+[data-testid="stHeader"] [data-testid="stSidebarCollapseButton"] button svg {
+    color: currentColor !important;
+    fill: currentColor !important;
+    stroke: currentColor !important;
+    width: 18px !important;
+    height: 18px !important;
+}
+
+/* Sidebar close button inside sidebar header */
+[data-testid="stSidebarHeader"] {
+    min-height: 0px !important;
+    height: auto !important;
+    padding: 12px 16px 0px 16px !important;
+    display: flex !important;
+    justify-content: flex-end !important;
+    align-items: center !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] button,
+[data-testid="stSidebarHeader"] [data-testid="stSidebarCollapseButton"] button,
+[data-testid="stSidebarHeader"] button {
+    position: static !important;
+    top: auto !important;
+    left: auto !important;
+    margin: 0 !important;
+    background: rgba(255, 255, 255, 0.06) !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    border-radius: 8px !important;
+    color: #8A97A8 !important;
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    min-height: 32px !important;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] button:hover,
+[data-testid="stSidebarHeader"] [data-testid="stSidebarCollapseButton"] button:hover,
+[data-testid="stSidebarHeader"] button:hover {
+    background: rgba(255, 255, 255, 0.14) !important;
+    color: #FFFFFF !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] button svg,
+[data-testid="stSidebarHeader"] button svg {
+    color: currentColor !important;
+    fill: currentColor !important;
+    stroke: currentColor !important;
+    width: 18px !important;
+    height: 18px !important;
 }
 
 /* Hide the 3-dots Menu button specifically */
@@ -139,9 +259,79 @@ stroke: #EAF0F7 !important;
 }
 
 /* Remove default Streamlit top padding and container margins */
-.block-container {
-    padding-top: 1.5rem !important;
+.block-container,
+[data-testid="stMainBlockContainer"] {
+    padding-top: 0.5rem !important;
     padding-bottom: 2rem !important;
+    position: relative !important;
+}
+
+/* Collapse empty download slot container completely in block flow */
+.block-container > div:first-child:has(> div:empty),
+.block-container > div[data-testid="stElementContainer"]:has(> div:empty),
+[data-testid="stMainBlockContainer"] > div:first-child:has(> div:empty) {
+    display: none !important;
+    height: 0px !important;
+    margin: 0px !important;
+    padding: 0px !important;
+}
+
+/* Position download slot inline inside header next to API Directa */
+.block-container > div[data-testid="stElementContainer"]:has([data-testid="stPopover"]),
+[data-testid="stMainBlockContainer"] > div[data-testid="stElementContainer"]:has([data-testid="stPopover"]),
+div[data-testid="stElementContainer"]:has([data-testid="stPopover"]),
+div[data-testid="stElementContainer"]:has([data-testid="stPopoverButton"]) {
+    position: absolute !important;
+    left: auto !important;
+    right: 140px !important;
+    top: 22px !important;
+    z-index: 9999 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: auto !important;
+    height: 0 !important;
+    display: flex !important;
+    justify-content: flex-end !important;
+}
+
+div[data-testid="stElementContainer"]:has([data-testid="stPopover"]) > div,
+[data-testid="stPopover"],
+[data-testid="stPopoverButton"] {
+    position: relative !important;
+    left: auto !important;
+    right: auto !important;
+    width: auto !important;
+    display: inline-flex !important;
+}
+
+[data-testid="stPopoverButton"],
+[data-testid="stDownloadButton"] button {
+    background-color: #02569e !important;
+    color: #FFFFFF !important;
+    border: none !important;
+    border-radius: 6px !important;
+    padding: 4px 12px !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    height: 28px !important;
+    min-height: 28px !important;
+    line-height: 1 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    box-shadow: 0 2px 6px rgba(2, 86, 158, 0.3) !important;
+}
+[data-testid="stPopoverButton"] *,
+[data-testid="stDownloadButton"] button * {
+    color: #FFFFFF !important;
+    fill: #FFFFFF !important;
+    stroke: #FFFFFF !important;
+}
+[data-testid="stPopoverBody"] {
+    background-color: #FFFFFF !important;
+}
+[data-testid="stPopoverBody"] > div {
+    background-color: #FFFFFF !important;
 }
 
 /* Sidebar Wrapper */
@@ -213,34 +403,48 @@ stroke: #EAF0F7 !important;
 }
 
 
+:root {
+    --inhaus-polygon-gradient: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='20.5' y2='20.5' gradientUnits='userSpaceOnUse'%3E%3Cstop stop-color='white'/%3E%3Cstop offset='.84506' stop-color='white' stop-opacity='.99'/%3E%3Cstop offset='.9506' stop-color='white' stop-opacity='0'/%3E%3Cstop offset='1' stop-color='white' stop-opacity='0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M0 0H40L0 40V0Z' fill='url(%23g)'/%3E%3C/svg%3E");
+}
+
 .inhaus-theme-wipe {
     position: fixed;
     inset: 0;
     z-index: 2147483647;
     pointer-events: none;
-    clip-path: polygon(0 0, 0 0, 0 0);
-    animation: inhaus-polygon-gradient 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    mask: var(--inhaus-polygon-gradient) top left / 0 no-repeat;
+    mask-origin: top left;
+    animation: inhaus-theme-scale 1.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .inhaus-theme-wipe.inhaus-to-dark { background: #0A0D13; }
 .inhaus-theme-wipe.inhaus-to-light { background: #F8F9FC; }
 
-::view-transition-old(root),
-::view-transition-new(root) {
-    animation-duration: 900ms;
-    animation-fill-mode: both;
+::view-transition-group(root) {
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
 }
-::view-transition-new(root) { animation-name: inhaus-theme-scale; }
+
+::view-transition-new(root) {
+    mask: var(--inhaus-polygon-gradient) top left / 0 no-repeat;
+    mask-origin: top left;
+    animation: inhaus-theme-scale 1.5s both;
+}
+
+::view-transition-old(root) {
+    animation: none;
+    z-index: -1;
+}
 
 @keyframes inhaus-theme-scale {
-    from { clip-path: polygon(0 0, 0 0, 0 0); }
-    to { clip-path: polygon(0 0, 200vw 0, 0 200vh); }
+    to { mask-size: 200vmax; }
 }
 
-@keyframes inhaus-polygon-gradient {
-    0% { clip-path: polygon(0 0, 0 0, 0 0); }
-    70% { clip-path: polygon(0 0, 100% 0, 0 100%); }
-    100% { clip-path: polygon(0 0, 200vw 0, 0 200vh); opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+    ::view-transition-group(root),
+    ::view-transition-new(root),
+    .inhaus-theme-wipe {
+        animation-duration: 1ms !important;
+    }
 }
 
 /* Typography Overrides */
@@ -257,11 +461,21 @@ h1, h2, h3, .sipy-word {
     padding: 16px 0px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     margin-bottom: 30px;
+    position: relative;
+}
+.custom-header-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    min-width: fit-content !important;
 }
 .agency {
     display: flex;
     align-items: center;
     gap: 12px;
+    margin-left: 44px;
 }
 .agency img {
 height: 26px;
@@ -285,19 +499,22 @@ width: auto;
     font-size: 12px;
     color: #8A97A8;
     font-weight: 600;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    min-width: fit-content !important;
 }
 .stamp .live {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #1AE08C;
-    box-shadow: 0 0 0 0 rgba(26,224,140,0.6);
+    background: #02569e;
+    box-shadow: 0 0 0 0 rgba(2,86,158,0.6);
     animation: pulse 2s infinite;
 }
 @keyframes pulse {
-0% { box-shadow: 0 0 0 0 rgba(26,224,140,0.5); }
-70% { box-shadow: 0 0 0 8px rgba(26,224,140,0); }
-100% { box-shadow: 0 0 0 0 rgba(26,224,140,0); }
+0% { box-shadow: 0 0 0 0 rgba(2,86,158,0.5); }
+70% { box-shadow: 0 0 0 8px rgba(2,86,158,0); }
+100% { box-shadow: 0 0 0 0 rgba(2,86,158,0); }
 }
 
 .loading-overlay {
@@ -315,7 +532,7 @@ justify-content: center;
 }
 .loading-text {
 font-family: 'Sora', sans-serif;
-color: #1AE08C;
+color: #02569e;
 font-size: 24px;
 margin-top: 20px;
 font-weight: 800;
@@ -325,7 +542,7 @@ border: 6px solid rgba(255, 255, 255, 0.1);
 width: 70px;
 height: 70px;
 border-radius: 50%;
-border-left-color: #1AE08C;
+border-left-color: #02569e;
 animation: spin 1s linear infinite;
 }
 @keyframes spin {
@@ -339,7 +556,7 @@ animation: spin 1s linear infinite;
     font-weight: 800;
     letter-spacing: .2em;
     text-transform: uppercase;
-    color: #1AE08C;
+    color: #02569e;
 }
 .lede {
     color: #8A97A8;
@@ -373,7 +590,7 @@ animation: spin 1s linear infinite;
     line-height: .9;
     letter-spacing: -.04em;
     margin-top: 6px;
-    color: #1AE08C;
+    color: #02569e;
 }
 
 /* KPI Grid Styling */
@@ -434,8 +651,8 @@ animation: spin 1s linear infinite;
     width: fit-content;
 }
 .delta.up {
-    background: rgba(26,224,140,0.14);
-    color: #1AE08C;
+    background: rgba(2,86,158,0.14);
+    color: #02569e;
 }
 .delta.down {
 background: rgba(255,107,107,0.14);
@@ -468,6 +685,43 @@ color: #8A97A8;
 font-weight: 800;
 }
 
+/* Multiselect tag styling */
+[data-baseweb="tag"],
+[data-baseweb="select"] [data-baseweb="tag"] {
+    background-color: #02569e !important;
+    border-radius: 6px !important;
+    max-width: 100% !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    padding: 2px 8px !important;
+    box-sizing: border-box !important;
+}
+[data-baseweb="tag"] *,
+[data-baseweb="select"] [data-baseweb="tag"] *,
+[data-baseweb="select"] [data-baseweb="tag"] span,
+[data-baseweb="select"] [data-baseweb="tag"] div,
+[data-baseweb="select"] [data-baseweb="tag"] svg,
+[data-baseweb="select"] [data-baseweb="tag"] path {
+    color: #FFFFFF !important;
+    fill: #FFFFFF !important;
+    stroke: #FFFFFF !important;
+}
+[data-baseweb="tag"] > span,
+[data-baseweb="tag"] [title],
+[data-baseweb="select"] [data-baseweb="tag"] span {
+    text-align: left !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    max-width: 180px !important;
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
+    margin: 0 !important;
+    padding: 0 4px 0 2px !important;
+    display: inline-block !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -481,30 +735,132 @@ if theme_mode == "Claro":
     [data-testid="stSidebar"] img {
         filter: invert(1) brightness(0.25) !important;
     }
+
+    .st-key-login_card {
+        background: #FFFFFF !important;
+        border-color: rgba(15,23,42,0.14) !important;
+        box-shadow: 0 12px 30px rgba(15,23,42,0.08) !important;
+    }
+    .st-key-login_card [data-testid="stTextInputRootElement"] {
+        background: #FFFFFF !important;
+        border-color: rgba(15,23,42,0.18) !important;
+    }
+    .st-key-login_card [data-testid="stTextInputRootElement"]:focus-within {
+        border-color: #02569e !important;
+        box-shadow: 0 0 0 1px #02569e !important;
+    }
+    .st-key-login_card [data-testid="stTextInputIcon"],
+    .st-key-login_card [data-testid="stTextInputRootElement"] > button,
+    .st-key-login_card [data-testid="stTextInputRootElement"] [data-testid="stIconMaterial"] {
+        background: transparent !important;
+        color: #475569 !important;
+    }
+
+    /* Fix sidebar close button (<<) in Light Mode */
+    [data-testid="stSidebarHeader"] button,
+    [data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] button {
+        background: #F1F5F9 !important;
+        border: 1px solid rgba(15,23,42,0.15) !important;
+        color: #0F172A !important;
+    }
+    [data-testid="stSidebarHeader"] button svg,
+    [data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] button svg {
+        fill: #0F172A !important;
+        stroke: #0F172A !important;
+        color: #0F172A !important;
+    }
+    [data-testid="stSidebarHeader"] button:hover,
+    [data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] button:hover {
+        background: #02569e !important;
+        color: #FFFFFF !important;
+        border-color: #02569e !important;
+    }
+    [data-testid="stSidebarHeader"] button:hover svg,
+    [data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] button:hover svg {
+        fill: #FFFFFF !important;
+        stroke: #FFFFFF !important;
+        color: #FFFFFF !important;
+    }
     
     /* Globally override input, textarea, and select box colors in light mode */
     input,
     textarea,
+    [data-baseweb="input"],
     [data-baseweb="input"] > div,
-    [data-baseweb="select"] > div {
+    [data-baseweb="select"],
+    [data-baseweb="select"] > div:first-child,
+    [data-testid="stDateInput"] > div {
         background: #FFFFFF !important;
         color: #0F172A !important;
-        border-color: rgba(15,23,42,0.14) !important;
+        border-color: rgba(15,23,42,0.16) !important;
     }
     input::placeholder,
-    textarea::placeholder { color: #64748B !important; }
+    textarea::placeholder { color: #475569 !important; }
+
+    /* Fix selectbox placeholders and value containers in Light Mode */
+    [data-baseweb="select"] [data-baseweb="value-container"] div:not([data-baseweb="tag"]):not([data-baseweb="tag"] *),
+    [data-baseweb="select"] [data-baseweb="value-container"] span:not([data-baseweb="tag"]):not([data-baseweb="tag"] *),
+    [data-baseweb="select"] [data-baseweb="placeholder"],
+    [data-baseweb="select"] input::placeholder,
+    [data-baseweb="select"] [role="combobox"] * {
+        color: #0F172A !important;
+    }
     
-    /* Ensure text inside dropdowns / selectboxes is dark */
-    [data-baseweb="select"] span,
-    [data-baseweb="select"] div,
+    /* Ensure inner selectbox containers don't create opaque white overlays over tags */
+    [data-baseweb="select"] div:not([data-baseweb="tag"]):not([data-baseweb="tag"] *) {
+        background-color: transparent !important;
+        color: #0F172A !important;
+    }
+    
+    /* Ensure text inside selectbox container is dark, except multiselect tags */
+    [data-baseweb="select"] span:not([data-baseweb="tag"]):not([data-baseweb="tag"] *),
     [data-baseweb="select"] input {
         color: #0F172A !important;
     }
-    [data-baseweb="tag"] {
-        background: #10B981 !important;
+    [data-baseweb="select"] svg:not([data-baseweb="tag"] *):not([data-baseweb="tag"]) {
+        fill: #0F172A !important;
     }
-    [data-baseweb="tag"] * {
+    
+    /* Multiselect tags in light mode */
+    [data-baseweb="tag"],
+    [data-baseweb="select"] [data-baseweb="tag"],
+    [data-baseweb="select"] span[data-baseweb="tag"] {
+        background: #02569e !important;
+        background-color: #02569e !important;
+        border-radius: 6px !important;
+        max-width: 100% !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        padding: 2px 8px !important;
+        margin: 2px 4px 2px 0 !important;
+        box-sizing: border-box !important;
+        position: relative !important;
+        z-index: 2 !important;
+    }
+    [data-baseweb="tag"] *,
+    [data-baseweb="select"] [data-baseweb="tag"] *,
+    [data-baseweb="select"] [data-baseweb="tag"] span,
+    [data-baseweb="select"] [data-baseweb="tag"] div,
+    [data-baseweb="select"] [data-baseweb="tag"] svg,
+    [data-baseweb="select"] [data-baseweb="tag"] path {
         color: #FFFFFF !important;
+        fill: #FFFFFF !important;
+        stroke: #FFFFFF !important;
+    }
+    [data-baseweb="tag"] > span,
+    [data-baseweb="tag"] [title],
+    [data-baseweb="select"] [data-baseweb="tag"] span {
+        text-align: left !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        max-width: 180px !important;
+        min-width: 0 !important;
+        flex: 1 1 auto !important;
+        margin: 0 !important;
+        padding: 0 4px 0 2px !important;
+        display: inline-block !important;
     }
     
     /* Dropdown popover menu in light mode */
@@ -522,10 +878,71 @@ if theme_mode == "Claro":
     [data-baseweb="menu"] [role="option"]:hover,
     [data-baseweb="menu"] [role="option"][aria-selected="true"] {
         background-color: #F1F5F9 !important;
-        color: #0F172A !important;
+        color: #02569e !important;
     }
     
+    /* Expander / Accordion styling in Light Mode */
+    [data-testid="stExpander"],
+    details,
+    [data-baseweb="accordion"],
+    div[data-testid="stExpanderDetails"] {
+        background-color: #FFFFFF !important;
+        border: 1px solid rgba(15,23,42,0.12) !important;
+        border-radius: 10px !important;
+        color: #0F172A !important;
+    }
+    summary,
+    details summary,
+    [data-testid="stExpander"] summary {
+        background-color: #F8F9FC !important;
+        color: #0F172A !important;
+        border-radius: 10px !important;
+    }
+    summary *,
+    details summary *,
+    [data-testid="stExpander"] summary * {
+        color: #0F172A !important;
+        fill: #0F172A !important;
+        stroke: #0F172A !important;
+    }
+    
+    /* Buttons in Light Mode (Consultar API, submit buttons, form buttons) */
+    .stButton > button,
+    [data-testid="stFormSubmitButton"] > button,
+    button[kind="primary"],
+    button[kind="secondary"] {
+        background-color: #02569e !important;
+        color: #FFFFFF !important;
+        border: 1px solid #02569e !important;
+        border-radius: 10px !important;
+        font-weight: 700 !important;
+    }
+    .stButton > button *,
+    [data-testid="stFormSubmitButton"] > button * {
+        color: #FFFFFF !important;
+        fill: #FFFFFF !important;
+    }
+    .stButton > button:hover,
+    [data-testid="stFormSubmitButton"] > button:hover {
+        background-color: #01437d !important;
+        border-color: #01437d !important;
+        color: #FFFFFF !important;
+    }
+
+    /* Checkbox labels and icons in Light Mode */
+    [data-testid="stCheckbox"] label,
+    [data-testid="stCheckbox"] span,
+    [data-testid="stCheckbox"] p {
+        color: #0F172A !important;
+    }
+    [data-testid="stCheckbox"] input:checked + div {
+        background-color: #02569e !important;
+        border-color: #02569e !important;
+    }
+
     /* Sidebar collapse button and all header/sidebar icon SVGs */
+    [data-testid="stExpandSidebarButton"],
+    [data-testid="stExpandSidebarButton"] *,
     button[aria-label="Close sidebar"] svg,
     button[aria-label="Open sidebar"] svg,
     [data-testid="stSidebarCollapseButton"] svg,
@@ -554,19 +971,6 @@ if theme_mode == "Claro":
         fill: #FFFFFF !important;
         stroke: #FFFFFF !important;
     }
-    button[aria-label="Close sidebar"],
-    button[aria-label="Open sidebar"],
-    [data-testid="stSidebarCollapseButton"] button,
-    [data-testid="stSidebarHeader"] button,
-    button[title="Close sidebar"],
-    .stSidebarCollapseButton button,
-    [data-testid="stSidebar"] button,
-    [data-testid="stSidebar"] svg {
-        color: #0F172A !important;
-        fill: #0F172A !important;
-        stroke: #0F172A !important;
-        opacity: 1 !important;
-    }
     
     /* Keep tooltip content readable (white text on dark background) */
     div[data-testid="stTooltipContent"] *,
@@ -578,17 +982,17 @@ if theme_mode == "Claro":
     [data-testid="stHeader"] button, [data-testid="stHeader"] svg { color: #0F172A !important; fill: #0F172A !important; stroke: #0F172A !important; }
     h1, h2, h3, h4, .sipy-word { color: #0F172A !important; }
     .custom-header { border-bottom-color: rgba(15,23,42,0.08); }
-    .agency img { filter: invert(1) brightness(0.25); }
+    .agency img, .inhaus-login-logo { filter: invert(1) brightness(0.25); }
     .agency .div-bar { background: rgba(15,23,42,0.12); }
     .agency .who, .stamp, .lede, .kpi .lab, .hero-card .lab { color: #64748B; }
     .loading-overlay { background-color: rgba(248,249,252,0.95); }
-    .spinner { border-color: rgba(15,23,42,0.08); border-left-color: #059669; }
-    .loading-text, .eyebrow, .hero-card .big { color: #059669; }
+    .spinner { border-color: rgba(15,23,42,0.08); border-left-color: #02569e; }
+    .loading-text, .eyebrow, .hero-card .big { color: #02569e; }
     .hero-card { background: linear-gradient(165deg, #FFFFFF, #F1F5F9); border-color: rgba(15,23,42,0.08); color: #1E293B; box-shadow: 0 4px 15px rgba(15,23,42,0.04); }
     .kpi, .stTable { background: #FFFFFF !important; border-color: rgba(15,23,42,0.08) !important; color: #1E293B; box-shadow: 0 4px 12px rgba(15,23,42,0.03); }
     .kpi .val { color: #0F172A; }
     .kpi .sub { color: #94A3B8; }
-    .delta.up { background: rgba(5,150,105,0.1); color: #059669; }
+    .delta.up { background: rgba(2,86,158,0.1); color: #02569e; }
     .delta.down { background: rgba(220,38,38,0.1); color: #DC2626; }
     .stApp label, .stApp p, [data-testid="stWidgetLabel"], [data-testid="stMarkdownContainer"] { color: #0F172A; }
     [data-testid="stDataFrame"] { background: #FFFFFF !important; color: #0F172A !important; }
@@ -600,20 +1004,21 @@ if theme_mode == "Claro":
     .inhaus-logout-btn {
         color: #FF4B4B !important;
         background-color: transparent !important;
+        border-color: rgba(255, 75, 75, 0.4) !important;
     }
     .inhaus-logout-btn:hover {
         background-color: rgba(255, 75, 75, 0.1) !important;
+        border-color: #FF4B4B !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
-dashboard_user = require_dashboard_login()
-components.html("""
+st.html("""
 <script>
 (function() {
     const parentDoc = window.parent.document;
     const parentWin = window.parent;
-    const version = "polygon-gradient-v6";
+    const version = "polygon-gradient-v7";
     if (parentDoc.__inhausSidebarEnhancer === version) return;
     parentDoc.__inhausSidebarEnhancer = version;
 
@@ -633,15 +1038,51 @@ components.html("""
         if (collapseBtn) collapseBtn.click();
     };
 
-    const startThemeTransition = (event) => {
-        const button = event.target.closest("button");
-        if (!button || !button.textContent.match(/[☀☾]/)) return;
-        const goingDark = button.textContent.includes("☀");
+    const showThemeFallback = (goingDark) => {
         const wipe = parentDoc.createElement("div");
         wipe.className = "inhaus-theme-wipe " + (goingDark ? "inhaus-to-dark" : "inhaus-to-light");
         parentDoc.body.appendChild(wipe);
         wipe.addEventListener("animationend", () => wipe.remove(), { once: true });
-        setTimeout(() => wipe.remove(), 1200);
+        setTimeout(() => wipe.remove(), 1800);
+    };
+
+    const waitForThemeChange = (expectedIcon) => new Promise((resolve) => {
+        let observer;
+        let timeout;
+        const changed = () => Array.from(
+            parentDoc.querySelectorAll('.st-key-theme_switch_button button')
+        ).some((button) => button.textContent.includes(expectedIcon));
+        const done = () => {
+            if (observer) observer.disconnect();
+            if (timeout) parentWin.clearTimeout(timeout);
+            resolve();
+        };
+        if (changed()) {
+            done();
+            return;
+        }
+        observer = new parentWin.MutationObserver(() => {
+            if (changed()) done();
+        });
+        observer.observe(parentDoc.body, { childList: true, subtree: true, characterData: true });
+        timeout = parentWin.setTimeout(done, 2000);
+    });
+
+    const startThemeTransition = (event) => {
+        const button = event.target.closest("button");
+        if (!button || !button.textContent.match(/[☀☾]/)) return;
+        const goingDark = button.textContent.includes("☀");
+        if (typeof parentDoc.startViewTransition === "function") {
+            try {
+                parentDoc.startViewTransition(
+                    () => waitForThemeChange(goingDark ? "☾" : "☀")
+                );
+                return;
+            } catch (_) {
+                // Fall through for browsers that expose but cannot start view transitions.
+            }
+        }
+        showThemeFallback(goingDark);
     };
 
     const tagLogoutButton = () => {
@@ -667,14 +1108,14 @@ components.html("""
     });
 })();
 </script>
-""", height=0, width=0)
+""", unsafe_allow_javascript=True)
+
+theme_icon = "☾" if theme_mode == "Oscuro" else "☀"
+dashboard_user = require_dashboard_login(theme_icon, toggle_theme)
 
 # SIDEBAR FILTERS (Acts as the collapsible Hamburger Menu on the left)
 st.sidebar.image("https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/69691ca0d848087449f86454.svg", width=180)
-theme_icon = "☾" if theme_mode == "Oscuro" else "☀"
-if st.sidebar.button(theme_icon, key="theme_switch_button", help="Cambiar tema"):
-    st.session_state["theme_switch"] = theme_mode != "Oscuro"
-    st.rerun()
+st.sidebar.button(theme_icon, key="theme_switch_button", help="Cambiar tema", on_click=toggle_theme)
 
 st.sidebar.markdown("### Configuración de Consulta")
 
@@ -755,7 +1196,7 @@ for selected_platform_key in selected_platform_keys:
         if not account_id_value:
             st.warning("Selecciona una cuenta.")
             continue
-        schema_key = ("schema", selected_platform_key, api_key)
+        schema_key = ("schema", DASHBOARD_CACHE_VERSION, selected_platform_key, api_key)
         if schema_key not in sidebar_cache:
             sidebar_cache[schema_key] = fetch_schema_from_api(selected_platform_key, api_key)
         schema_data = sidebar_cache[schema_key]
@@ -850,9 +1291,11 @@ if st.sidebar.button("🔒 Cerrar Sesión", key="logout_button", use_container_w
     st.session_state.pop("dashboard_auth_token", None)
     st.session_state.pop("dashboard_user", None)
     dashboard_auth_cookie_bridge(clear=True)
-    st.rerun()
+    st.stop()
 
 # MAIN DISPLAY (Occupies full wide screen)
+download_slot = st.empty()
+
 # Header
 st.markdown(f"""
 <div class="custom-header">
@@ -861,7 +1304,9 @@ st.markdown(f"""
         <span class="div-bar"></span>
         <span class="who">Dashboard de Pauta &middot; Conexión de API</span>
     </div>
-    <span class="stamp"><span class="live"></span> API Directa</span>
+    <div class="custom-header-right">
+        <span class="stamp"><span class="live"></span> API Directa</span>
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -887,7 +1332,7 @@ for cfg in platform_configs:
     dimension_names = [x["name"] for x in cfg["dimensions_list"]]
     request_metrics = list(cfg["selected_metrics"])
     if cfg["platform_type"] == "ads":
-        standard_metrics = ["impressions", "clicks", "spend", "conversions", "reach"]
+        standard_metrics = ["impressions", "clicks", "spend", "conversions", "lead", "reach", "post_engagement", "__results__", "cost_per_result"]
     elif cfg["platform_type"] == "analytics":
         standard_metrics = ["sessions", "users", "pageviews", "bounce_rate"]
     elif cfg["platform_type"] == "app_store":
@@ -910,6 +1355,7 @@ for cfg in platform_configs:
     ))
 
 query_key = (
+    DASHBOARD_CACHE_VERSION,
     client_id, user_id,
     start_date.isoformat(), end_date.isoformat(),
     bool(write_to_bq), tuple(query_configs),
@@ -920,6 +1366,9 @@ force_query_fetch = st.session_state.pop("force_query_fetch", False)
 if force_query_fetch:
     st.session_state["active_query_key"] = query_key
 active_query_key = st.session_state.get("active_query_key", query_key)
+if active_query_key[0] != DASHBOARD_CACHE_VERSION:
+    active_query_key = query_key
+    st.session_state["active_query_key"] = query_key
 
 if force_query_fetch or active_query_key not in st.session_state["dashboard_query_cache"]:
     curr_frames = []
@@ -940,7 +1389,7 @@ if force_query_fetch or active_query_key not in st.session_state["dashboard_quer
         prev_rows = fetch_campaign_data_from_api(
             cfg["platform_key"], client_id, user_id, cfg["account_id"],
             prev_start_date, prev_end_date, cfg["request_metrics"], cfg["request_dimensions"],
-            cfg["opt_filters"], False, api_key, show_errors=False, timeout=45
+            cfg["opt_filters"], False, api_key, show_errors=False
         )
         if curr_rows:
             curr_frames.append(process_api_response(curr_rows, cfg["platform_key"], client_id, user_id))
@@ -975,6 +1424,29 @@ account_disp = active_context["account_disp"]
 selected_dimensions = active_context["selected_dimensions"]
 opt_filters = active_context["opt_filters"]
 
+for frame in (df_curr, df_prev):
+    if "results" not in frame.columns:
+        frame["results"] = frame.get("__results__", 0)
+    if "cost_per_result" not in frame.columns:
+        frame["cost_per_result"] = 0.0
+    if "result_indicator" not in frame.columns:
+        frame["result_indicator"] = ""
+    if "post_engagement" not in frame.columns:
+        frame["post_engagement"] = 0
+
+if platform_key == "meta_ads" and not df_curr.empty:
+    eligible_campaigns = meta_campaigns_with_impressions(df_curr)
+    eligible_previous_campaigns = meta_campaigns_with_impressions(df_prev)
+    df_curr = df_curr[
+        df_curr["campaign_name"].astype(str).apply(meta_base_campaign_name).isin(eligible_campaigns)
+    ].copy()
+    if not df_prev.empty:
+        df_prev = df_prev[
+            df_prev["campaign_name"].astype(str).apply(meta_base_campaign_name).isin(
+                eligible_previous_campaigns
+            )
+        ].copy()
+
 # Inject JavaScript to automatically collapse the sidebar menu if it is expanded
 import streamlit.components.v1 as components
 components.html("""
@@ -999,10 +1471,14 @@ if df_curr.empty:
     st.stop()
 else:
     applied_campaign_filter = []
-    applied_adset_filter = "Todos"
+    applied_adset_filter = []
     applied_ad_filter = "Todos"
     if platform_key == "meta_ads":
-        filter_rows, filter_error = fetch_meta_filter_rows(client_id, account_id, api_key)
+        st.session_state.setdefault("meta_filter_rows_cache", {})
+        filter_cache_key = (client_id, account_id, api_key)
+        if force_query_fetch or filter_cache_key not in st.session_state["meta_filter_rows_cache"]:
+            st.session_state["meta_filter_rows_cache"][filter_cache_key] = fetch_meta_filter_rows(client_id, account_id, api_key)
+        filter_rows, filter_error = st.session_state["meta_filter_rows_cache"][filter_cache_key]
         meta_filter_df = pd.DataFrame(filter_rows)
         if not meta_filter_df.empty:
             campaign_names = set(df_curr["campaign_name"].dropna().astype(str).apply(meta_base_campaign_name))
@@ -1013,10 +1489,15 @@ else:
 
         campaign_col, adset_col, ad_col, apply_col = st.columns([2, 2, 2, 1])
         with campaign_col:
-            campaign_options = dashboard_filter_options(df_curr, "campaign_name")[1:]
+            campaign_options = sorted({
+                meta_base_campaign_name(value)
+                for value in df_curr["campaign_name"].dropna().astype(str)
+                if meta_base_campaign_name(value)
+            })
             current_campaign_filter = st.session_state.get("meta_campaign_filter", [])
             if isinstance(current_campaign_filter, str):
                 current_campaign_filter = [] if current_campaign_filter == "Todos" else [current_campaign_filter]
+            current_campaign_filter = [meta_base_campaign_name(value) for value in current_campaign_filter]
             st.session_state["meta_campaign_filter"] = [value for value in current_campaign_filter if value in campaign_options]
             campaign_filter = st.multiselect("Campañas", campaign_options, key="meta_campaign_filter")
 
@@ -1024,14 +1505,16 @@ else:
         if campaign_filter and not filtered_meta_rows.empty:
             filtered_meta_rows = filtered_meta_rows[filtered_meta_rows["base_campaign_name"].isin({meta_base_campaign_name(value) for value in campaign_filter})]
         with adset_col:
-            adset_options = dashboard_filter_options(filtered_meta_rows, "adset_name")
-            if st.session_state.get("meta_adset_filter") not in adset_options:
-                st.session_state["meta_adset_filter"] = "Todos"
-            adset_filter = st.selectbox("Conjunto de anuncios", adset_options, key="meta_adset_filter")
+            adset_options = dashboard_filter_options(filtered_meta_rows, "adset_name")[1:]
+            current_adset_filter = st.session_state.get("meta_adset_filter", [])
+            if isinstance(current_adset_filter, str):
+                current_adset_filter = [] if current_adset_filter == "Todos" else [current_adset_filter]
+            st.session_state["meta_adset_filter"] = [value for value in current_adset_filter if value in adset_options]
+            adset_filter = st.multiselect("Conjuntos de anuncios", adset_options, placeholder="Todos", key="meta_adset_filter")
 
         filtered_ad_rows = filtered_meta_rows
-        if adset_filter != "Todos" and not filtered_ad_rows.empty:
-            filtered_ad_rows = filtered_ad_rows[filtered_ad_rows["adset_name"] == adset_filter]
+        if adset_filter and not filtered_ad_rows.empty:
+            filtered_ad_rows = filtered_ad_rows[filtered_ad_rows["adset_name"].isin(adset_filter)]
         with ad_col:
             ad_options = dashboard_filter_options(filtered_ad_rows, "ad_name")
             if st.session_state.get("meta_ad_filter") not in ad_options:
@@ -1044,8 +1527,8 @@ else:
                 applied_api_filters = {}
                 if campaign_filter and not filtered_meta_rows.empty:
                     applied_api_filters["campaign.id"] = filtered_meta_rows["campaign_id"].dropna().astype(str).unique().tolist()
-                if adset_filter != "Todos" and not filtered_meta_rows.empty:
-                    applied_api_filters["adset.id"] = filtered_meta_rows[filtered_meta_rows["adset_name"] == adset_filter]["adset_id"].dropna().astype(str).unique().tolist()
+                if adset_filter and not filtered_meta_rows.empty:
+                    applied_api_filters["adset.id"] = filtered_meta_rows[filtered_meta_rows["adset_name"].isin(adset_filter)]["adset_id"].dropna().astype(str).unique().tolist()
                 if ad_filter != "Todos" and not filtered_ad_rows.empty:
                     applied_api_filters["ad.id"] = filtered_ad_rows[filtered_ad_rows["ad_name"] == ad_filter]["ad_id"].dropna().astype(str).unique().tolist()
                 st.session_state["meta_applied_campaign_filter"] = campaign_filter
@@ -1059,41 +1542,52 @@ else:
                 st.rerun()
 
         applied_campaign_filter = st.session_state.get("meta_applied_campaign_filter", [])
-        applied_adset_filter = st.session_state.get("meta_applied_adset_filter", "Todos")
+        applied_adset_filter = st.session_state.get("meta_applied_adset_filter", [])
+        if isinstance(applied_adset_filter, str):
+            applied_adset_filter = [] if applied_adset_filter == "Todos" else [applied_adset_filter]
         applied_ad_filter = st.session_state.get("meta_applied_ad_filter", "Todos")
         filtered_meta_rows = meta_filter_df
         if applied_campaign_filter and not filtered_meta_rows.empty:
             filtered_meta_rows = filtered_meta_rows[filtered_meta_rows["base_campaign_name"].isin({meta_base_campaign_name(value) for value in applied_campaign_filter})]
         filtered_ad_rows = filtered_meta_rows
-    if applied_adset_filter != "Todos" and not filtered_ad_rows.empty:
-        filtered_ad_rows = filtered_ad_rows[filtered_ad_rows["adset_name"] == applied_adset_filter]
+    if applied_adset_filter and not filtered_ad_rows.empty:
+        filtered_ad_rows = filtered_ad_rows[filtered_ad_rows["adset_name"].isin(applied_adset_filter)]
 
     detail_curr_rows = []
     detail_prev_rows = []
-    if applied_adset_filter != "Todos" or applied_ad_filter != "Todos":
-        detail_dimensions = list(active_context.get("request_dimensions", []))
-        for dim in ("adset_name", "ad_name"):
-            if dim not in detail_dimensions:
-                    detail_dimensions.append(dim)
-            detail_filters = {}
-            if applied_ad_filter != "Todos" and not filtered_ad_rows.empty:
-                detail_filters["ad.id"] = filtered_ad_rows[filtered_ad_rows["ad_name"] == applied_ad_filter]["ad_id"].dropna().astype(str).tolist()
-            elif applied_adset_filter != "Todos" and not filtered_meta_rows.empty:
-                detail_filters["adset.id"] = filtered_meta_rows[filtered_meta_rows["adset_name"] == applied_adset_filter]["adset_id"].dropna().astype(str).unique().tolist()
-            detail_opt_filters = dict(active_context.get("opt_filters", {}))
-            if detail_filters:
-                detail_opt_filters["filters"] = detail_filters
-            detail_metrics = active_context.get("request_metrics") or ["impressions", "clicks", "spend", "conversions", "reach"]
-            detail_curr_rows = fetch_campaign_data_from_api(
-                platform_key, client_id, user_id, account_id,
-                start_date, end_date, detail_metrics, detail_dimensions,
-                detail_opt_filters, False, api_key
+    if applied_campaign_filter or applied_adset_filter or applied_ad_filter != "Todos":
+        st.session_state.setdefault("meta_detail_cache", {})
+        detail_cache_key = (
+            active_query_key,
+            tuple(applied_campaign_filter),
+            tuple(applied_adset_filter),
+            applied_ad_filter,
+            tuple(filtered_meta_rows["campaign_id"].dropna().astype(str).unique().tolist()) if not filtered_meta_rows.empty else (),
+            tuple(filtered_ad_rows["adset_id"].dropna().astype(str).unique().tolist()) if not filtered_ad_rows.empty else (),
+        )
+        if force_query_fetch or detail_cache_key not in st.session_state["meta_detail_cache"]:
+            detail_curr_rows, detail_prev_rows = fetch_meta_detail_rows(
+                fetch_campaign_data_from_api,
+                platform_key,
+                client_id,
+                user_id,
+                account_id,
+                start_date,
+                end_date,
+                prev_start_date,
+                prev_end_date,
+                active_context.get("request_metrics"),
+                active_context.get("request_dimensions", []),
+                active_context.get("opt_filters", {}),
+                applied_adset_filter,
+                applied_ad_filter,
+                filtered_meta_rows,
+                filtered_ad_rows,
+                api_key,
             )
-            detail_prev_rows = fetch_campaign_data_from_api(
-                platform_key, client_id, user_id, account_id,
-                prev_start_date, prev_end_date, detail_metrics, detail_dimensions,
-                detail_opt_filters, False, api_key, show_errors=False
-            )
+            st.session_state["meta_detail_cache"][detail_cache_key] = (detail_curr_rows, detail_prev_rows)
+        else:
+            detail_curr_rows, detail_prev_rows = st.session_state["meta_detail_cache"][detail_cache_key]
         if detail_curr_rows:
             df_curr = process_api_response(detail_curr_rows, platform_key, client_id, user_id)
             df_prev = process_api_response(detail_prev_rows, platform_key, client_id, user_id) if detail_prev_rows else pd.DataFrame()
@@ -1102,6 +1596,105 @@ else:
         if applied_campaign_filter:
             st.caption(f"Campañas: {campaign_title(applied_campaign_filter, selected_platform_label)}")
 
+identity_config = (("base_campaign_name", "Campaña"),)
+detail_title = "Detalle de Campañas y Resultados"
+meta_detail_level = "campaign"
+if platform_key == "meta_ads":
+    identity_config, detail_title = meta_detail_table_config(
+        applied_campaign_filter,
+        applied_adset_filter,
+        applied_ad_filter,
+        set(df_curr.columns) | {"base_campaign_name"},
+    )
+    meta_detail_level = {
+        "base_campaign_name": "campaign",
+        "adset_name": "adset",
+        "ad_name": "ad",
+    }[identity_config[-1][0]]
+
+current_account_insights = []
+previous_account_insights = []
+campaign_aggregate_insights = []
+adset_aggregate_insights = []
+ad_aggregate_insights = []
+aggregate_errors = []
+if platform_key == "meta_ads":
+    aggregate_filters = opt_filters.get("filters", {}) if isinstance(opt_filters, dict) else {}
+    applied_aggregate_filters = {
+        **aggregate_filters,
+        **st.session_state.get("meta_applied_api_filters", {}),
+    }
+    st.session_state.setdefault("meta_insights_cache", {})
+    insights_cache_key = (
+        active_query_key,
+        meta_detail_level,
+        json.dumps(applied_aggregate_filters, sort_keys=True),
+    )
+    if force_query_fetch or insights_cache_key not in st.session_state["meta_insights_cache"]:
+        aggregate_requests = [
+            ("account", start_date, end_date, current_account_insights, aggregate_filters),
+            ("account", prev_start_date, prev_end_date, previous_account_insights, aggregate_filters),
+            ("campaign", start_date, end_date, campaign_aggregate_insights, applied_aggregate_filters),
+            ("ad", start_date, end_date, ad_aggregate_insights, applied_aggregate_filters),
+        ]
+        if meta_detail_level == "adset":
+            aggregate_requests.append((
+                "adset",
+                start_date,
+                end_date,
+                adset_aggregate_insights,
+                applied_aggregate_filters,
+            ))
+
+        for insight_level, period_start, period_end, target, request_filters in aggregate_requests:
+            insight_rows, insight_error = fetch_meta_aggregate_insights(
+                client_id,
+                account_id,
+                period_start,
+                period_end,
+                insight_level,
+                request_filters,
+                api_key,
+            )
+            target.extend(insight_rows)
+            if insight_error:
+                aggregate_errors.append(insight_error)
+        st.session_state["meta_insights_cache"][insights_cache_key] = (
+            current_account_insights,
+            previous_account_insights,
+            campaign_aggregate_insights,
+            adset_aggregate_insights,
+            ad_aggregate_insights,
+            aggregate_errors,
+        )
+    else:
+        (
+            current_account_insights,
+            previous_account_insights,
+            campaign_aggregate_insights,
+            adset_aggregate_insights,
+            ad_aggregate_insights,
+            aggregate_errors,
+        ) = st.session_state["meta_insights_cache"][insights_cache_key]
+    if aggregate_errors:
+        st.info(aggregate_errors[0])
+
+export_slug = re.sub(r"[^a-z0-9]+", "-", selected_platform_label.lower()).strip("-")
+export_name = f"{export_slug}_{start_date:%Y-%m-%d}_{end_date:%Y-%m-%d}"
+csv_export_frame = {"frame": df_curr}
+
+with download_slot.container():
+    with st.popover("Descargar", icon=":material/download:", width="content"):
+        # ponytail: PDF export stays disabled until browser capture is reliable.
+        st.download_button(
+            "Descargar CSV",
+            data=lambda: csv_export_frame["frame"].to_csv(index=False).encode("utf-8-sig"),
+            file_name=f"{export_name}.csv",
+            mime="text/csv;charset=utf-8",
+            on_click="ignore",
+            icon=":material/download:",
+            width="stretch",
+        )
 # HERO RENDER (Clean, full width, no Sipy logo)
 title_color = "#0F172A" if theme_mode == "Claro" else "#EAF0F7"
 display_title = campaign_title(applied_campaign_filter, selected_platform_label) if platform_key == "meta_ads" else selected_platform_label
@@ -1115,9 +1708,11 @@ st.markdown(f"""
 
 # Primary KPI calculations
 if platform_type == "ads":
-    curr_primary = df_curr["conversions"].sum()
-    prev_primary = df_prev["conversions"].sum() if not df_prev.empty else 0
-    primary_label = "Conversiones Totales"
+    curr_primary = df_curr["lead"].sum()
+    prev_primary = df_prev["lead"].sum() if not df_prev.empty else 0
+    primary_label = "Clientes Potenciales"
+    total_spend_curr = df_curr["spend"].sum()
+    lead_cost_per_result = total_spend_curr / curr_primary if curr_primary > 0 else 0.0
 elif platform_type == "analytics":
     curr_primary = df_curr["sessions"].sum()
     prev_primary = df_prev["sessions"].sum() if not df_prev.empty else 0
@@ -1132,40 +1727,47 @@ else:
     primary_label = "Interacciones totales"
 
 # Draw primary KPI card (Full width summary)
-st.markdown(f"""
-<div class="hero-card">
-    <div class="lab">{primary_label}</div>
-    <div class="big">{curr_primary:,}</div>
-</div>
-""", unsafe_allow_html=True)
+if platform_type == "ads":
+    st.markdown(f"""
+    <div class="hero-card" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;">
+      <div><div class="lab">{primary_label}</div><div class="big">{curr_primary:,.0f}</div></div>
+      <div><div class="lab">Costo por resultado</div><div class="big">${lead_cost_per_result:,.2f}</div></div>
+      <div><div class="lab">Importe gastado</div><div class="big">${total_spend_curr:,.2f}</div></div>
+    </div>
+    """, unsafe_allow_html=True)
+else:
+    st.markdown(f"""
+    <div class="hero-card">
+      <div class="lab">{primary_label}</div>
+      <div class="big">{curr_primary:,}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 # Render grid KPIs based on platform type
 st.markdown("### Métricas clave con comparación")
 
 if platform_type == "ads":
-    total_spend_curr = df_curr["spend"].sum()
     total_impressions_curr = df_curr["impressions"].sum()
     total_clicks_curr = df_curr["clicks"].sum()
-    total_conversions_curr = df_curr["conversions"].sum()
+    total_reach_curr = current_account_insights[0]["reach"] if current_account_insights else None
 
     avg_ctr_curr = total_clicks_curr / total_impressions_curr if total_impressions_curr > 0 else 0.0
     avg_cpc_curr = total_spend_curr / total_clicks_curr if total_clicks_curr > 0 else 0.0
-    cpa_curr = total_spend_curr / total_conversions_curr if total_conversions_curr > 0 else 0.0
 
     total_spend_prev = df_prev["spend"].sum() if not df_prev.empty else 0.0
     total_impressions_prev = df_prev["impressions"].sum() if not df_prev.empty else 0.0
     total_clicks_prev = df_prev["clicks"].sum() if not df_prev.empty else 0.0
-    total_conversions_prev = df_prev["conversions"].sum() if not df_prev.empty else 0.0
+    total_reach_prev = previous_account_insights[0]["reach"] if previous_account_insights else None
 
     avg_ctr_prev = total_clicks_prev / total_impressions_prev if total_impressions_prev > 0 else 0.0
     avg_cpc_prev = total_spend_prev / total_clicks_prev if total_clicks_prev > 0 else 0.0
-    cpa_prev = total_spend_prev / total_conversions_prev if total_conversions_prev > 0 else 0.0
 
     kpis_layout = '<div class="kpis">\n'
     kpis_layout += get_kpi_card_html("Inversión Total", f"${total_spend_curr:,.2f}", "Gasto total en pauta", total_spend_curr, total_spend_prev, lower_is_better=True) + "\n"
     kpis_layout += get_kpi_card_html("Impresiones Totales", f"{total_impressions_curr:,}", "Vistas acumuladas", total_impressions_curr, total_impressions_prev) + "\n"
     kpis_layout += get_kpi_card_html("Clics", f"{total_clicks_curr:,}", "Interacciones con anuncios", total_clicks_curr, total_clicks_prev) + "\n"
-    kpis_layout += get_kpi_card_html("Costo por Conversión (CPA)", f"${cpa_curr:,.2f}", "Costo unitario", cpa_curr, cpa_prev, lower_is_better=True) + "\n"
+    reach_value = f"{total_reach_curr:,.0f}" if total_reach_curr is not None else "—"
+    kpis_layout += get_kpi_card_html("Alcance Total", reach_value, "Usuarios únicos alcanzados", total_reach_curr or 0.0, total_reach_prev or 0.0) + "\n"
     kpis_layout += get_kpi_card_html("CTR Promedio", f"{avg_ctr_curr:.2%}", "Tasa de clics/impresión", avg_ctr_curr, avg_ctr_prev) + "\n"
     kpis_layout += get_kpi_card_html("CPC Promedio", f"${avg_cpc_curr:,.2f}", "Costo promedio por clic", avg_cpc_curr, avg_cpc_prev, lower_is_better=True) + "\n"
     kpis_layout += '</div>'
@@ -1217,7 +1819,7 @@ else: # organic
 
 st.markdown(kpis_layout, unsafe_allow_html=True)
 
-if platform_key == "meta_ads" and st.checkbox("Cargar datos oficiales de Facebook Ads (puede tardar)", value=False):
+if platform_key == "meta_ads" and st.checkbox("Cargar datos demográficos", value=False):
     official_key = (
         platform_key, client_id, user_id, account_id,
         start_date.isoformat(), end_date.isoformat(),
@@ -1307,175 +1909,320 @@ if platform_key == "meta_ads" and st.checkbox("Cargar datos oficiales de Faceboo
     else:
         st.info("Meta no devolvió datos oficiales para este rango.")
 
-# CHARTS SECTION
-st.markdown("### Tendencias Históricas")
-col_chart_left, col_chart_right = st.columns(2)
+# Historical charts disabled; uncomment this block to restore them.
+# st.markdown("### Tendencias Históricas")
+# col_chart_left, col_chart_right = st.columns(2)
 
-with col_chart_left:
-    df_trend = df_curr.groupby("date").agg({
-        "spend": "sum", "conversions": "sum", "sessions": "sum", "pageviews": "sum", "downloads": "sum", "impressions": "sum", "engagement": "sum"
-    }).reset_index().sort_values("date")
+# with col_chart_left:
+#     df_trend = df_curr.groupby("date").agg({
+#         "spend": "sum", "conversions": "sum", "sessions": "sum", "pageviews": "sum", "downloads": "sum", "impressions": "sum", "engagement": "sum"
+#     }).reset_index().sort_values("date")
 
-    # Render custom Altair line chart with Dual Y-Axis so both metrics are visible on their own scale
-    if not df_trend.empty:
-        base = alt.Chart(df_trend).encode(
-            x=alt.X('date:T', axis=alt.Axis(format='%Y-%m-%d', title='Fecha', labelAngle=-45))
-        )
+#     # Render custom Altair line chart with Dual Y-Axis so both metrics are visible on their own scale
+#     if not df_trend.empty:
+#         base = alt.Chart(df_trend).encode(
+#             x=alt.X('date:T', axis=alt.Axis(format='%Y-%m-%d', title='Fecha', labelAngle=-45))
+#         )
 
-        if platform_type == "ads":
-            st.markdown("#### Inversión vs. conversiones diarias (eje dual)")
-            left_line = base.mark_line(color='#1AE08C', strokeWidth=3).encode(
-                y=alt.Y('spend:Q', title='Inversión ($)', axis=alt.Axis(titleColor='#1AE08C', labelColor='#1AE08C'))
-            )
-            right_line = base.mark_line(color='#5C9DFF', strokeWidth=3).encode(
-                y=alt.Y('conversions:Q', title='Conversiones', axis=alt.Axis(titleColor='#5C9DFF', labelColor='#5C9DFF'))
-            )
-            dual_chart = alt.layer(left_line, right_line).resolve_scale(
-                y='independent'
-            ).properties(height=350)
-            st.altair_chart(theme_chart(dual_chart), use_container_width=True)
+#         if platform_type == "ads":
+#             st.markdown("#### Inversión vs. conversiones diarias (eje dual)")
+#             left_line = base.mark_line(color='#1AE08C', strokeWidth=3).encode(
+#                 y=alt.Y('spend:Q', title='Inversión ($)', axis=alt.Axis(titleColor='#1AE08C', labelColor='#1AE08C'))
+#             )
+#             right_line = base.mark_line(color='#5C9DFF', strokeWidth=3).encode(
+#                 y=alt.Y('conversions:Q', title='Conversiones', axis=alt.Axis(titleColor='#5C9DFF', labelColor='#5C9DFF'))
+#             )
+#             dual_chart = alt.layer(left_line, right_line).resolve_scale(
+#                 y='independent'
+#             ).properties(height=350)
+#             st.altair_chart(theme_chart(dual_chart), use_container_width=True)
 
-        elif platform_type == "analytics":
-            st.markdown("#### Sesiones vs. páginas vistas (eje dual)")
-            left_line = base.mark_line(color='#1AE08C', strokeWidth=3).encode(
-                y=alt.Y('sessions:Q', title='Sesiones', axis=alt.Axis(titleColor='#1AE08C', labelColor='#1AE08C'))
-            )
-            right_line = base.mark_line(color='#5C9DFF', strokeWidth=3).encode(
-                y=alt.Y('pageviews:Q', title='Páginas Vistas', axis=alt.Axis(titleColor='#5C9DFF', labelColor='#5C9DFF'))
-            )
-            dual_chart = alt.layer(left_line, right_line).resolve_scale(
-                y='independent'
-            ).properties(height=350)
-            st.altair_chart(theme_chart(dual_chart), use_container_width=True)
+#         elif platform_type == "analytics":
+#             st.markdown("#### Sesiones vs. páginas vistas (eje dual)")
+#             left_line = base.mark_line(color='#1AE08C', strokeWidth=3).encode(
+#                 y=alt.Y('sessions:Q', title='Sesiones', axis=alt.Axis(titleColor='#1AE08C', labelColor='#1AE08C'))
+#             )
+#             right_line = base.mark_line(color='#5C9DFF', strokeWidth=3).encode(
+#                 y=alt.Y('pageviews:Q', title='Páginas Vistas', axis=alt.Axis(titleColor='#5C9DFF', labelColor='#5C9DFF'))
+#             )
+#             dual_chart = alt.layer(left_line, right_line).resolve_scale(
+#                 y='independent'
+#             ).properties(height=350)
+#             st.altair_chart(theme_chart(dual_chart), use_container_width=True)
 
-        elif platform_type == "app_store":
-            st.markdown("#### Descargas Diarias")
-            line_chart = base.mark_line(color='#1AE08C', strokeWidth=3).encode(
-                y=alt.Y('downloads:Q', title='Descargas')
-            ).properties(height=350)
-            st.altair_chart(theme_chart(line_chart), use_container_width=True)
+#         elif platform_type == "app_store":
+#             st.markdown("#### Descargas Diarias")
+#             line_chart = base.mark_line(color='#1AE08C', strokeWidth=3).encode(
+#                 y=alt.Y('downloads:Q', title='Descargas')
+#             ).properties(height=350)
+#             st.altair_chart(theme_chart(line_chart), use_container_width=True)
 
-        else: # organic
-            st.markdown("#### Impresiones vs. interacciones (eje dual)")
-            left_line = base.mark_line(color='#1AE08C', strokeWidth=3).encode(
-                y=alt.Y('impressions:Q', title='Impresiones', axis=alt.Axis(titleColor='#1AE08C', labelColor='#1AE08C'))
-            )
-            right_line = base.mark_line(color='#5C9DFF', strokeWidth=3).encode(
-                y=alt.Y('engagement:Q', title='Interacciones', axis=alt.Axis(titleColor='#5C9DFF', labelColor='#5C9DFF'))
-            )
-            dual_chart = alt.layer(left_line, right_line).resolve_scale(
-                y='independent'
-            ).properties(height=350)
-            st.altair_chart(theme_chart(dual_chart), use_container_width=True)
+#         else: # organic
+#             st.markdown("#### Impresiones vs. interacciones (eje dual)")
+#             left_line = base.mark_line(color='#1AE08C', strokeWidth=3).encode(
+#                 y=alt.Y('impressions:Q', title='Impresiones', axis=alt.Axis(titleColor='#1AE08C', labelColor='#1AE08C'))
+#             )
+#             right_line = base.mark_line(color='#5C9DFF', strokeWidth=3).encode(
+#                 y=alt.Y('engagement:Q', title='Interacciones', axis=alt.Axis(titleColor='#5C9DFF', labelColor='#5C9DFF'))
+#             )
+#             dual_chart = alt.layer(left_line, right_line).resolve_scale(
+#                 y='independent'
+#             ).properties(height=350)
+#             st.altair_chart(theme_chart(dual_chart), use_container_width=True)
 
-with col_chart_right:
-    # Render Campaign Distribution as a Horizontal Bar Chart so long labels are readable
-    if platform_type == "ads":
-        st.markdown("#### Distribución de Conversiones por Campaña")
-        df_camp = df_curr.groupby("campaign_name")["conversions"].sum().reset_index()
-        df_camp = df_camp.sort_values("conversions", ascending=False).head(10)
-        df_camp["campaign_label"] = df_camp["campaign_name"].apply(clean_campaign_name)
+# with col_chart_right:
+#     # Render Campaign Distribution as a Horizontal Bar Chart so long labels are readable
+#     if platform_type == "ads":
+#         st.markdown("#### Distribución de Conversiones por Campaña")
+#         df_camp = df_curr.groupby("campaign_name")["conversions"].sum().reset_index()
+#         df_camp = df_camp.sort_values("conversions", ascending=False).head(10)
+#         df_camp["campaign_label"] = df_camp["campaign_name"].apply(clean_campaign_name)
 
-        chart_camp = alt.Chart(df_camp).mark_bar(color='#5C9DFF', cornerRadiusEnd=6).encode(
-            x=alt.X('conversions:Q', title='Conversiones'),
-            y=alt.Y('campaign_label:N', sort='-x', title=None, axis=alt.Axis(labelLimit=300))
-        ).properties(height=350)
-        st.altair_chart(theme_chart(chart_camp), use_container_width=True)
+#         chart_camp = alt.Chart(df_camp).mark_bar(color='#5C9DFF', cornerRadiusEnd=6).encode(
+#             x=alt.X('conversions:Q', title='Conversiones'),
+#             y=alt.Y('campaign_label:N', sort='-x', title=None, axis=alt.Axis(labelLimit=300))
+#         ).properties(height=350)
+#         st.altair_chart(theme_chart(chart_camp), use_container_width=True)
 
-    elif platform_type == "analytics":
-        st.markdown("#### Sesiones por Campaña/Fuente")
-        df_camp = df_curr.groupby("campaign_name")["sessions"].sum().reset_index()
-        df_camp = df_camp.sort_values("sessions", ascending=False).head(10)
+#     elif platform_type == "analytics":
+#         st.markdown("#### Sesiones por Campaña/Fuente")
+#         df_camp = df_curr.groupby("campaign_name")["sessions"].sum().reset_index()
+#         df_camp = df_camp.sort_values("sessions", ascending=False).head(10)
 
-        chart_camp = alt.Chart(df_camp).mark_bar(color='#5C9DFF', cornerRadiusEnd=6).encode(
-            x=alt.X('sessions:Q', title='Sesiones'),
-            y=alt.Y('campaign_name:N', sort='-x', title=None, axis=alt.Axis(labelLimit=300))
-        ).properties(height=350)
-        st.altair_chart(theme_chart(chart_camp), use_container_width=True)
+#         chart_camp = alt.Chart(df_camp).mark_bar(color='#5C9DFF', cornerRadiusEnd=6).encode(
+#             x=alt.X('sessions:Q', title='Sesiones'),
+#             y=alt.Y('campaign_name:N', sort='-x', title=None, axis=alt.Axis(labelLimit=300))
+#         ).properties(height=350)
+#         st.altair_chart(theme_chart(chart_camp), use_container_width=True)
 
-    else: # organic / app_store
-        st.markdown("#### Alcance / Distribución por Publicación")
-        target_metric = "reach" if platform_type != "app_store" else "downloads"
-        df_camp = df_curr.groupby("campaign_name")[target_metric].sum().reset_index()
-        df_camp = df_camp.sort_values(target_metric, ascending=False).head(10)
+#     else: # organic / app_store
+#         st.markdown("#### Alcance / Distribución por Publicación")
+#         target_metric = "reach" if platform_type != "app_store" else "downloads"
+#         df_camp = df_curr.groupby("campaign_name")[target_metric].sum().reset_index()
+#         df_camp = df_camp.sort_values(target_metric, ascending=False).head(10)
 
-        chart_camp = alt.Chart(df_camp).mark_bar(color='#5C9DFF', cornerRadiusEnd=6).encode(
-            x=alt.X(f"{target_metric}:Q", title='Alcance / Volumen'),
-            y=alt.Y('campaign_name:N', sort='-x', title=None, axis=alt.Axis(labelLimit=300))
-        ).properties(height=350)
-        st.altair_chart(theme_chart(chart_camp), use_container_width=True)
+#         chart_camp = alt.Chart(df_camp).mark_bar(color='#5C9DFF', cornerRadiusEnd=6).encode(
+#             x=alt.X(f"{target_metric}:Q", title='Alcance / Volumen'),
+#             y=alt.Y('campaign_name:N', sort='-x', title=None, axis=alt.Axis(labelLimit=300))
+#         ).properties(height=350)
+#         st.altair_chart(theme_chart(chart_camp), use_container_width=True)
 
 # CAMPAIGN BREAKDOWN TABLE
-st.markdown("### Detalle de Campañas y Resultados")
-
 df_table = df_curr.copy()
+identity_sources = [column for column, _ in identity_config]
+identity_labels = [label for _, label in identity_config]
+st.markdown(f"### {detail_title}")
 
 group_keys = ["campaign_name", "platform"]
 for dim in selected_dimensions:
     if dim in df_table.columns and dim not in group_keys:
         group_keys.append(dim)
+for column in identity_sources:
+    if column in df_table.columns and column not in group_keys:
+        group_keys.append(column)
 
 if platform_type == "ads":
+    ad_hashtag_rows = []
+    if "result_indicator" in df_table.columns and "result_indicator" not in group_keys:
+        group_keys.append("result_indicator")
     df_table = df_table.groupby(group_keys).agg({
-        "spend": "sum", "impressions": "sum", "clicks": "sum", "conversions": "sum"
+        "spend": "sum", "impressions": "sum", "clicks": "sum", "conversions": "sum", "lead": "sum",
+        "reach": "sum", "post_engagement": "sum", "results": "sum", "cost_per_result": "mean",
     }).reset_index()
     meta_platforms = set(META_PUBLISHER_LABELS.values()) | {"meta_ads"}
     meta_table = df_table[df_table["platform"].isin(meta_platforms)].copy()
     if platform_key == "meta_ads" and not meta_table.empty:
         meta_table["base_campaign_name"] = meta_table["campaign_name"].apply(meta_base_campaign_name)
-        ranked_campaigns = meta_table.groupby(["base_campaign_name", "platform"]).agg({
-            "spend": "sum", "impressions": "sum", "clicks": "sum", "conversions": "sum"
-        }).reset_index()
-        rank_metric = "conversions" if ranked_campaigns["conversions"].sum() else ("clicks" if ranked_campaigns["clicks"].sum() else "impressions")
-        metric_label = {"conversions": "conversiones", "clicks": "clics", "impressions": "impresiones"}[rank_metric]
-        ranked_campaigns = ranked_campaigns.sort_values(rank_metric, ascending=False).head(8)
-        campaign_summary = ranked_campaigns[["base_campaign_name", "platform", "impressions", rank_metric]].copy()
-        campaign_summary["campaign_label"] = campaign_summary["base_campaign_name"].apply(clean_campaign_name)
-        campaign_summary["impressions"] = campaign_summary["impressions"].apply(lambda x: f"{x:,.0f}")
-        campaign_summary[rank_metric] = campaign_summary[rank_metric].apply(lambda x: f"{x:,.0f}")
-        campaign_summary = campaign_summary[["campaign_label", "platform", "impressions", rank_metric]].rename(columns={
-            "campaign_label": "Campaña",
-            "platform": "Plataforma",
+        campaign_summary = (
+            meta_table
+            .sort_values(["results", "result_indicator"], ascending=[False, False])
+            .groupby(identity_sources).agg({
+                "result_indicator": "first",
+                "spend": "sum", "impressions": "sum", "clicks": "sum",
+                "results": "sum", "cost_per_result": "mean",
+            })
+            .reset_index()
+        )
+        campaign_summary["result_label"] = campaign_summary["result_indicator"].apply(translate_meta_result_indicator)
+        result_type_options = dashboard_filter_options(campaign_summary, "result_label")[1:]
+        selected_result_types = st.multiselect(
+            "Tipo de resultado",
+            result_type_options,
+            placeholder="Todos",
+            key=f"meta_result_type_filter_{meta_detail_level}",
+        )
+        if selected_result_types:
+            campaign_summary = campaign_summary[
+                campaign_summary["result_label"].isin(selected_result_types)
+            ].copy()
+        campaign_summary["cpm"] = campaign_summary["spend"].mul(1000).div(campaign_summary["impressions"]).where(campaign_summary["impressions"].gt(0), 0)
+        campaign_summary["cpc"] = campaign_summary["spend"].div(campaign_summary["clicks"]).where(campaign_summary["clicks"].gt(0), 0)
+        campaign_summary = campaign_summary.sort_values("results", ascending=False)
+        native_rows_by_level = {
+            "campaign": campaign_aggregate_insights,
+            "adset": adset_aggregate_insights,
+            "ad": ad_aggregate_insights,
+        }
+        campaign_summary = enrich_meta_campaign_summary(
+            campaign_summary,
+            native_rows_by_level[meta_detail_level],
+            filter_rows,
+            meta_detail_level,
+        )
+        total_row = build_meta_campaign_total_row(
+            campaign_summary,
+            identity_labels=identity_labels,
+        )
+        for column in ("results", "impressions", "clicks"):
+            campaign_summary[column] = campaign_summary[column].apply(lambda x: f"{x:,.0f}")
+        campaign_summary["cost_per_result"] = campaign_summary["cost_per_result"].apply(
+            lambda value: f"${value:,.2f}" if pd.notna(value) else "N/D"
+        )
+        for column in ("cpm", "cpc", "spend"):
+            campaign_summary[column] = campaign_summary[column].apply(lambda x: f"${x:,.2f}")
+        campaign_summary = campaign_summary[
+            identity_sources + [
+                "result_label",
+                "results",
+                "cost_per_result",
+                "cpm",
+                "impressions",
+                "clicks",
+                "cpc",
+                "budget_display",
+                "spend",
+            ]
+        ].rename(columns={
+            **dict(identity_config),
+            "result_label": "Tipo de resultado",
+            "results": "Resultados",
+            "cost_per_result": "Costo por resultado",
+            "cpm": "CPM",
             "impressions": "Impresiones",
-            rank_metric: metric_label.capitalize(),
+            "clicks": "Clics",
+            "cpc": "CPC",
+            "budget_display": "Presupuesto",
+            "spend": "Importe gastado",
         })
+        campaign_summary = pd.concat([campaign_summary, pd.DataFrame([total_row])], ignore_index=True)
+        csv_export_frame["frame"] = campaign_summary
 
-        st.markdown("### Desempeño de campañas destacadas")
-        show_theme_table(campaign_summary)
-        preview_names = tuple(dict.fromkeys(ranked_campaigns["base_campaign_name"]))
-        # ponytail: Meta previews cost one Graph call each; paginate this if accounts need more than 8 cards.
+        show_theme_table(campaign_summary, merge_total_cells=True)
+        ranking_specs = (
+            ("clientes potenciales", "lead", "Clientes potenciales"),
+            ("alcance", "reach", "Alcance"),
+            ("interacciones", "post_engagement", "Interacciones"),
+        )
+        campaign_ranking_summary = (
+            meta_table.groupby("base_campaign_name")
+            .agg(
+                platform=("platform", lambda values: " / ".join(dict.fromkeys(values))),
+                lead=("lead", "sum"),
+                reach=("reach", "sum"),
+                post_engagement=("post_engagement", "sum"),
+                spend=("spend", "sum"),
+                impressions=("impressions", "sum"),
+                clicks=("clicks", "sum"),
+                conversions=("conversions", "sum"),
+            )
+            .reset_index()
+        )
+        campaign_reach_by_name = {
+            meta_base_campaign_name(row["campaign_name"]): row["reach"]
+            for row in campaign_aggregate_insights
+        }
+        campaign_ranking_summary["reach"] = (
+            campaign_ranking_summary["base_campaign_name"]
+            .map(campaign_reach_by_name)
+            .fillna(0)
+        )
+        ranked_campaigns_by_metric = {
+            metric: campaign_ranking_summary.sort_values(metric, ascending=False).head(3)
+            for _, metric, _ in ranking_specs
+        }
+        ranked_campaign_names = {
+            metric: ranked_campaigns_by_metric[metric]["base_campaign_name"].tolist()
+            for _, metric, _ in ranking_specs
+        }
+        ad_winners = select_meta_ad_winners(ad_aggregate_insights, ranked_campaign_names)
+        preview_targets = tuple(
+            (
+                metric,
+                campaign_name,
+                ad_winners[(metric, campaign_name)]["ad_id"],
+                ad_winners[(metric, campaign_name)]["ad_name"],
+            )
+            for _, metric, _ in ranking_specs
+            for campaign_name in ranked_campaign_names[metric]
+            if (metric, campaign_name) in ad_winners
+        )
         preview_cache = st.session_state.setdefault("meta_preview_cache", {})
-        preview_key = (client_id, account_id, preview_names, api_key)
+        preview_key = (client_id, account_id, preview_targets, api_key)
         if preview_key not in preview_cache:
-            preview_cache[preview_key] = fetch_meta_campaign_previews(client_id, account_id, preview_names, api_key)
+            preview_cache[preview_key] = fetch_meta_ad_previews(
+                client_id,
+                account_id,
+                preview_targets,
+                api_key,
+            )
         previews, preview_error = preview_cache[preview_key]
-        previews_by_campaign = {p["campaign_name"]: p for p in previews}
+        previews_by_campaign = {
+            (p["ranking_metric"], p["campaign_name"]): p
+            for p in previews
+        }
         campaign_metrics = meta_table.groupby("base_campaign_name").agg({
             "spend": "sum", "impressions": "sum", "clicks": "sum", "conversions": "sum"
         }).to_dict("index")
 
-        st.markdown(f"### Ranking: top campañas por {metric_label} (Meta)")
         if preview_error:
             st.info(preview_error)
 
-        rank_cols = st.columns(4)
-        for idx, row in enumerate(ranked_campaigns.itertuples(index=False), start=1):
-            preview = previews_by_campaign.get(row.base_campaign_name)
+        ranking_rows = (
+            (ranking_name, metric, metric_label, idx, row)
+            for ranking_name, metric, metric_label in ranking_specs
+            for idx, row in enumerate(
+                ranked_campaigns_by_metric[metric].itertuples(index=False),
+                start=1,
+            )
+        )
+        for ranking_name, metric, metric_label, idx, row in ranking_rows:
+            if idx == 1:
+                st.markdown(f"### Ranking: top campañas por {ranking_name} (Meta)")
+                rank_cols = st.columns(3)
+            preview = previews_by_campaign.get((metric, row.base_campaign_name))
             ctr = row.clicks / row.impressions if row.impressions else 0
             cpc = row.spend / row.clicks if row.clicks else 0
             cpa = row.spend / row.conversions if row.conversions else 0
-            body = preview["body"] if preview else "<div style='height:320px;display:grid;place-items:center;color:#8A97A8;background:#0A0D13;border-radius:10px;'>Preview no disponible</div>"
+            metric_rows = [(metric_label, f"{getattr(row, metric):,.0f}")]
+            metric_rows.extend([
+                ("Inversión", f"${row.spend:,.2f}"),
+                ("Conversiones", f"{row.conversions:,.0f}"),
+            ])
+            if metric != "lead":
+                metric_rows.append(("Clientes potenciales", f"{row.lead:,.0f}"))
+            metric_rows.extend([
+                ("Clics", f"{row.clicks:,.0f}"),
+                ("Impresiones", f"{row.impressions:,.0f}"),
+                ("CTR", f"{ctr:.2%}"),
+                ("CPC", f"${cpc:,.2f}"),
+                ("CPA", f"${cpa:,.2f}"),
+            ])
+            metrics_html = "".join(
+                '<div style="display:flex; justify-content:space-between; '
+                'border-bottom:1px dashed #e5e7eb; padding-bottom:6px;">'
+                f"<span>{label}</span><b>{value}</b></div>"
+                for label, value in metric_rows
+            )
+            body = preview["body"] if preview and preview.get("body") else "<div style='height:320px;display:grid;place-items:center;color:#8A97A8;background:#0A0D13;border-radius:10px;'>Preview no disponible</div>"
             raw_ad_name = str(preview.get("ad_name", "")) if preview else ""
             ad_name = html.escape(raw_ad_name)
-            campaign_name = html.escape(clean_campaign_name(row.base_campaign_name))
-            source_text = f" {row.platform} {row.base_campaign_name} {raw_ad_name} ".lower()
-            if row.platform == "Instagram Ads":
+            campaign_name = html.escape(str(row.base_campaign_name))
+            if "Facebook Ads" in row.platform and "Instagram Ads" in row.platform:
+                source = "FB/IG"
+            elif "Instagram Ads" in row.platform:
                 source = "IG"
-            elif row.platform == "Facebook Ads":
-                source = "FB"
             else:
-                    is_ig = any(token in source_text for token in ("instagram", " instagram ", "/ig", " ig ", "-ig", "_ig"))
-                    source = "FB/IG" if "fb-ig" in source_text or "facebook/ig" in source_text else ("IG" if is_ig else "FB")
+                source = "FB"
             source_color = {"IG": "#E1306C", "FB": "#1877F2", "FB/IG": "#4f46e5"}.get(source, "#4f46e5")
             components_html = f"""
             <div style="font-family: Arial, sans-serif; background:#fff; border:1px solid #e5e7eb; border-radius:14px; padding:14px; position:relative; color:#111827;">
@@ -1487,21 +2234,14 @@ if platform_type == "ads":
                 <div style="margin-top:12px; color:#0b3f91; font-weight:800; font-size:14px; line-height:1.25;">{campaign_name}</div>
                 <div style="margin-top:4px; color:#6b7280; font-size:12px; min-height:16px;">{ad_name}</div>
                 <div style="margin-top:14px; display:grid; gap:8px; font-size:13px;">
-                    <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>Inversión</span><b>${row.spend:,.2f}</b></div>
-                    <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>Conversiones</span><b>{row.conversions:,.0f}</b></div>
-                    <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>Clics</span><b>{row.clicks:,.0f}</b></div>
-                    <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>Impresiones</span><b>{row.impressions:,.0f}</b></div>
-                    <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>CTR</span><b>{ctr:.2%}</b></div>
-                    <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #e5e7eb; padding-bottom:6px;"><span>CPC</span><b>${cpc:,.2f}</b></div>
-                    <div style="display:flex; justify-content:space-between;"><span>CPA</span><b>${cpa:,.2f}</b></div>
+                    {metrics_html}
                 </div>
             </div>
             """
             with rank_cols[(idx - 1) % 4]:
                 components.html(components_html, height=690, scrolling=True)
 
-        ad_hashtag_rows = []
-        for preview in previews:
+        for preview in {p["ad_id"]: p for p in previews}.values():
             metrics = campaign_metrics.get(preview.get("campaign_name"), {})
             text = " ".join([
                 str(preview.get("campaign_name", "")),
@@ -1522,8 +2262,6 @@ if platform_type == "ads":
         st.markdown("### Ranking de hashtags (Instagram)")
         hashtag_table = pd.DataFrame(ad_hashtag_rows).groupby("Hashtag").sum(numeric_only=True).reset_index()
         show_theme_table(hashtag_table.sort_values(["Visualizaciones", "Posts"], ascending=False).head(10))
-    else:
-        st.caption("No se encontraron hashtags")
 
     df_table["CTR"] = (df_table["clicks"] / df_table["impressions"]).apply(lambda x: f"{x:.2%}" if x > 0 else "0.00%")
     df_table["CPC"] = (df_table["spend"] / df_table["clicks"]).apply(lambda x: f"${x:,.2f}" if x > 0 else "$0.00")
@@ -1589,7 +2327,5 @@ if platform_key == "meta_organic":
         })
         st.markdown("### Ranking de hashtags (Instagram)")
         show_theme_table(hashtag_df)
-    else:
-        st.caption("No se encontraron hashtags")
 
     st.dataframe(df_table, width="stretch", hide_index=True)

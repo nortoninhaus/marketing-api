@@ -48,6 +48,22 @@ META_PUBLISHER_LABELS = {
     "messenger": "Messenger Ads",
 }
 
+META_RESULT_LABELS = {
+    "reach": "Alcance",
+    "actions:lead": "Clientes potenciales",
+    "actions:onsite_conversion.lead_grouped": "Clientes potenciales",
+    "actions:offsite_conversion.fb_pixel_lead": "Clientes potenciales",
+    "actions:post_engagement": "Interacciones con la publicación",
+    "actions:landing_page_view": "Visitas a la página de destino",
+    "actions:link_click": "Clics en el enlace",
+    "actions:purchase": "Compras",
+    "actions:offsite_conversion.fb_pixel_purchase": "Compras",
+    "actions:app_install": "Instalaciones de la app",
+    "actions:video_view": "Reproducciones de video de 3 segundos",
+    "actions:onsite_conversion.messaging_conversation_started_7d": "Conversaciones con mensajes iniciadas",
+    "actions:messaging_conversation_started_7d": "Conversaciones con mensajes iniciadas",
+}
+
 DIMENSION_VALUE_LABELS = {
     "gender": {
         "male": "Masculino",

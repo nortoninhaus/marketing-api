@@ -26,6 +26,79 @@ logger = logging.getLogger(__name__)
 GRAPH_API_VERSION = "v25.0"
 GRAPH_BASE = f"https://graph.facebook.com/{GRAPH_API_VERSION}"
 
+RESULT_ACTIONS_BY_OPTIMIZATION = {
+    "QUALITY_LEAD": ("lead", "onsite_conversion.lead_grouped", "offsite_conversion.fb_pixel_lead"),
+    "LEAD_GENERATION": ("lead", "onsite_conversion.lead_grouped", "offsite_conversion.fb_pixel_lead"),
+    "LANDING_PAGE_VIEWS": ("landing_page_view",),
+    "LINK_CLICKS": ("link_click",),
+    "POST_ENGAGEMENT": ("post_engagement",),
+    "THRUPLAY": ("video_view",),
+    "APP_INSTALLS": ("app_install",),
+    "CONVERSATIONS": (
+        "onsite_conversion.messaging_conversation_started_7d",
+        "messaging_conversation_started_7d",
+    ),
+    "OFFSITE_CONVERSIONS": ("offsite_conversion.fb_pixel_purchase", "purchase"),
+}
+
+RESULT_ACTIONS_BY_OBJECTIVE = {
+    "OUTCOME_LEADS": ("lead", "onsite_conversion.lead_grouped", "offsite_conversion.fb_pixel_lead"),
+    "OUTCOME_TRAFFIC": ("landing_page_view", "link_click"),
+    "OUTCOME_ENGAGEMENT": (
+        "post_engagement",
+        "onsite_conversion.messaging_conversation_started_7d",
+        "messaging_conversation_started_7d",
+    ),
+    "OUTCOME_SALES": ("offsite_conversion.fb_pixel_purchase", "purchase"),
+    "OUTCOME_APP_PROMOTION": ("app_install",),
+}
+
+
+def _nested_result_value(entries, indicator):
+    for entry in entries or []:
+        if entry.get("indicator") != indicator:
+            continue
+        values = entry.get("values") or []
+        try:
+            return float(values[0].get("value", 0))
+        except (AttributeError, IndexError, TypeError, ValueError):
+            return 0.0
+    return 0.0
+
+
+def _action_value(entries, action_type):
+    for entry in entries or []:
+        if entry.get("action_type") == action_type:
+            try:
+                return float(entry.get("value", 0))
+            except (TypeError, ValueError):
+                return 0.0
+    return None
+
+
+def _resolve_meta_result(insight):
+    result_entries = insight.get("results") or []
+    if result_entries:
+        indicator = str(result_entries[0].get("indicator") or "")
+        return (
+            indicator,
+            _nested_result_value(result_entries, indicator),
+            _nested_result_value(insight.get("cost_per_result"), indicator),
+        )
+
+    candidates = RESULT_ACTIONS_BY_OPTIMIZATION.get(
+        str(insight.get("optimization_goal") or "").upper()
+    ) or RESULT_ACTIONS_BY_OBJECTIVE.get(
+        str(insight.get("objective") or "").upper(),
+        (),
+    )
+    for action_type in candidates:
+        value = _action_value(insight.get("actions"), action_type)
+        if value is not None:
+            cost = _action_value(insight.get("cost_per_action_type"), action_type)
+            return f"actions:{action_type}", value, cost or 0.0
+    return "", 0.0, 0.0
+
 
 class MetaAdsConnector(BaseConnector):
     platform_name = "meta_ads"
@@ -69,10 +142,10 @@ class MetaAdsConnector(BaseConnector):
         has_action_values = False
         STANDARD_META_FIELDS = {
             "impressions", "clicks", "spend", "reach", "conversions", "cpc", "cpm", "ctr", "frequency",
-            "purchase_roas", "purchase", "lead", "add_to_cart", "initiate_checkout", "roas"
+            "results", "cost_per_result", "purchase_roas", "purchase", "lead", "add_to_cart", "initiate_checkout", "roas"
         }
         for m in request.metrics:
-            m_mapped = "purchase_roas" if m == "roas" else m
+            m_mapped = {"roas": "purchase_roas", "__results__": "results"}.get(m, m)
             if m_mapped in ("conversions", "purchase", "lead", "add_to_cart", "initiate_checkout") or m_mapped not in STANDARD_META_FIELDS:
                 has_actions = True
                 if m_mapped not in STANDARD_META_FIELDS:
@@ -84,6 +157,18 @@ class MetaAdsConnector(BaseConnector):
             else:
                 if m_mapped not in fields:
                     fields.append(m_mapped)
+
+        if any(metric in request.metrics for metric in ("__results__", "results", "cost_per_result")):
+            for result_field in (
+                "results",
+                "cost_per_result",
+                "actions",
+                "cost_per_action_type",
+                "objective",
+                "optimization_goal",
+            ):
+                if result_field not in fields:
+                    fields.append(result_field)
 
         # Always include date_start/date_stop to reconstruct date, and name fields for campaign_name mapping
         if "date_start" not in fields:
@@ -208,10 +293,15 @@ class MetaAdsConnector(BaseConnector):
 
                 date_val = i.get("date_start") or request.start_date.strftime("%Y-%m-%d")
 
+                result_indicator, result_value, result_cost = _resolve_meta_result(i)
                 metrics_dict = {}
                 for m in request.metrics:
-                    m_mapped = "purchase_roas" if m == "roas" else m
-                    if m_mapped == "conversions":
+                    m_mapped = {"roas": "purchase_roas", "__results__": "results"}.get(m, m)
+                    if m_mapped == "results":
+                        metrics_dict[m] = result_value
+                    elif m_mapped == "cost_per_result":
+                        metrics_dict[m] = result_cost
+                    elif m_mapped == "conversions":
                         # Parse standard actions array
                         actions = i.get("actions", [])
                         total_conversions = 0
@@ -258,10 +348,11 @@ class MetaAdsConnector(BaseConnector):
                         if isinstance(val, list):
                             total_val = 0
                             for item in val:
-                                try:
-                                    total_val += float(item.get("value", 0))
-                                except Exception:
-                                    pass
+                                for value in item.get("values", [item]):
+                                    try:
+                                        total_val += float(value.get("value", 0))
+                                    except Exception:
+                                        pass
                             metrics_dict[m] = total_val
                         elif val is not None:
                             try:
@@ -272,6 +363,7 @@ class MetaAdsConnector(BaseConnector):
                         else:
                             metrics_dict[m] = 0
 
+                metrics_dict["result_indicator"] = result_indicator
                 dimensions = {b: i.get(b) for b in breakdowns if i.get(b)}
                 if adset_name:
                     dimensions["adset_name"] = adset_name
@@ -340,10 +432,12 @@ class MetaAdsConnector(BaseConnector):
             "metrics": [
                 "impressions", 
                 "clicks", 
-                "spend", 
-                "reach", 
+                "spend",
+                "reach",
                 "conversions",
-                "cpc", 
+                "__results__",
+                "cost_per_result",
+                "cpc",
                 "cpm", 
                 "ctr", 
                 "frequency", 
@@ -351,6 +445,7 @@ class MetaAdsConnector(BaseConnector):
                 "purchase_roas",
                 "purchase",
                 "lead",
+                "post_engagement",
                 "add_to_cart",
                 "initiate_checkout",
                 "roas",
