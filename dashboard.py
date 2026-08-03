@@ -736,6 +736,26 @@ if theme_mode == "Claro":
         filter: invert(1) brightness(0.25) !important;
     }
 
+    .st-key-login_card {
+        background: #FFFFFF !important;
+        border-color: rgba(15,23,42,0.14) !important;
+        box-shadow: 0 12px 30px rgba(15,23,42,0.08) !important;
+    }
+    .st-key-login_card [data-testid="stTextInputRootElement"] {
+        background: #FFFFFF !important;
+        border-color: rgba(15,23,42,0.18) !important;
+    }
+    .st-key-login_card [data-testid="stTextInputRootElement"]:focus-within {
+        border-color: #02569e !important;
+        box-shadow: 0 0 0 1px #02569e !important;
+    }
+    .st-key-login_card [data-testid="stTextInputIcon"],
+    .st-key-login_card [data-testid="stTextInputRootElement"] > button,
+    .st-key-login_card [data-testid="stTextInputRootElement"] [data-testid="stIconMaterial"] {
+        background: transparent !important;
+        color: #475569 !important;
+    }
+
     /* Fix sidebar close button (<<) in Light Mode */
     [data-testid="stSidebarHeader"] button,
     [data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] button {
@@ -962,7 +982,7 @@ if theme_mode == "Claro":
     [data-testid="stHeader"] button, [data-testid="stHeader"] svg { color: #0F172A !important; fill: #0F172A !important; stroke: #0F172A !important; }
     h1, h2, h3, h4, .sipy-word { color: #0F172A !important; }
     .custom-header { border-bottom-color: rgba(15,23,42,0.08); }
-    .agency img { filter: invert(1) brightness(0.25); }
+    .agency img, .inhaus-login-logo { filter: invert(1) brightness(0.25); }
     .agency .div-bar { background: rgba(15,23,42,0.12); }
     .agency .who, .stamp, .lede, .kpi .lab, .hero-card .lab { color: #64748B; }
     .loading-overlay { background-color: rgba(248,249,252,0.95); }
@@ -993,7 +1013,6 @@ if theme_mode == "Claro":
     </style>
     """, unsafe_allow_html=True)
 
-dashboard_user = require_dashboard_login()
 st.html("""
 <script>
 (function() {
@@ -1031,7 +1050,7 @@ st.html("""
         let observer;
         let timeout;
         const changed = () => Array.from(
-            parentDoc.querySelectorAll('[data-testid="stSidebar"] button')
+            parentDoc.querySelectorAll('.st-key-theme_switch_button button')
         ).some((button) => button.textContent.includes(expectedIcon));
         const done = () => {
             if (observer) observer.disconnect();
@@ -1091,9 +1110,11 @@ st.html("""
 </script>
 """, unsafe_allow_javascript=True)
 
+theme_icon = "☾" if theme_mode == "Oscuro" else "☀"
+dashboard_user = require_dashboard_login(theme_icon, toggle_theme)
+
 # SIDEBAR FILTERS (Acts as the collapsible Hamburger Menu on the left)
 st.sidebar.image("https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/69691ca0d848087449f86454.svg", width=180)
-theme_icon = "☾" if theme_mode == "Oscuro" else "☀"
 st.sidebar.button(theme_icon, key="theme_switch_button", help="Cambiar tema", on_click=toggle_theme)
 
 st.sidebar.markdown("### Configuración de Consulta")

@@ -9,6 +9,7 @@ import requests
 from streamlit.testing.v1 import AppTest
 
 from dashboard import api as dashboard_api
+from dashboard import auth as dashboard_auth
 from dashboard.api import process_api_response
 from dashboard.auth import create_dashboard_token
 from dashboard import ui as dashboard_ui
@@ -19,6 +20,7 @@ SOURCE = DASHBOARD_PATH.read_text()
 CONFIG_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("config.py").read_text()
 API_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("api.py").read_text()
 UTILS_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("utils.py").read_text()
+AUTH_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("auth.py").read_text()
 
 
 def test_dashboard_has_light_dark_and_spanish_meta_labels():
@@ -27,6 +29,69 @@ def test_dashboard_has_light_dark_and_spanish_meta_labels():
     assert '"male": "Masculino"' in CONFIG_SOURCE
     assert '"female": "Femenino"' in CONFIG_SOURCE
     assert "Ranking de hashtags (Instagram)" in SOURCE
+
+
+def test_login_uses_a_centered_branded_card():
+    assert 'with st.container(horizontal_alignment="center"):' in AUTH_SOURCE
+    assert 'with st.container(border=True, width=480, key="login_card"):' in AUTH_SOURCE
+    assert "69691ca0d848087449f86454.svg" in AUTH_SOURCE
+    assert '<img src="https://assets.cdn.filesafe.space/' in AUTH_SOURCE
+    assert 'alt="Inhaus"' in AUTH_SOURCE
+    assert 'class="inhaus-login-logo"' in AUTH_SOURCE
+    assert 'with st.form("dashboard_login_form", border=False):' in AUTH_SOURCE
+    assert 'placeholder="Ingresa tu usuario"' in AUTH_SOURCE
+    assert 'icon=":material/person:"' in AUTH_SOURCE
+    assert 'placeholder="Ingresa tu contraseña"' in AUTH_SOURCE
+    assert 'icon=":material/lock:"' in AUTH_SOURCE
+    assert '"Ingresar al dashboard",' in AUTH_SOURCE
+    assert 'type="primary"' in AUTH_SOURCE
+    assert 'width="stretch"' in AUTH_SOURCE
+    assert ".st-key-login_card {" in SOURCE
+    assert '.st-key-login_card [data-testid="stTextInputRootElement"] {' in SOURCE
+    assert '.st-key-login_card [data-testid="stTextInputIcon"]' in SOURCE
+
+
+def test_login_reuses_the_dashboard_theme_switch_and_transition():
+    require_call = "dashboard_user = require_dashboard_login(theme_icon, toggle_theme)"
+    auth_button = 'st.button(\n            theme_icon,\n            key="theme_switch_button",'
+
+    assert auth_button in AUTH_SOURCE
+    assert "on_click=on_theme_change" in AUTH_SOURCE
+    assert require_call in SOURCE
+    assert '.st-key-theme_switch_button button' in SOURCE
+    assert '.agency img, .inhaus-login-logo { filter: invert(1) brightness(0.25); }' in SOURCE
+    assert SOURCE.index('parentDoc.addEventListener("click", startThemeTransition') < SOURCE.index(require_call)
+    assert SOURCE.index("theme_icon =") < SOURCE.index(require_call)
+    assert SOURCE.index(require_call) < SOURCE.index('st.sidebar.button(theme_icon, key="theme_switch_button"')
+
+
+def test_login_theme_selection_survives_authentication(monkeypatch):
+    monkeypatch.setattr(
+        dashboard_auth,
+        "authenticate_dashboard_user",
+        lambda *_: {
+            "username": "test",
+            "client_id": "client_1",
+            "user_id": "user_1",
+            "accounts": {},
+        },
+    )
+    monkeypatch.setattr(
+        requests,
+        "get",
+        lambda *args, **kwargs: SimpleNamespace(status_code=200, json=lambda: []),
+    )
+    app = AppTest.from_file(DASHBOARD_PATH, default_timeout=20)
+
+    app.run()
+    next(button for button in app.button if button.key == "theme_switch_button").click().run()
+    app.text_input[0].input("test")
+    app.text_input[1].input("secret")
+    next(button for button in app.button if button.label == "Ingresar al dashboard").click().run()
+
+    assert not app.exception
+    assert app.session_state["theme_switch"] is False
+    assert next(button for button in app.sidebar.button if button.key == "theme_switch_button").label == "☀"
 
 
 def test_theme_change_does_not_refetch_official_meta_data():
@@ -73,7 +138,7 @@ def test_theme_change_uses_polygon_gradient_view_transition():
 def test_charts_and_header_follow_selected_theme():
     assert 'chart_bg = "#FFFFFF" if theme_mode == "Claro" else "#0A0D13"' in SOURCE
     assert 'text_color = "#0F172A" if theme_mode == "Claro" else "#EAF0F7"' in SOURCE
-    assert ".agency img { filter:" in SOURCE
+    assert ".agency img, .inhaus-login-logo { filter:" in SOURCE
 
 
 def test_light_theme_styles_streamlit_expand_sidebar_button():
