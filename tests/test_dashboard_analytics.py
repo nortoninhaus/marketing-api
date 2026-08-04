@@ -56,3 +56,35 @@ def test_log_analytics_event_failure_returns_false():
 
     assert result is False
     mock_logger.warning.assert_called()
+
+
+def test_log_login_event():
+    from dashboard.auth import log_login_event
+    with patch("dashboard.analytics.log_analytics_event") as mock_log:
+        log_login_event("testuser")
+        mock_log.assert_called_once_with("login", user_id="testuser", details={"auth_method": "form"})
+
+
+def test_require_dashboard_login_logs_login_event():
+    from dashboard.auth import require_dashboard_login
+    mock_user = {"username": "testuser", "client_id": "client_1", "user_id": "user_1", "accounts": {}}
+    mock_session_state = {}
+    mock_query_params = {}
+
+    with patch("dashboard.auth.st") as mock_st, \
+         patch("dashboard.auth.authenticate_dashboard_user", return_value=mock_user), \
+         patch("dashboard.auth.log_login_event") as mock_log_login, \
+         patch("dashboard.auth.create_dashboard_token", return_value="mock_token"), \
+         patch("dashboard.auth.dashboard_auth_cookie_bridge"):
+
+        mock_st.session_state = mock_session_state
+        mock_st.query_params = mock_query_params
+        mock_st.text_input.side_effect = ["testuser", "password"]
+        mock_st.form_submit_button.return_value = True
+        mock_st.container.return_value.__enter__.return_value = mock_st
+        mock_st.form.return_value.__enter__.return_value = mock_st
+
+        require_dashboard_login("☀", MagicMock())
+
+        mock_log_login.assert_called_once_with("testuser")
+
