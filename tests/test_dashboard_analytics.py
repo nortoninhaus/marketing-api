@@ -88,3 +88,52 @@ def test_require_dashboard_login_logs_login_event():
 
         mock_log_login.assert_called_once_with("testuser")
 
+
+def test_log_query_execution():
+    from dashboard.analytics import log_query_execution
+    with patch("dashboard.analytics.log_analytics_event") as mock_log:
+        log_query_execution("user123", "meta_ads", "act_123", "2026-08-01", "2026-08-04", False)
+        mock_log.assert_called_once_with(
+            "ejecutar_consulta",
+            user_id="user123",
+            details={
+                "platform_key": "meta_ads",
+                "account_id": "act_123",
+                "start_date": "2026-08-01",
+                "end_date": "2026-08-04",
+                "write_to_bq": False,
+            }
+        )
+
+
+def test_log_filter_application():
+    from dashboard.analytics import log_filter_application
+    with patch("dashboard.analytics.log_analytics_event") as mock_log:
+        log_filter_application("user123", ["Camp1"], ["Adset1"], "Ad1", {"campaign.id": ["c1"]})
+        mock_log.assert_called_once_with(
+            "aplicar_filtros",
+            user_id="user123",
+            details={
+                "campaign_filter": ["Camp1"],
+                "adset_filter": ["Adset1"],
+                "ad_filter": "Ad1",
+                "applied_api_filters": {"campaign.id": ["c1"]},
+            }
+        )
+
+
+def test_log_demographics_check():
+    from dashboard.analytics import log_demographics_check
+    with patch("dashboard.analytics.log_analytics_event") as mock_log:
+        log_demographics_check("user123", "meta_ads", "act_123")
+        mock_log.assert_called_once_with(
+            "pulsar_demograficos",
+            user_id="user123",
+            details={
+                "enabled": True,
+                "platform_key": "meta_ads",
+                "account_id": "act_123",
+            }
+        )
+
+

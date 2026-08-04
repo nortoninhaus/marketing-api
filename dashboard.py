@@ -94,6 +94,12 @@ from dashboard.ui import (
     render_dashboard_empty_state,
 )
 
+from dashboard.analytics import (
+    log_query_execution,
+    log_filter_application,
+    log_demographics_check,
+)
+
 DASHBOARD_CACHE_VERSION = 4
 
 
@@ -1112,6 +1118,7 @@ st.html("""
 
 theme_icon = "☾" if theme_mode == "Oscuro" else "☀"
 dashboard_user = require_dashboard_login(theme_icon, toggle_theme)
+current_username = dashboard_user.get("username") if dashboard_user else None
 
 # SIDEBAR FILTERS (Acts as the collapsible Hamburger Menu on the left)
 st.sidebar.image("https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/69691ca0d848087449f86454.svg", width=180)
@@ -1311,6 +1318,14 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 if execute_query:
+    log_query_execution(
+        current_username,
+        platform_key,
+        account_id,
+        start_date.isoformat(),
+        end_date.isoformat(),
+        write_to_bq,
+    )
     st.session_state.query_run = True
     st.session_state.force_query_fetch = True
     st.rerun()
@@ -1536,6 +1551,13 @@ else:
                     applied_api_filters["adset.id"] = filtered_meta_rows[filtered_meta_rows["adset_name"].isin(adset_filter)]["adset_id"].dropna().astype(str).unique().tolist()
                 if ad_filter != "Todos" and not filtered_ad_rows.empty:
                     applied_api_filters["ad.id"] = filtered_ad_rows[filtered_ad_rows["ad_name"] == ad_filter]["ad_id"].dropna().astype(str).unique().tolist()
+                log_filter_application(
+                    current_username,
+                    campaign_filter,
+                    adset_filter,
+                    ad_filter,
+                    applied_api_filters,
+                )
                 st.session_state["meta_applied_campaign_filter"] = campaign_filter
                 st.session_state["meta_applied_adset_filter"] = adset_filter
                 st.session_state["meta_applied_ad_filter"] = ad_filter
@@ -1825,6 +1847,7 @@ else: # organic
 st.markdown(kpis_layout, unsafe_allow_html=True)
 
 if platform_key == "meta_ads" and st.checkbox("Cargar datos demográficos", value=False):
+    log_demographics_check(current_username, platform_key, account_id)
     official_key = (
         platform_key, client_id, user_id, account_id,
         start_date.isoformat(), end_date.isoformat(),
