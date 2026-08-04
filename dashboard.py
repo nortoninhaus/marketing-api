@@ -95,6 +95,7 @@ from dashboard.ui import (
 )
 
 from dashboard.analytics import (
+    inject_gtag_script,
     log_query_execution,
     log_filter_application,
     log_demographics_check,
@@ -1116,6 +1117,7 @@ st.html("""
 </script>
 """, unsafe_allow_javascript=True)
 
+inject_gtag_script()
 theme_icon = "☾" if theme_mode == "Oscuro" else "☀"
 dashboard_user = require_dashboard_login(theme_icon, toggle_theme)
 current_username = dashboard_user.get("username") if dashboard_user else None

@@ -1,7 +1,9 @@
 import logging
+import json
 import requests
 from typing import Any, Dict, Optional
 from google.cloud import firestore
+import streamlit as st
 
 from dashboard.auth import get_firestore_client
 from dashboard.config import GA_MEASUREMENT_ID, GA_API_SECRET
@@ -12,13 +14,48 @@ ANALYTICS_EVENTS_COLLECTION = "dashboard_analytics_events"
 GA4_ENDPOINT = "https://www.google-analytics.com/mp/collect"
 
 
+def inject_gtag_script():
+    """Injects Google Analytics 4 (gtag.js) script into parent document for real-time active users and session tracking."""
+    if not GA_MEASUREMENT_ID:
+        return
+    gtag_html = f"""
+    <script>
+    (function() {{
+        try {{
+            const parentDoc = window.parent.document;
+            const parentWin = window.parent;
+            if (!parentDoc.getElementById('ga4-gtag-script')) {{
+                const script = parentDoc.createElement('script');
+                script.id = 'ga4-gtag-script';
+                script.async = true;
+                script.src = 'https://www.googletagmanager.com/gtag/js?id={GA_MEASUREMENT_ID}';
+                parentDoc.head.appendChild(script);
+
+                parentWin.dataLayer = parentWin.dataLayer || [];
+                function gtag(){{ parentWin.dataLayer.push(arguments); }}
+                parentWin.gtag = gtag;
+                gtag('js', new Date());
+                gtag('config', '{GA_MEASUREMENT_ID}');
+            }}
+        }} catch(e) {{
+            console.warn('GA4 Gtag injection warning:', e);
+        }}
+    }})();
+    </script>
+    """
+    try:
+        st.html(gtag_html)
+    except Exception as exc:
+        logger.debug(f"Could not inject gtag.js: {exc}")
+
+
 def log_analytics_event(
     event_name: str,
     user_id: Optional[str] = None,
     details: Optional[Dict[str, Any]] = None
 ) -> bool:
     """
-    Logs an analytics event to both Firestore (instant document store) and GA4 Measurement Protocol.
+    Logs an analytics event to Firestore, GA4 Measurement Protocol, and frontend GTAG.
     Fail-safe: errors logged as warnings.
     """
     success = False
@@ -63,6 +100,27 @@ def log_analytics_event(
             requests.post(url, json=payload, timeout=5)
         except Exception as exc:
             logger.warning(f"Failed to log GA4 analytics event '{event_name}': {exc}")
+
+    # 3. Trigger frontend GTAG event in browser
+    if GA_MEASUREMENT_ID:
+        try:
+            formatted_event_name = event_name.replace(" ", "_").lower()
+            params_json = json.dumps(details or {})
+            event_js = f"""
+            <script>
+            (function() {{
+                try {{
+                    const parentWin = window.parent;
+                    if (typeof parentWin.gtag === 'function') {{
+                        parentWin.gtag('event', '{formatted_event_name}', {params_json});
+                    }}
+                }} catch(e) {{}}
+            }})();
+            </script>
+            """
+            st.html(event_js)
+        except Exception:
+            pass
 
     return success
 
