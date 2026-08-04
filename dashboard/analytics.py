@@ -1,12 +1,12 @@
 import logging
+import requests
 from typing import Any, Dict, Optional
-from google.cloud import firestore
 
-from dashboard.auth import get_firestore_client
+from dashboard.config import GA_MEASUREMENT_ID, GA_API_SECRET
 
 logger = logging.getLogger(__name__)
 
-ANALYTICS_EVENTS_COLLECTION = "dashboard_analytics_events"
+GA4_ENDPOINT = "https://www.google-analytics.com/mp/collect"
 
 
 def log_analytics_event(
@@ -14,19 +14,39 @@ def log_analytics_event(
     user_id: Optional[str] = None,
     details: Optional[Dict[str, Any]] = None
 ) -> bool:
-    """Logs an analytics event to Firestore."""
-    doc_data = {
-        "event_name": event_name,
-        "user_id": user_id or "anonymous",
-        "timestamp": firestore.SERVER_TIMESTAMP,
-        "details": details or {},
+    """Logs an analytics event to GA4 / Firebase Analytics via Measurement Protocol."""
+    if not GA_MEASUREMENT_ID:
+        return False
+
+    client_id = user_id or "anonymous_dashboard_user"
+    params = dict(details or {})
+    if user_id:
+        params["user_id"] = user_id
+
+    formatted_event_name = event_name.replace(" ", "_").lower()
+
+    payload = {
+        "client_id": client_id,
+        "events": [
+            {
+                "name": formatted_event_name,
+                "params": params
+            }
+        ]
     }
+
+    url = f"{GA4_ENDPOINT}?measurement_id={GA_MEASUREMENT_ID}"
+    if GA_API_SECRET:
+        url += f"&api_secret={GA_API_SECRET}"
+
     try:
-        client = get_firestore_client()
-        client.collection(ANALYTICS_EVENTS_COLLECTION).add(doc_data)
-        return True
+        response = requests.post(url, json=payload, timeout=5)
+        if response.status_code in (200, 204):
+            return True
+        logger.warning(f"GA4 Measurement Protocol returned status {response.status_code}: {response.text}")
+        return False
     except Exception as exc:
-        logger.warning(f"Failed to log analytics event '{event_name}': {exc}")
+        logger.warning(f"Failed to log GA4 analytics event '{event_name}': {exc}")
         return False
 
 

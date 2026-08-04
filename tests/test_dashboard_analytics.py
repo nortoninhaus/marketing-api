@@ -1,15 +1,13 @@
 from unittest.mock import MagicMock, patch
-from google.cloud import firestore
-
-from dashboard.analytics import log_analytics_event, ANALYTICS_EVENTS_COLLECTION
+from dashboard.analytics import log_analytics_event, GA4_ENDPOINT
 
 
 def test_log_analytics_event_success_with_user_and_details():
-    mock_client = MagicMock()
-    mock_collection = MagicMock()
-    mock_client.collection.return_value = mock_collection
+    mock_response = MagicMock()
+    mock_response.status_code = 204
 
-    with patch("dashboard.analytics.get_firestore_client", return_value=mock_client):
+    with patch("dashboard.analytics.requests.post", return_value=mock_response) as mock_post, \
+         patch("dashboard.analytics.GA_MEASUREMENT_ID", "G-KEYBRJQSWF"):
         result = log_analytics_event(
             event_name="login_success",
             user_id="user_123",
@@ -17,40 +15,23 @@ def test_log_analytics_event_success_with_user_and_details():
         )
 
     assert result is True
-    mock_client.collection.assert_called_once_with(ANALYTICS_EVENTS_COLLECTION)
-    mock_collection.add.assert_called_once_with({
-        "event_name": "login_success",
-        "user_id": "user_123",
-        "timestamp": firestore.SERVER_TIMESTAMP,
-        "details": {"method": "password"}
-    })
-
-
-def test_log_analytics_event_success_default_user_and_details():
-    mock_client = MagicMock()
-    mock_collection = MagicMock()
-    mock_client.collection.return_value = mock_collection
-
-    with patch("dashboard.analytics.get_firestore_client", return_value=mock_client):
-        result = log_analytics_event(event_name="page_view")
-
-    assert result is True
-    mock_client.collection.assert_called_once_with(ANALYTICS_EVENTS_COLLECTION)
-    mock_collection.add.assert_called_once_with({
-        "event_name": "page_view",
-        "user_id": "anonymous",
-        "timestamp": firestore.SERVER_TIMESTAMP,
-        "details": {}
-    })
+    mock_post.assert_called_once()
+    url, kwargs = mock_post.call_args
+    assert "measurement_id=G-KEYBRJQSWF" in url[0]
+    payload = kwargs["json"]
+    assert payload["client_id"] == "user_123"
+    assert payload["events"][0]["name"] == "login_success"
+    assert payload["events"][0]["params"]["method"] == "password"
+    assert payload["events"][0]["params"]["user_id"] == "user_123"
 
 
 def test_log_analytics_event_failure_returns_false():
-    mock_client = MagicMock()
-    mock_collection = MagicMock()
-    mock_collection.add.side_effect = Exception("Firestore write error")
-    mock_client.collection.return_value = mock_collection
+    mock_response = MagicMock()
+    mock_response.status_code = 500
+    mock_response.text = "Internal Server Error"
 
-    with patch("dashboard.analytics.get_firestore_client", return_value=mock_client), \
+    with patch("dashboard.analytics.requests.post", return_value=mock_response), \
+         patch("dashboard.analytics.GA_MEASUREMENT_ID", "G-KEYBRJQSWF"), \
          patch("dashboard.analytics.logger") as mock_logger:
         result = log_analytics_event(event_name="login_failed", user_id="user_123")
 
