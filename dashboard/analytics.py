@@ -22,31 +22,31 @@ def inject_gtag_script():
     <script>
     (function() {{
         try {{
-            const parentDoc = window.parent.document;
-            const parentWin = window.parent;
-            if (!parentDoc.getElementById('ga4-gtag-script')) {{
-                const script = parentDoc.createElement('script');
-                script.id = 'ga4-gtag-script';
-                script.async = true;
-                script.src = 'https://www.googletagmanager.com/gtag/js?id={GA_MEASUREMENT_ID}';
-                parentDoc.head.appendChild(script);
+            if (window.parent && window.parent.document) {{
+                const parentDoc = window.parent.document;
+                const parentWin = window.parent;
+                if (!parentDoc.getElementById('ga4-gtag-script')) {{
+                    const script = parentDoc.createElement('script');
+                    script.id = 'ga4-gtag-script';
+                    script.async = true;
+                    script.src = 'https://www.googletagmanager.com/gtag/js?id={GA_MEASUREMENT_ID}';
+                    parentDoc.head.appendChild(script);
 
-                parentWin.dataLayer = parentWin.dataLayer || [];
-                function gtag(){{ parentWin.dataLayer.push(arguments); }}
-                parentWin.gtag = gtag;
-                gtag('js', new Date());
-                gtag('config', '{GA_MEASUREMENT_ID}');
+                    parentWin.dataLayer = parentWin.dataLayer || [];
+                    function gtag(){{ parentWin.dataLayer.push(arguments); }}
+                    parentWin.gtag = gtag;
+                    gtag('js', new Date());
+                    gtag('config', '{GA_MEASUREMENT_ID}');
+                }}
             }}
-        }} catch(e) {{
-            console.warn('GA4 Gtag injection warning:', e);
-        }}
+        }} catch(e) {{}}
     }})();
     </script>
     """
     try:
         st.html(gtag_html)
-    except Exception as exc:
-        logger.debug(f"Could not inject gtag.js: {exc}")
+    except Exception:
+        pass
 
 
 def log_analytics_event(
