@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "site": "inhausbrain",
+    "site": "dashboard-inhaus",
     "public": "public",
     "ignore": [
       "firebase.json",
