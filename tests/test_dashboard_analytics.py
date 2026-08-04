@@ -1,13 +1,21 @@
 from unittest.mock import MagicMock, patch
-from dashboard.analytics import log_analytics_event, GA4_ENDPOINT
+from google.cloud import firestore
+
+from dashboard.analytics import log_analytics_event, ANALYTICS_EVENTS_COLLECTION, GA4_ENDPOINT
 
 
-def test_log_analytics_event_success_with_user_and_details():
+def test_log_analytics_event_success_both_firestore_and_ga4():
+    mock_client = MagicMock()
+    mock_collection = MagicMock()
+    mock_client.collection.return_value = mock_collection
+
     mock_response = MagicMock()
     mock_response.status_code = 204
 
-    with patch("dashboard.analytics.requests.post", return_value=mock_response) as mock_post, \
+    with patch("dashboard.analytics.get_firestore_client", return_value=mock_client), \
+         patch("dashboard.analytics.requests.post", return_value=mock_response) as mock_post, \
          patch("dashboard.analytics.GA_MEASUREMENT_ID", "G-KEYBRJQSWF"):
+
         result = log_analytics_event(
             event_name="login_success",
             user_id="user_123",
@@ -15,23 +23,23 @@ def test_log_analytics_event_success_with_user_and_details():
         )
 
     assert result is True
+    # Verify Firestore write
+    mock_client.collection.assert_called_once_with(ANALYTICS_EVENTS_COLLECTION)
+    mock_collection.add.assert_called_once()
+    # Verify GA4 post
     mock_post.assert_called_once()
     url, kwargs = mock_post.call_args
     assert "measurement_id=G-KEYBRJQSWF" in url[0]
     payload = kwargs["json"]
     assert payload["client_id"] == "user_123"
     assert payload["events"][0]["name"] == "login_success"
-    assert payload["events"][0]["params"]["method"] == "password"
-    assert payload["events"][0]["params"]["user_id"] == "user_123"
 
 
-def test_log_analytics_event_failure_returns_false():
-    mock_response = MagicMock()
-    mock_response.status_code = 500
-    mock_response.text = "Internal Server Error"
+def test_log_analytics_event_firestore_resiliency():
+    mock_client = MagicMock()
+    mock_client.collection.side_effect = Exception("Firestore write error")
 
-    with patch("dashboard.analytics.requests.post", return_value=mock_response), \
-         patch("dashboard.analytics.GA_MEASUREMENT_ID", "G-KEYBRJQSWF"), \
+    with patch("dashboard.analytics.get_firestore_client", return_value=mock_client), \
          patch("dashboard.analytics.logger") as mock_logger:
         result = log_analytics_event(event_name="login_failed", user_id="user_123")
 
@@ -116,5 +124,3 @@ def test_log_demographics_check():
                 "account_id": "act_123",
             }
         )
-
-

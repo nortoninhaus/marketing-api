@@ -1,11 +1,14 @@
 import logging
 import requests
 from typing import Any, Dict, Optional
+from google.cloud import firestore
 
+from dashboard.auth import get_firestore_client
 from dashboard.config import GA_MEASUREMENT_ID, GA_API_SECRET
 
 logger = logging.getLogger(__name__)
 
+ANALYTICS_EVENTS_COLLECTION = "dashboard_analytics_events"
 GA4_ENDPOINT = "https://www.google-analytics.com/mp/collect"
 
 
@@ -14,40 +17,54 @@ def log_analytics_event(
     user_id: Optional[str] = None,
     details: Optional[Dict[str, Any]] = None
 ) -> bool:
-    """Logs an analytics event to GA4 / Firebase Analytics via Measurement Protocol."""
-    if not GA_MEASUREMENT_ID:
-        return False
+    """
+    Logs an analytics event to both Firestore (instant document store) and GA4 Measurement Protocol.
+    Fail-safe: errors logged as warnings.
+    """
+    success = False
 
-    client_id = user_id or "anonymous_dashboard_user"
-    params = dict(details or {})
-    if user_id:
-        params["user_id"] = user_id
-
-    formatted_event_name = event_name.replace(" ", "_").lower()
-
-    payload = {
-        "client_id": client_id,
-        "events": [
-            {
-                "name": formatted_event_name,
-                "params": params
-            }
-        ]
-    }
-
-    url = f"{GA4_ENDPOINT}?measurement_id={GA_MEASUREMENT_ID}"
-    if GA_API_SECRET:
-        url += f"&api_secret={GA_API_SECRET}"
-
+    # 1. Store event in Firestore (visible instantly in Firebase Firestore console)
     try:
-        response = requests.post(url, json=payload, timeout=5)
-        if response.status_code in (200, 204):
-            return True
-        logger.warning(f"GA4 Measurement Protocol returned status {response.status_code}: {response.text}")
-        return False
+        db = get_firestore_client()
+        event_doc = {
+            "event_name": event_name,
+            "user_id": user_id or "anonymous",
+            "timestamp": firestore.SERVER_TIMESTAMP,
+            "details": details or {},
+        }
+        db.collection(ANALYTICS_EVENTS_COLLECTION).add(event_doc)
+        success = True
     except Exception as exc:
-        logger.warning(f"Failed to log GA4 analytics event '{event_name}': {exc}")
-        return False
+        logger.warning(f"Failed to log Firestore analytics event '{event_name}': {exc}")
+
+    # 2. Dispatch to GA4 / Firebase Analytics Measurement Protocol
+    if GA_MEASUREMENT_ID:
+        try:
+            client_id = user_id or "anonymous_dashboard_user"
+            params = dict(details or {})
+            if user_id:
+                params["user_id"] = user_id
+
+            formatted_event_name = event_name.replace(" ", "_").lower()
+            payload = {
+                "client_id": client_id,
+                "events": [
+                    {
+                        "name": formatted_event_name,
+                        "params": params
+                    }
+                ]
+            }
+
+            url = f"{GA4_ENDPOINT}?measurement_id={GA_MEASUREMENT_ID}"
+            if GA_API_SECRET:
+                url += f"&api_secret={GA_API_SECRET}"
+
+            requests.post(url, json=payload, timeout=5)
+        except Exception as exc:
+            logger.warning(f"Failed to log GA4 analytics event '{event_name}': {exc}")
+
+    return success
 
 
 def log_query_execution(user_id: str, platform_key: str, account_id: str, start_date: str, end_date: str, write_to_bq: bool):
@@ -87,4 +104,3 @@ def log_demographics_check(user_id: str, platform_key: str, account_id: str):
             "account_id": account_id,
         }
     )
-
