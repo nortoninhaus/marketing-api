@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "site": "inhaus-marketing-api",
+    "site": "inhausbrain",
     "public": "public",
     "ignore": [
       "firebase.json",
