@@ -31,6 +31,17 @@ def test_dashboard_has_light_dark_and_spanish_meta_labels():
     assert "Ranking de hashtags (Instagram)" in SOURCE
 
 
+def test_empty_analytics_elements_do_not_hide_the_dashboard():
+    assert ':first-child:has(> div:empty)' not in SOURCE
+    assert "inject_gtag_script()" in SOURCE
+
+
+def test_demographics_logs_only_when_checkbox_is_enabled():
+    assert 'key="load_demographics"' in SOURCE
+    assert "on_change=log_demographics_toggle" in SOURCE
+    assert 'if st.session_state.get("load_demographics"):' in SOURCE
+
+
 def test_login_uses_a_centered_branded_card():
     assert 'with st.container(horizontal_alignment="center"):' in AUTH_SOURCE
     assert 'with st.container(border=True, width=480, key="login_card"):' in AUTH_SOURCE

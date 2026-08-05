@@ -183,6 +183,11 @@ def connection_account_label(connection, platform_key):
     return f"{account_name} ({account_id})"
 
 
+def log_login_event(username: str):
+    from dashboard.analytics import log_analytics_event
+    log_analytics_event("login", user_id=username, details={"auth_method": "form"})
+
+
 def require_dashboard_login(theme_icon, on_theme_change):
     session_token = st.session_state.get("dashboard_auth_token")
     if not session_token:
@@ -256,6 +261,7 @@ def require_dashboard_login(theme_icon, on_theme_change):
                     st.error(f"No se pudo validar el usuario en Firebase: {exc}")
                 else:
                     if user:
+                        log_login_event(username)
                         token = create_dashboard_token(user)
                         st.session_state["dashboard_auth_token"] = token
                         st.session_state["dashboard_user"] = user
@@ -263,6 +269,7 @@ def require_dashboard_login(theme_icon, on_theme_change):
                         st.query_params[DASHBOARD_AUTH_QUERY_PARAM] = token
                         st.rerun()
                     st.error("Usuario o contraseña incorrectos.")
+
     st.stop()
 
 
