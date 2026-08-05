@@ -1,23 +1,38 @@
-import logging
 import json
-import requests
+import logging
+from threading import Thread
 from typing import Any, Dict, Optional
+
 from google.cloud import firestore
 import streamlit as st
 
 from dashboard.auth import get_firestore_client
-from dashboard.config import GA_MEASUREMENT_ID, GA_API_SECRET
+from dashboard.config import GA_MEASUREMENT_ID
 
 logger = logging.getLogger(__name__)
 
 ANALYTICS_EVENTS_COLLECTION = "dashboard_analytics_events"
-GA4_ENDPOINT = "https://www.google-analytics.com/mp/collect"
+PENDING_GTAG_EVENTS_KEY = "_pending_gtag_events"
+
+
+def _write_firestore_event(event_name: str, event_doc: Dict[str, Any]) -> None:
+    try:
+        db = get_firestore_client()
+        db.collection(ANALYTICS_EVENTS_COLLECTION).add(
+            event_doc,
+            retry=None,
+            timeout=5,
+        )
+    except Exception as exc:
+        logger.warning(f"Failed to log Firestore analytics event '{event_name}': {exc}")
 
 
 def inject_gtag_script():
     """Injects Google Analytics 4 (gtag.js) script into parent document for real-time active users and session tracking."""
     if not GA_MEASUREMENT_ID:
         return
+    pending_events = st.session_state.get(PENDING_GTAG_EVENTS_KEY, [])
+    pending_events_json = json.dumps(pending_events, default=str).replace("</", "<\\/")
     gtag_html = f"""
     <script>
     (function() {{
@@ -25,6 +40,8 @@ def inject_gtag_script():
             if (window.parent && window.parent.document) {{
                 const parentDoc = window.parent.document;
                 const parentWin = window.parent;
+                parentWin.dataLayer = parentWin.dataLayer || [];
+                parentWin.gtag = parentWin.gtag || function(){{ parentWin.dataLayer.push(arguments); }};
                 if (!parentDoc.getElementById('ga4-gtag-script')) {{
                     const script = parentDoc.createElement('script');
                     script.id = 'ga4-gtag-script';
@@ -32,21 +49,22 @@ def inject_gtag_script():
                     script.src = 'https://www.googletagmanager.com/gtag/js?id={GA_MEASUREMENT_ID}';
                     parentDoc.head.appendChild(script);
 
-                    parentWin.dataLayer = parentWin.dataLayer || [];
-                    function gtag(){{ parentWin.dataLayer.push(arguments); }}
-                    parentWin.gtag = gtag;
-                    gtag('js', new Date());
-                    gtag('config', '{GA_MEASUREMENT_ID}');
+                    parentWin.gtag('js', new Date());
+                    parentWin.gtag('config', '{GA_MEASUREMENT_ID}');
                 }}
+                const pendingEvents = {pending_events_json};
+                pendingEvents.forEach(event => parentWin.gtag('event', event.name, event.params));
             }}
         }} catch(e) {{}}
     }})();
     </script>
     """
     try:
-        st.html(gtag_html)
+        st.html(gtag_html, unsafe_allow_javascript=True)
     except Exception:
-        pass
+        return
+    if pending_events:
+        del st.session_state[PENDING_GTAG_EVENTS_KEY]
 
 
 def log_analytics_event(
@@ -55,70 +73,39 @@ def log_analytics_event(
     details: Optional[Dict[str, Any]] = None
 ) -> bool:
     """
-    Logs an analytics event to Firestore, GA4 Measurement Protocol, and frontend GTAG.
+    Logs an analytics event to Firestore and queues it for frontend GTAG.
     Fail-safe: errors logged as warnings.
     """
     success = False
 
-    # 1. Store event in Firestore (visible instantly in Firebase Firestore console)
+    # 1. Store event in Firestore without blocking the Streamlit rerun.
     try:
-        db = get_firestore_client()
         event_doc = {
             "event_name": event_name,
             "user_id": user_id or "anonymous",
             "timestamp": firestore.SERVER_TIMESTAMP,
             "details": details or {},
         }
-        db.collection(ANALYTICS_EVENTS_COLLECTION).add(event_doc)
+        # ponytail: one daemon thread per event; use a queue if event volume grows.
+        Thread(
+            target=_write_firestore_event,
+            args=(event_name, event_doc),
+            daemon=True,
+        ).start()
         success = True
     except Exception as exc:
         logger.warning(f"Failed to log Firestore analytics event '{event_name}': {exc}")
 
-    # 2. Dispatch to GA4 / Firebase Analytics Measurement Protocol
+    # 2. Queue frontend GTAG delivery for the next stable Streamlit run.
     if GA_MEASUREMENT_ID:
         try:
-            client_id = user_id or "anonymous_dashboard_user"
             params = dict(details or {})
             if user_id:
                 params["user_id"] = user_id
-
-            formatted_event_name = event_name.replace(" ", "_").lower()
-            payload = {
-                "client_id": client_id,
-                "events": [
-                    {
-                        "name": formatted_event_name,
-                        "params": params
-                    }
-                ]
-            }
-
-            url = f"{GA4_ENDPOINT}?measurement_id={GA_MEASUREMENT_ID}"
-            if GA_API_SECRET:
-                url += f"&api_secret={GA_API_SECRET}"
-
-            requests.post(url, json=payload, timeout=5)
-        except Exception as exc:
-            logger.warning(f"Failed to log GA4 analytics event '{event_name}': {exc}")
-
-    # 3. Trigger frontend GTAG event in browser
-    if GA_MEASUREMENT_ID:
-        try:
-            formatted_event_name = event_name.replace(" ", "_").lower()
-            params_json = json.dumps(details or {})
-            event_js = f"""
-            <script>
-            (function() {{
-                try {{
-                    const parentWin = window.parent;
-                    if (typeof parentWin.gtag === 'function') {{
-                        parentWin.gtag('event', '{formatted_event_name}', {params_json});
-                    }}
-                }} catch(e) {{}}
-            }})();
-            </script>
-            """
-            st.html(event_js)
+            st.session_state.setdefault(PENDING_GTAG_EVENTS_KEY, []).append({
+                "name": event_name.replace(" ", "_").lower(),
+                "params": params,
+            })
         except Exception:
             pass
 

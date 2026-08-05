@@ -113,6 +113,11 @@ def toggle_theme():
     st.session_state["theme_switch"] = not st.session_state.get("theme_switch", True)
 
 
+def log_demographics_toggle(user_id, platform_key, account_id):
+    if st.session_state.get("load_demographics"):
+        log_demographics_check(user_id, platform_key, account_id)
+
+
 # Determine sidebar collapse state dynamically to hide it automatically once query runs
 initial_sidebar = "collapsed" if st.session_state.get("query_run", False) else "expanded"
 
@@ -271,16 +276,6 @@ span[data-testid="stSidebarCollapseButton"] {
     padding-top: 0.5rem !important;
     padding-bottom: 2rem !important;
     position: relative !important;
-}
-
-/* Collapse empty download slot container completely in block flow */
-.block-container > div:first-child:has(> div:empty),
-.block-container > div[data-testid="stElementContainer"]:has(> div:empty),
-[data-testid="stMainBlockContainer"] > div:first-child:has(> div:empty) {
-    display: none !important;
-    height: 0px !important;
-    margin: 0px !important;
-    padding: 0px !important;
 }
 
 /* Position download slot inline inside header next to API Directa */
@@ -1848,8 +1843,14 @@ else: # organic
 
 st.markdown(kpis_layout, unsafe_allow_html=True)
 
-if platform_key == "meta_ads" and st.checkbox("Cargar datos demográficos", value=False):
-    log_demographics_check(current_username, platform_key, account_id)
+load_demographics = platform_key == "meta_ads" and st.checkbox(
+    "Cargar datos demográficos",
+    value=False,
+    key="load_demographics",
+    on_change=log_demographics_toggle,
+    args=(current_username, platform_key, account_id),
+)
+if load_demographics:
     official_key = (
         platform_key, client_id, user_id, account_id,
         start_date.isoformat(), end_date.isoformat(),

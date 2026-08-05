@@ -1,19 +1,52 @@
 from unittest.mock import MagicMock, patch
 from google.cloud import firestore
 
-from dashboard.analytics import log_analytics_event, ANALYTICS_EVENTS_COLLECTION, GA4_ENDPOINT
+from dashboard.analytics import (
+    ANALYTICS_EVENTS_COLLECTION,
+    PENDING_GTAG_EVENTS_KEY,
+    _write_firestore_event,
+    inject_gtag_script,
+    log_analytics_event,
+)
 
 
-def test_log_analytics_event_success_both_firestore_and_ga4():
-    mock_client = MagicMock()
-    mock_collection = MagicMock()
-    mock_client.collection.return_value = mock_collection
+def test_gtag_injection_flushes_pending_events():
+    session_state = {
+        PENDING_GTAG_EVENTS_KEY: [
+            {"name": "login", "params": {"auth_method": "form"}},
+        ]
+    }
 
-    mock_response = MagicMock()
-    mock_response.status_code = 204
+    with patch("dashboard.analytics.st.html") as mock_html, \
+         patch("dashboard.analytics.st.session_state", session_state), \
+         patch("dashboard.analytics.GA_MEASUREMENT_ID", "G-KEYBRJQSWF"):
+        inject_gtag_script()
 
-    with patch("dashboard.analytics.get_firestore_client", return_value=mock_client), \
-         patch("dashboard.analytics.requests.post", return_value=mock_response) as mock_post, \
+    mock_html.assert_called_once()
+    assert mock_html.call_args.kwargs == {"unsafe_allow_javascript": True}
+    assert '"name": "login"' in mock_html.call_args.args[0]
+    assert PENDING_GTAG_EVENTS_KEY not in session_state
+
+
+def test_gtag_injection_keeps_events_when_rendering_fails():
+    session_state = {
+        PENDING_GTAG_EVENTS_KEY: [
+            {"name": "login", "params": {}},
+        ]
+    }
+
+    with patch("dashboard.analytics.st.html", side_effect=RuntimeError("render failed")), \
+         patch("dashboard.analytics.st.session_state", session_state), \
+         patch("dashboard.analytics.GA_MEASUREMENT_ID", "G-KEYBRJQSWF"):
+        inject_gtag_script()
+
+    assert session_state[PENDING_GTAG_EVENTS_KEY][0]["name"] == "login"
+
+
+def test_log_analytics_event_queues_firestore_and_gtag():
+    session_state = {}
+    with patch("dashboard.analytics.Thread") as mock_thread, \
+         patch("dashboard.analytics.st.session_state", session_state), \
          patch("dashboard.analytics.GA_MEASUREMENT_ID", "G-KEYBRJQSWF"):
 
         result = log_analytics_event(
@@ -23,28 +56,40 @@ def test_log_analytics_event_success_both_firestore_and_ga4():
         )
 
     assert result is True
-    # Verify Firestore write
-    mock_client.collection.assert_called_once_with(ANALYTICS_EVENTS_COLLECTION)
-    mock_collection.add.assert_called_once()
-    # Verify GA4 post
-    mock_post.assert_called_once()
-    url, kwargs = mock_post.call_args
-    assert "measurement_id=G-KEYBRJQSWF" in url[0]
-    payload = kwargs["json"]
-    assert payload["client_id"] == "user_123"
-    assert payload["events"][0]["name"] == "login_success"
+    mock_thread.return_value.start.assert_called_once_with()
+    assert mock_thread.call_args.kwargs["target"] is _write_firestore_event
+    assert mock_thread.call_args.kwargs["daemon"] is True
+    assert session_state[PENDING_GTAG_EVENTS_KEY] == [
+        {
+            "name": "login_success",
+            "params": {"method": "password", "user_id": "user_123"},
+        }
+    ]
 
 
-def test_log_analytics_event_firestore_resiliency():
+def test_firestore_write_is_bounded_and_resilient():
     mock_client = MagicMock()
     mock_client.collection.side_effect = Exception("Firestore write error")
 
     with patch("dashboard.analytics.get_firestore_client", return_value=mock_client), \
          patch("dashboard.analytics.logger") as mock_logger:
-        result = log_analytics_event(event_name="login_failed", user_id="user_123")
+        _write_firestore_event("login_failed", {"user_id": "user_123"})
 
-    assert result is False
     mock_logger.warning.assert_called()
+
+
+def test_firestore_write_disables_retries_and_has_timeout():
+    mock_client = MagicMock()
+
+    with patch("dashboard.analytics.get_firestore_client", return_value=mock_client):
+        _write_firestore_event("login", {"user_id": "user_123"})
+
+    mock_client.collection.assert_called_once_with(ANALYTICS_EVENTS_COLLECTION)
+    mock_client.collection.return_value.add.assert_called_once_with(
+        {"user_id": "user_123"},
+        retry=None,
+        timeout=5,
+    )
 
 
 def test_log_login_event():
