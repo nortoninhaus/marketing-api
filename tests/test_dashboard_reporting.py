@@ -587,3 +587,57 @@ def test_nutri_template_hides_unavailable_sections_and_has_no_reference_leaks():
     assert "http://" not in rendered and "https://" not in rendered
     for leaked_identity in ("parmalat", "la lechera", "toni", "vita", "shamuna", "adriana hoyos", "artz"):
         assert leaked_identity not in rendered.casefold()
+
+
+def test_adriana_hoyos_template_is_a_complete_payload_driven_report():
+    rendered = render_report("adriana_hoyos", _complete_template_payload())
+
+    for section_id in (
+        "cover-section",
+        "overview-section",
+        "funnel-section",
+        "channels-section",
+        "trend-section",
+        "campaigns-section",
+        "geography-section",
+        "content-section",
+        "insights-section",
+    ):
+        assert f'id="{section_id}"' in rendered
+    assert rendered.count('data-report-section="true"') == 8
+    assert "Acme Foods" in rendered
+    assert "2026-07-01" in rendered
+    assert 'timeZone: "UTC"' in rendered
+    assert "Embudo de resultados" in rendered
+    assert "Rendimiento por canal" in rendered
+    assert "Detalle de campañas" in rendered
+    assert "Análisis geográfico" in rendered
+    assert "window.REPORT_DATA" in rendered
+    assert ".textContent" in rendered
+    assert "Number.isFinite" in rendered
+
+
+def test_adriana_hoyos_template_hides_unavailable_sections_and_has_no_reference_leaks():
+    rendered = render_report("adriana_hoyos", {
+        "meta": {"company_name": "Acme", "platforms": [], "period": {"start": "2026-07-01", "end": "2026-07-31"}},
+        "summary": {}, "rates": {}, "deltas": {}, "by_platform": {}, "daily_series": [],
+        "rows": {"current": [], "prior": [], "supplemental": []},
+        "breakdowns": {}, "tables": {"export": []}, "narratives": [], "availability": {},
+    })
+
+    assert rendered.count('data-report-section="true" hidden') == 8
+    assert 'showSection("geography-section", geographyRows.length > 0)' in rendered
+    assert 'showSection("insights-section", narratives.length > 0)' in rendered
+    assert "Datos no disponibles" not in rendered
+    assert "innerHTML" not in rendered
+    assert "contenteditable" not in rendered
+    assert "downloadHTML" not in rendered
+    assert "downloadPDF" not in rendered
+    assert "openPin" not in rendered
+    assert "<img" not in rendered
+    assert "http://" not in rendered and "https://" not in rendered
+    for leaked_identity in (
+        "parmalat", "la lechera", "toni", "vita", "nutri", "shamuna", "adriana hoyos", "artz",
+        "season refresh", "summer sale", "galápagos iconic",
+    ):
+        assert leaked_identity not in rendered.casefold()
