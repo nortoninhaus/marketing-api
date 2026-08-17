@@ -587,6 +587,45 @@ def _nutri_payload():
     return payload
 
 
+def _meta_builder_payload(with_publishers, publisher_values=None, campaign_suffixes=None):
+    publishers = publisher_values or (
+        ("facebook", "facebook", "instagram", "instagram") if with_publishers else (None,) * 4
+    )
+    raw_rows = []
+    suffixes = campaign_suffixes or (None,) * 4
+    for index, (day, publisher, spend, impressions, reach, engagement, views) in enumerate((
+        (1, publishers[0], 10, 1000, 800, 100, 500),
+        (2, publishers[1], 20, 2000, 1500, 200, 600),
+        (1, publishers[2], 30, 3000, 2200, 300, 700),
+        (2, publishers[3], 40, 4000, 3000, 400, 800),
+    )):
+        suffix = f"_{suffixes[index]}" if suffixes[index] else ""
+        item = {
+            "campaign_name": f"Meta launch {day}-{spend}{suffix}",
+            "date": f"2026-07-{day:02d}",
+            "metrics": {
+                "spend": spend,
+                "impressions": impressions,
+                "reach": reach,
+                "engagement": engagement,
+                "views": views,
+            },
+        }
+        if publisher:
+            item["dimensions"] = {"publisher_platform": publisher}
+        raw_rows.append(item)
+    frame = process_api_response(raw_rows, "meta_ads", "client_1", "user_1")
+    context = _context({"platform": "meta_ads", "account_id": "act_1", "account_name": "Acme Foods"})
+    context["required_metrics"] = ["spend", "impressions", "reach", "engagement", "views"]
+    optional = {
+        "breakdowns": {
+            "facebook": {"age": [{"label": "25–34", "value": 45}]},
+            "instagram": {"age": [{"label": "25–34", "value": 40}]},
+        }
+    } if with_publishers else None
+    return build_report_payload("nutri", frame, query_context=context, optional=optional)
+
+
 class _BrowserResultParser(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -613,6 +652,19 @@ def _browser_dom(rendered, tmp_path):
         or "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
     )
     assert Path(browser).is_file(), "A real Chrome/Chromium executable is required for report DOM tests"
+    instrumentation = r"""
+<script>
+window.__browserErrors = [];
+window.__browserConsoleErrors = [];
+window.addEventListener("error", event => window.__browserErrors.push(event.message));
+window.addEventListener("unhandledrejection", event => window.__browserErrors.push(String(event.reason)));
+const originalConsoleError = console.error.bind(console);
+console.error = (...args) => {
+  window.__browserConsoleErrors.push(args.map(String).join(" "));
+  originalConsoleError(...args);
+};
+</script>
+"""
     probe = r"""
 <script>
 (() => {
@@ -652,9 +704,17 @@ def _browser_dom(rendered, tmp_path):
       demographics: familyCount(`${name}-panel`, "demographics"), narratives: familyCount(`${name}-panel`, "narrative")
     }])),
     investment: {tables: familyCount("investment-panel", "table"), optimization: familyCount("investment-panel", "optimization")},
+    summaryKpis: Object.fromEntries([...document.querySelectorAll('#summary-panel [data-metric]')].map(card => [card.dataset.metric, card.querySelector('.stat-value')?.textContent])),
+    platformKpis: Object.fromEntries(["facebook", "instagram", "tiktok"].map(name => [name, Object.fromEntries([...document.querySelectorAll(`#${name}-panel [data-metric]`)].map(card => [card.dataset.metric, card.querySelector('.stat-value')?.textContent]))])),
+    platformTrendRows: Object.fromEntries(["facebook", "instagram", "tiktok"].map(name => [name, [...document.querySelectorAll(`#${name}-trend-body tr td:last-child`)].map(cell => cell.textContent)])),
+    platformContentRows: Object.fromEntries(["facebook", "instagram", "tiktok"].map(name => [name, [...document.querySelectorAll(`#${name}-content-body tr td:first-child`)].map(cell => cell.textContent)])),
+    sharedNotices: Object.fromEntries(["facebook", "instagram"].map(name => [name, document.getElementById(`${name}-shared-meta`)?.textContent || ""])),
+    investmentRows: [...document.querySelectorAll("#investment-body tr")].map(row => row.textContent),
     maxTrendTicks: Math.max(0, ...trendCharts.map(chart => chart.querySelectorAll("[data-trend-tick]").length)),
     minTrendRows: Math.min(...[...document.querySelectorAll('[data-family="trend-table"]:not([hidden])')].map(table => table.querySelectorAll("tbody tr").length)),
     minAccentContrast: Math.min(...[...document.querySelectorAll(".accent-text")].map(contrast)),
+    errors: [...window.__browserErrors, ...window.__browserConsoleErrors],
+    resources: performance.getEntriesByType("resource").map(entry => entry.name),
     text: document.body.textContent
   };
   const output = document.createElement("script");
@@ -666,7 +726,10 @@ def _browser_dom(rendered, tmp_path):
 </script>
 """
     report_path = tmp_path / "nutri-browser.html"
-    report_path.write_text(rendered.replace("</body>", probe + "</body>"), encoding="utf-8")
+    report_path.write_text(
+        rendered.replace("<head>", "<head>" + instrumentation).replace("</body>", probe + "</body>"),
+        encoding="utf-8",
+    )
     process = subprocess.Popen(
         [
             browser, "--headless=new", "--disable-gpu", "--no-sandbox",
@@ -749,6 +812,110 @@ def test_nutri_browser_hides_missing_subsections_inside_an_available_platform(tm
     assert dom["platforms"]["facebook"] == {
         "kpis": 1, "charts": 0, "tables": 0, "content": 0, "demographics": 0, "narratives": 0,
     }
+
+
+def test_nutri_browser_maps_builder_meta_publishers_without_double_counting(tmp_path):
+    payload = _meta_builder_payload(with_publishers=True)
+
+    assert payload["meta"]["platforms"] == ["meta_ads"]
+    assert {row["source_platform"] for row in payload["rows"]["current"]} == {"meta_ads"}
+
+    dom = _browser_dom(render_report("nutri", payload), tmp_path)
+
+    assert dom["visible"]["facebook-panel"] is True
+    assert dom["visible"]["instagram-panel"] is True
+    assert dom["visible"]["tiktok-panel"] is False
+    assert dom["platformKpis"]["facebook"]["spend"] == "$30,00"
+    assert dom["platformKpis"]["instagram"]["spend"] == "$70,00"
+    assert dom["platformTrendRows"]["facebook"] == ["1.000", "2.000"]
+    assert dom["platformTrendRows"]["instagram"] == ["3.000", "4.000"]
+    assert dom["platformContentRows"]["facebook"] == ["Meta launch 2-20", "Meta launch 1-10"]
+    assert dom["platformContentRows"]["instagram"] == ["Meta launch 2-40", "Meta launch 1-30"]
+    assert dom["summaryKpis"]["spend"] == "$100,00"
+    assert dom["sharedNotices"] == {"facebook": "", "instagram": ""}
+    assert len(dom["investmentRows"]) == 1
+    assert dom["errors"] == []
+    assert dom["resources"] == []
+
+
+def test_nutri_browser_shares_unsplit_meta_aggregate_without_inventing_channel_split(tmp_path):
+    payload = _meta_builder_payload(with_publishers=False)
+
+    assert payload["meta"]["platforms"] == ["meta_ads"]
+    assert {row["platform"] for row in payload["rows"]["current"]} == {"meta_ads"}
+
+    dom = _browser_dom(render_report("nutri", payload), tmp_path)
+
+    assert dom["visible"]["facebook-panel"] is True
+    assert dom["visible"]["instagram-panel"] is True
+    assert dom["platformKpis"]["facebook"] == dom["platformKpis"]["instagram"]
+    assert dom["platformKpis"]["facebook"]["spend"] == "$100,00"
+    assert dom["sharedNotices"] == {
+        "facebook": "Datos agregados de Meta compartidos entre Facebook e Instagram; no se atribuye una distribución por red.",
+        "instagram": "Datos agregados de Meta compartidos entre Facebook e Instagram; no se atribuye una distribución por red.",
+    }
+    assert dom["platforms"]["facebook"]["content"] == 0
+    assert dom["platforms"]["instagram"]["content"] == 0
+    assert len(dom["investmentRows"]) == 1
+    assert dom["errors"] == []
+    assert dom["resources"] == []
+
+
+def test_nutri_browser_does_not_share_meta_when_another_publisher_is_identified(tmp_path):
+    payload = _meta_builder_payload(
+        with_publishers=False,
+        publisher_values=("audience_network",) * 4,
+    )
+
+    assert {row["publisher_platform"] for row in payload["rows"]["current"]} == {"audience_network"}
+
+    dom = _browser_dom(render_report("nutri", payload), tmp_path)
+
+    assert dom["visible"]["facebook-panel"] is False
+    assert dom["visible"]["instagram-panel"] is False
+    assert dom["sharedNotices"] == {"facebook": "", "instagram": ""}
+    assert len(dom["investmentRows"]) == 1
+    assert dom["errors"] == []
+
+
+def test_nutri_browser_maps_inferred_meta_publishers_without_shared_fallback(tmp_path):
+    payload = _meta_builder_payload(
+        with_publishers=False,
+        campaign_suffixes=("facebook", "facebook", "instagram", "instagram"),
+    )
+
+    assert all("publisher_platform" not in row for row in payload["rows"]["current"])
+    assert {row["platform"] for row in payload["rows"]["current"]} == {"Facebook Ads", "Instagram Ads"}
+
+    dom = _browser_dom(render_report("nutri", payload), tmp_path)
+
+    assert dom["platformKpis"]["facebook"]["spend"] == "$30,00"
+    assert dom["platformKpis"]["instagram"]["spend"] == "$70,00"
+    assert dom["platformContentRows"]["facebook"] == ["Meta launch 2-20_facebook", "Meta launch 1-10_facebook"]
+    assert dom["platformContentRows"]["instagram"] == ["Meta launch 2-40_instagram", "Meta launch 1-30_instagram"]
+    assert dom["sharedNotices"] == {"facebook": "", "instagram": ""}
+    assert dom["errors"] == []
+
+
+def test_nutri_browser_keeps_direct_channel_content_despite_conflicting_nested_publisher(tmp_path):
+    payload = _nutri_payload()
+    payload["rows"]["current"][0]["source_metrics"]["publisher_platform"] = "instagram"
+
+    dom = _browser_dom(render_report("nutri", payload), tmp_path)
+
+    assert "Community story" in dom["platformContentRows"]["facebook"]
+    assert "Community story" not in dom["platformContentRows"]["instagram"]
+    assert dom["errors"] == []
+
+
+def test_nutri_browser_harness_captures_console_errors(tmp_path):
+    rendered = render_report("nutri", _nutri_payload()).replace(
+        "</body>", '<script>console.error("console probe")</script></body>',
+    )
+
+    dom = _browser_dom(rendered, tmp_path)
+
+    assert dom["errors"] == ["console probe"]
 
 
 def test_nutri_template_has_no_reference_assets_requests_or_authoring_controls():
