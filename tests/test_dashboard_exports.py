@@ -1,4 +1,5 @@
 import ast
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -116,8 +117,23 @@ def test_template_report_is_standalone_escaped_and_contains_all_data():
         report = namespace["template_report_html"](
             frame,
             template_name,
-            {"Cuenta": "Cliente & uno", "Fechas": "01/08/2026 – 13/08/2026", "start_date": "2026-08-01", "end_date": "2026-08-13"},
+            {
+                "Cuenta": "Cliente & uno",
+                "Fechas": "01/08/2026 – 13/08/2026",
+                "start_date": "2026-08-01",
+                "end_date": "2026-08-13",
+                "platform": "meta_ads",
+                "Plataformas": "Meta Ads (Facebook/IG)",
+            },
         )
         assert report.startswith("<!doctype html>")
         assert "REPORT_DATA" in report
         assert "Cliente \\u0026 uno" in report or "Cliente & uno" in report or "Cliente &amp; uno" in report
+        data_json = report.split('<script id="report-data" type="application/json">')[1].split("</script>")[0]
+        parsed_data = json.loads(data_json)
+        assert parsed_data["summary"]["spend"] == 1254.56
+        assert parsed_data["summary"]["impressions"] == 51200
+        assert parsed_data["meta"]["period"]["start"] == "2026-08-01"
+        assert parsed_data["meta"]["period"]["end"] == "2026-08-13"
+        assert bool(parsed_data["by_platform"]) is True
+

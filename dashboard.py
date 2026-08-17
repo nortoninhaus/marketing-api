@@ -143,6 +143,8 @@ def template_report_html(
     account_name = str(report_context.get("Cuenta", report_context.get("account_name", "")))
     account_id = str(report_context.get("account_id", ""))
     platform = str(report_context.get("platform", "meta_ads"))
+    start_date = str(report_context.get("start_date", ""))
+    end_date = str(report_context.get("end_date", ""))
     query_context = {
         "connections": [{
             "account_id": account_id or "default",
@@ -152,13 +154,13 @@ def template_report_html(
         "account_id": account_id,
         "account_name": account_name,
         "platform": platform,
-        "start_date": report_context.get("start_date", ""),
-        "end_date": report_context.get("end_date", ""),
+        "start_date": start_date,
+        "end_date": end_date,
         "period": {
-            "start": report_context.get("start_date", ""),
-            "end": report_context.get("end_date", ""),
+            "start": start_date,
+            "end": end_date,
         },
-        "platforms": [report_context.get("Plataformas", platform)] if report_context.get("Plataformas") else [platform],
+        "platforms": [platform] if platform else [],
     }
     payload = build_report_payload(
         template_key,

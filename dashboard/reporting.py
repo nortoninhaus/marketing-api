@@ -211,8 +211,35 @@ def _period(query_context: dict[str, Any], prefix: str = "") -> dict[str, str | 
     return {"start": _json_value(start), "end": _json_value(end)}
 
 
+def _normalize_platform(p: Any) -> str:
+    s = str(p or "").strip().lower()
+    if "meta" in s or "facebook" in s or "instagram" in s:
+        return "meta_ads"
+    if "analytics" in s or "ga4" in s:
+        return "google_analytics"
+    if "google" in s:
+        return "google_ads"
+    if "tiktok" in s:
+        return "tiktok"
+    if "pinterest" in s:
+        return "pinterest_ads"
+    if "linkedin" in s:
+        return "linkedin_ads"
+    return s.replace(" ", "_")
+
+
 def _platform_rows(records: list[dict[str, Any]], platform: str) -> list[dict[str, Any]]:
-    return [row for row in records if str(row.get("source_platform") or row.get("platform") or "") == platform]
+    norm_target = _normalize_platform(platform)
+    scoped = [
+        row for row in records
+        if _normalize_platform(row.get("source_platform") or row.get("platform") or "") == norm_target
+        or str(row.get("source_platform") or row.get("platform") or "") == platform
+    ]
+    if scoped:
+        return scoped
+    if all(not (row.get("source_platform") or row.get("platform")) for row in records):
+        return records
+    return []
 
 
 def _metric_available(records: list[dict[str, Any]], metric: str) -> bool:
@@ -249,6 +276,15 @@ def _select_scoped_summaries(
                     by_platform[platform][metric] = value[metric]
                     total += value[metric]
                     found = True
+                    break
+        if not found:
+            for records in (current, export, supplemental):
+                value, available = _summarize(records, [metric])
+                if available[metric]:
+                    total = value[metric]
+                    found = True
+                    if platforms:
+                        by_platform[platforms[0]][metric] = total
                     break
         availability[metric] = found
         if found:
