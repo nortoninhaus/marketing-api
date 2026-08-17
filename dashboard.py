@@ -118,6 +118,277 @@ def log_demographics_toggle(user_id, platform_key, account_id):
         log_demographics_check(user_id, platform_key, account_id)
 
 
+REPORT_TEMPLATES = {
+    "Nutri": {"background": "#F8FAFC", "surface": "#FFFFFF", "ink": "#154095", "accent": "#78BB42"},
+    "Adriana Hoyos": {"background": "#FAF9F6", "surface": "#FFFFFF", "ink": "#2D251E", "accent": "#C5A059"},
+    "ARTZ": {"background": "#F5F4F0", "surface": "#FFFFFF", "ink": "#2A2D26", "accent": "#646A58"},
+    "Shamuna": {"background": "#FEFAE0", "surface": "#FFFFFF", "ink": "#1A3E2F", "accent": "#D4A373"},
+}
+
+
+def template_report_html(frame, template_name, report_context):
+    theme = REPORT_TEMPLATES[template_name]
+    kpis = (("Filas", len(frame)), ("Columnas", len(frame.columns)))
+
+    context_html = "".join(
+        f"<li><strong>{html.escape(str(label))}:</strong> {html.escape(str(value))}</li>"
+        for label, value in report_context.items()
+    )
+    kpi_html = "".join(
+        f'<article class="kpi"><span>{html.escape(label)}</span><strong>{value:,}</strong></article>'
+        for label, value in kpis
+    )
+    table_html = frame.to_html(index=False, escape=True, classes="report-table", border=0)
+
+    return f"""<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reporte {html.escape(template_name)}</title>
+  <style>
+    :root {{ --background: {theme['background']}; --surface: {theme['surface']}; --ink: {theme['ink']}; --accent: {theme['accent']}; }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin: 0; background: var(--background); color: var(--ink); font-family: Inter, Arial, sans-serif; }}
+    main {{ width: min(1400px, 94vw); margin: 0 auto; padding: 48px 0; }}
+    header {{ border-left: 8px solid var(--accent); padding: 8px 24px; }}
+    h1 {{ margin: 0 0 8px; font-size: clamp(2rem, 5vw, 4.5rem); }}
+    .template {{ color: var(--accent); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }}
+    .context {{ display: flex; flex-wrap: wrap; gap: 8px 24px; padding: 0; list-style: none; }}
+    .kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin: 32px 0; }}
+    .kpi, .table-wrap {{ background: var(--surface); border-radius: 16px; box-shadow: 0 8px 30px #00000012; }}
+    .kpi {{ padding: 20px; border-top: 4px solid var(--accent); }}
+    .kpi span, .empty-kpis {{ opacity: .72; }}
+    .kpi strong {{ display: block; margin-top: 8px; font-size: 1.8rem; }}
+    .table-wrap {{ overflow-x: auto; padding: 20px; }}
+    .report-table {{ width: 100%; border-collapse: collapse; font-size: .9rem; }}
+    th, td {{ padding: 12px; border-bottom: 1px solid color-mix(in srgb, var(--ink) 16%, transparent); text-align: left; white-space: nowrap; }}
+    th {{ background: var(--ink); color: var(--surface); }}
+    tbody tr:hover {{ background: color-mix(in srgb, var(--accent) 10%, transparent); }}
+    @media print {{ main {{ width: 100%; padding: 16px; }} .table-wrap, .kpi {{ box-shadow: none; }} }}
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="template">{html.escape(template_name)}</div>
+      <h1>Reporte de marketing</h1>
+      <ul class="context">{context_html}</ul>
+    </header>
+    <section class="kpis" aria-label="Indicadores principales">{kpi_html}</section>
+    <section class="table-wrap" aria-label="Datos del reporte">{table_html}</section>
+  </main>
+</body>
+</html>"""
+
+
+def segmented_pdf_download_html(export_name, background_color):
+    return f"""
+    <div data-pdf-export-control="true" data-pdf-export-name="{export_name}">
+        <button type="button">Descargar PDF</button>
+        <p role="status" aria-live="polite"></p>
+    </div>
+    <style>
+    [data-pdf-export-name="{export_name}"] button {{
+        width: 100%;
+        padding: 0.55rem 0.75rem;
+        border: 1px solid #02569e;
+        border-radius: 0.5rem;
+        background: #02569e;
+        color: #FFFFFF;
+        font-weight: 700;
+        cursor: pointer;
+    }}
+    [data-pdf-export-name="{export_name}"] button:disabled {{
+        cursor: wait;
+        opacity: 0.65;
+    }}
+    [data-pdf-export-name="{export_name}"] p {{
+        min-height: 1rem;
+        margin: 0.3rem 0 0;
+        color: #02569e;
+        font-size: 0.75rem;
+    }}
+    </style>
+    <script>
+    (() => {{
+        const controls = document.querySelectorAll(
+            '[data-pdf-export-name="{export_name}"]'
+        );
+        const root = controls[controls.length - 1];
+        if (!root || root.dataset.ready === "true") return;
+        root.dataset.ready = "true";
+
+        const button = root.querySelector("button");
+        const status = root.querySelector('[role="status"]');
+        const trigger = document.querySelector('[data-testid="stPopoverButton"]');
+        trigger?.closest('[data-testid="stPopover"]')
+            ?.setAttribute("data-pdf-export-control", "true");
+
+        const loadScript = (src, isReady) => {{
+            if (isReady()) return Promise.resolve();
+            return new Promise((resolve, reject) => {{
+                const existing = document.querySelector(`script[src="${{src}}"]`);
+                const script = existing || document.createElement("script");
+                script.addEventListener("load", resolve, {{ once: true }});
+                script.addEventListener(
+                    "error",
+                    () => reject(new Error(`Failed to load ${{src}}`)),
+                    {{ once: true }},
+                );
+                if (!existing) {{
+                    script.src = src;
+                    document.head.appendChild(script);
+                }}
+            }});
+        }};
+
+        button.addEventListener("click", async () => {{
+            button.disabled = true;
+            status.style.color = "#02569e";
+            status.textContent = "Preparando PDF…";
+
+            try {{
+                await loadScript(
+                    "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js",
+                    () => Boolean(window.html2canvas),
+                );
+                await loadScript(
+                    "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
+                    () => Boolean(window.jspdf?.jsPDF),
+                );
+
+                const target = document.querySelector(
+                    '[data-testid="stMainBlockContainer"]'
+                );
+                if (!target) throw new Error("Dashboard report container not found");
+
+                const pageWidthMm = 281;
+                const pageHeightMm = 194;
+                const captureWidth = Math.ceil(target.scrollWidth);
+                const reportHeight = Math.ceil(target.scrollHeight);
+                const pageHeightPx = Math.max(
+                    1,
+                    Math.floor(captureWidth * pageHeightMm / pageWidthMm),
+                );
+                const pageCount = Math.ceil(reportHeight / pageHeightPx);
+                if (!captureWidth || !reportHeight || !pageCount) {{
+                    throw new Error("Dashboard report is empty");
+                }}
+
+                const pdf = new window.jspdf.jsPDF({{
+                    orientation: "landscape",
+                    unit: "mm",
+                    format: "a4",
+                    compress: true,
+                }});
+                let renderedPageCount = 0;
+
+                const canvasHasContent = (canvas) => {{
+                    const sample = document.createElement("canvas");
+                    sample.width = 64;
+                    sample.height = Math.max(
+                        1,
+                        Math.round(64 * canvas.height / canvas.width),
+                    );
+                    const context = sample.getContext("2d", {{ willReadFrequently: true }});
+                    context.drawImage(canvas, 0, 0, sample.width, sample.height);
+                    const pixels = context.getImageData(
+                        0,
+                        0,
+                        sample.width,
+                        sample.height,
+                    ).data;
+                    const background = pixels.slice(0, 4);
+                    for (let index = 4; index < pixels.length; index += 4) {{
+                        if (
+                            Math.abs(pixels[index] - background[0]) > 8 ||
+                            Math.abs(pixels[index + 1] - background[1]) > 8 ||
+                            Math.abs(pixels[index + 2] - background[2]) > 8 ||
+                            Math.abs(pixels[index + 3] - background[3]) > 8
+                        ) return true;
+                    }}
+                    return false;
+                }};
+
+                // ponytail: one page-sized canvas avoids browser limits from one giant report canvas.
+                for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {{
+                    const pageTop = pageIndex * pageHeightPx;
+                    const sliceHeight = Math.min(
+                        pageHeightPx,
+                        reportHeight - pageTop,
+                    );
+                    status.textContent = `Generando página ${{pageIndex + 1}} de ${{pageCount}}…`;
+
+                    const canvas = await window.html2canvas(target, {{
+                        scale: 1.5,
+                        useCORS: true,
+                        allowTaint: false,
+                        backgroundColor: "{background_color}",
+                        width: captureWidth,
+                        height: sliceHeight,
+                        x: 0,
+                        y: pageTop,
+                        scrollX: 0,
+                        scrollY: 0,
+                        windowWidth: captureWidth,
+                        windowHeight: reportHeight,
+                        logging: false,
+                        onclone: (clonedDoc) => {{
+                            clonedDoc.querySelectorAll(
+                                '[data-testid="stHeader"], [data-testid="stSidebar"], ' +
+                                '[data-testid="stPopoverBody"], [data-pdf-export-control="true"], ' +
+                                '[data-testid^="stElementToolbar"], ' +
+                                '[data-testid="stTooltipHoverTarget"], ' +
+                                '[data-testid="stBaseButton-elementToolbar"], ' +
+                                '[data-testid="stVegaLiteChart"] details'
+                            ).forEach((element) => element.remove());
+                        }},
+                        ignoreElements: (element) => Boolean(
+                            element.closest?.('[data-pdf-export-control="true"]')
+                        ),
+                    }});
+                    if (!canvas.width || !canvas.height) {{
+                        throw new Error(`PDF page ${{pageIndex + 1}} is empty`);
+                    }}
+                    if (!canvasHasContent(canvas)) continue;
+
+                    if (renderedPageCount > 0) pdf.addPage();
+                    const imageHeightMm = Math.min(
+                        pageHeightMm,
+                        pageWidthMm * canvas.height / canvas.width,
+                    );
+                    pdf.addImage(
+                        canvas,
+                        "JPEG",
+                        8,
+                        8,
+                        pageWidthMm,
+                        imageHeightMm,
+                        undefined,
+                        "FAST",
+                    );
+                    renderedPageCount += 1;
+                }}
+                if (!renderedPageCount) throw new Error("Dashboard capture is empty");
+
+                await pdf.save("{export_name}.pdf", {{ returnPromise: true }});
+                status.style.color = "#10B981";
+                status.textContent = `PDF generado correctamente (${{renderedPageCount}} páginas).`;
+                setTimeout(() => {{ status.textContent = ""; }}, 3000);
+            }} catch (error) {{
+                console.error("PDF export failed", error);
+                status.style.color = "#FF4B4B";
+                status.textContent = "No se pudo generar el PDF.";
+            }} finally {{
+                button.disabled = false;
+            }}
+        }});
+    }})();
+    </script>
+    """
+
+
 # Determine sidebar collapse state dynamically to hide it automatically once query runs
 initial_sidebar = "collapsed" if st.session_state.get("query_run", False) else "expanded"
 
@@ -1707,18 +1978,6 @@ export_slug = re.sub(r"[^a-z0-9]+", "-", selected_platform_label.lower()).strip(
 export_name = f"{export_slug}_{start_date:%Y-%m-%d}_{end_date:%Y-%m-%d}"
 csv_export_frame = {"frame": df_curr}
 
-with download_slot.container():
-    with st.popover("Descargar", icon=":material/download:", width="content"):
-        # ponytail: PDF export stays disabled until browser capture is reliable.
-        st.download_button(
-            "Descargar CSV",
-            data=lambda: csv_export_frame["frame"].to_csv(index=False).encode("utf-8-sig"),
-            file_name=f"{export_name}.csv",
-            mime="text/csv;charset=utf-8",
-            on_click="ignore",
-            icon=":material/download:",
-            width="stretch",
-        )
 # HERO RENDER (Clean, full width, no Sipy logo)
 title_color = "#0F172A" if theme_mode == "Claro" else "#EAF0F7"
 display_title = campaign_title(applied_campaign_filter, selected_platform_label) if platform_key == "meta_ads" else selected_platform_label
@@ -2319,6 +2578,9 @@ else:
     df_table["reach"] = df_table["reach"].apply(lambda x: f"{x:,}")
     df_table = df_table.rename(columns={"campaign_name": "Publicación", "platform": "Plataforma", "impressions": "Impresiones", "engagement": "Interacciones", "reach": "Alcance"})
 
+if platform_key != "meta_ads":
+    csv_export_frame["frame"] = df_table
+
 if platform_key == "meta_organic":
     st.markdown("### Ranking: top publicaciones por interacciones (Meta)")
     post_metric = "engagement" if df_curr["engagement"].sum() else ("reach" if df_curr["reach"].sum() else "impressions")
@@ -2360,3 +2622,38 @@ if platform_key == "meta_organic":
         show_theme_table(hashtag_df)
 
     st.dataframe(df_table, width="stretch", hide_index=True)
+
+with download_slot.container():
+    with st.popover("Descargar", icon=":material/download:", width="content"):
+        st.html(
+            segmented_pdf_download_html(export_name, chart_bg),
+            unsafe_allow_javascript=True,
+            width="stretch",
+        )
+        st.download_button(
+            "Descargar CSV",
+            data=lambda: csv_export_frame["frame"].to_csv(index=False).encode("utf-8-sig"),
+            file_name=f"{export_name}.csv",
+            mime="text/csv;charset=utf-8",
+            on_click="ignore",
+            icon=":material/download:",
+            width="stretch",
+        )
+        report_template = st.selectbox("Template HTML", REPORT_TEMPLATES)
+        st.download_button(
+            "Descargar HTML",
+            data=lambda: template_report_html(
+                csv_export_frame["frame"],
+                report_template,
+                {
+                    "Plataformas": selected_platform_label,
+                    "Cuenta": account_disp,
+                    "Fechas": f"{start_date:%d/%m/%Y} – {end_date:%d/%m/%Y}",
+                },
+            ).encode("utf-8"),
+            file_name=f"{export_name}_{report_template.lower().replace(' ', '-')}.html",
+            mime="text/html;charset=utf-8",
+            on_click="ignore",
+            icon=":material/download:",
+            width="stretch",
+        )
