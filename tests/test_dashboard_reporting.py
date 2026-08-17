@@ -1,6 +1,10 @@
 from datetime import date
+from html.parser import HTMLParser
 import json
+from pathlib import Path
 import re
+import shutil
+import subprocess
 
 import pandas as pd
 import pytest
@@ -542,50 +546,223 @@ def _complete_template_payload():
     }
 
 
-def test_nutri_template_is_a_complete_payload_driven_report():
-    rendered = render_report("nutri", _complete_template_payload())
+def _nutri_payload():
+    payload = _complete_template_payload()
+    payload["meta"]["platforms"] = ["facebook", "instagram", "tiktok"]
+    payload["summary"].update({"engagement": 14000, "followers": 8500, "views": 420000})
+    payload["by_platform"] = {
+        "facebook": {"spend": 650, "impressions": 110000, "reach": 90000, "engagement": 6200, "followers": 4000, "views": 180000},
+        "instagram": {"spend": 550, "impressions": 90000, "reach": 65000, "engagement": 5100, "followers": 3000, "views": 140000},
+        "tiktok": {"spend": 300, "impressions": 50000, "reach": 25000, "engagement": 2700, "followers": 1500, "views": 100000},
+    }
+    payload["daily_series"] = [
+        {
+            "date": f"2026-07-{day:02d}T00:00:00",
+            "platform": platform,
+            "metrics": {"impressions": day * factor, "spend": day * factor / 100},
+        }
+        for day in range(1, 32)
+        for platform, factor in (("facebook", 1000), ("instagram", 800), ("tiktok", 500))
+    ]
+    payload["rows"]["current"] = [
+        {"campaign_name": "Community story", "source_platform": "facebook", "source_metrics": {"impressions": 50000, "engagement": 3500}},
+        {"campaign_name": "Product reel", "source_platform": "instagram", "source_metrics": {"impressions": 42000, "engagement": 2800}},
+        {"campaign_name": "Short recipe", "source_platform": "tiktok", "source_metrics": {"views": 65000, "engagement": 1900}},
+    ]
+    payload["breakdowns"] = {
+        "competition": [
+            {"label": "Market Alpha", "followers": 7200, "engagement": 3.4},
+            {"label": "Market Beta", "followers": 6800, "engagement": 2.8},
+        ],
+        "facebook": {"age": [{"label": "25–34", "value": 45}], "country": [{"label": "Ecuador", "value": 90}]},
+        "instagram": {"gender": [{"label": "Women", "value": 62}], "city": [{"label": "Quito", "value": 55}]},
+        "tiktok": {"age": [{"label": "18–24", "value": 51}], "region": [{"label": "Pichincha", "value": 44}]},
+    }
+    payload["narratives"] = [
+        "Acme Foods recorded measurable multichannel results in the selected period.",
+        {"platform": "facebook", "text": "Acme Foods Facebook activity was led by Community story."},
+        {"platform": "instagram", "text": "Acme Foods Instagram activity was led by Product reel."},
+        {"platform": "tiktok", "text": "Acme Foods TikTok activity was led by Short recipe."},
+    ]
+    return payload
 
-    for section_id in (
-        "cover-section",
-        "summary-section",
-        "platforms-section",
-        "kpis-section",
-        "trends-section",
-        "content-section",
-        "audience-section",
-        "investment-section",
-        "narratives-section",
-    ):
-        assert f'id="{section_id}"' in rendered
-    assert rendered.count('data-report-section="true"') == 8
-    assert "Acme Foods" in rendered
-    assert "2026-07-01" in rendered
-    assert 'timeZone: "UTC"' in rendered
-    assert "window.REPORT_DATA" in rendered
-    assert ".textContent" in rendered
-    assert "Number.isFinite" in rendered
+
+class _BrowserResultParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.recording = False
+        self.value = []
+
+    def handle_starttag(self, tag, attrs):
+        if dict(attrs).get("id") == "browser-result":
+            self.recording = True
+
+    def handle_endtag(self, tag):
+        if self.recording and tag == "script":
+            self.recording = False
+
+    def handle_data(self, data):
+        if self.recording:
+            self.value.append(data)
 
 
-def test_nutri_template_hides_unavailable_sections_and_has_no_reference_leaks():
-    rendered = render_report("nutri", {
+def _browser_dom(rendered, tmp_path):
+    browser = (
+        shutil.which("google-chrome")
+        or shutil.which("chromium")
+        or "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    )
+    assert Path(browser).is_file(), "A real Chrome/Chromium executable is required for report DOM tests"
+    probe = r"""
+<script>
+(() => {
+  const panelIds = ["summary-panel", "competition-panel", "facebook-panel", "instagram-panel", "tiktok-panel", "investment-panel"];
+  const visible = id => {
+    const node = document.getElementById(id);
+    return Boolean(node && !node.hidden && getComputedStyle(node).display !== "none");
+  };
+  const rgb = value => (value.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+  const luminance = value => {
+    const parts = rgb(value).map(channel => {
+      const normalized = channel / 255;
+      return normalized <= .03928 ? normalized / 12.92 : ((normalized + .055) / 1.055) ** 2.4;
+    });
+    return .2126 * parts[0] + .7152 * parts[1] + .0722 * parts[2];
+  };
+  const contrast = node => {
+    const foreground = luminance(getComputedStyle(node).color);
+    const background = luminance(getComputedStyle(document.body).backgroundColor);
+    return (Math.max(foreground, background) + .05) / (Math.min(foreground, background) + .05);
+  };
+  const count = selector => document.querySelectorAll(selector).length;
+  const familyCount = (panel, family) => [...document.querySelectorAll(`#${panel} [data-family="${family}"]`)].filter(node => !node.hidden && node.getClientRects().length).length;
+  const trendCharts = [...document.querySelectorAll('[data-family="trend-chart"]:not([hidden])')];
+  const result = {
+    company: document.getElementById("company-name")?.textContent,
+    period: document.getElementById("report-period")?.textContent,
+    visible: Object.fromEntries(panelIds.map(id => [id, visible(id)])),
+    summary: {
+      kpis: familyCount("summary-panel", "kpi"), charts: familyCount("summary-panel", "trend-chart"),
+      tables: familyCount("summary-panel", "table"), narratives: familyCount("summary-panel", "narrative")
+    },
+    competitionRows: count("#competition-body tr"),
+    platforms: Object.fromEntries(["facebook", "instagram", "tiktok"].map(name => [name, {
+      kpis: familyCount(`${name}-panel`, "kpi"), charts: familyCount(`${name}-panel`, "trend-chart"),
+      tables: familyCount(`${name}-panel`, "table"), content: familyCount(`${name}-panel`, "content"),
+      demographics: familyCount(`${name}-panel`, "demographics"), narratives: familyCount(`${name}-panel`, "narrative")
+    }])),
+    investment: {tables: familyCount("investment-panel", "table"), optimization: familyCount("investment-panel", "optimization")},
+    maxTrendTicks: Math.max(0, ...trendCharts.map(chart => chart.querySelectorAll("[data-trend-tick]").length)),
+    minTrendRows: Math.min(...[...document.querySelectorAll('[data-family="trend-table"]:not([hidden])')].map(table => table.querySelectorAll("tbody tr").length)),
+    minAccentContrast: Math.min(...[...document.querySelectorAll(".accent-text")].map(contrast)),
+    text: document.body.textContent
+  };
+  const output = document.createElement("script");
+  output.id = "browser-result";
+  output.type = "application/json";
+  output.textContent = JSON.stringify(result);
+  document.body.append(output);
+})();
+</script>
+"""
+    report_path = tmp_path / "nutri-browser.html"
+    report_path.write_text(rendered.replace("</body>", probe + "</body>"), encoding="utf-8")
+    process = subprocess.Popen(
+        [
+            browser, "--headless=new", "--disable-gpu", "--no-sandbox",
+            f"--user-data-dir={tmp_path / 'chrome-profile'}", "--virtual-time-budget=1000",
+            "--dump-dom", report_path.as_uri(),
+        ],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=8)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        stdout, stderr = process.communicate()
+    parser = _BrowserResultParser()
+    parser.feed(stdout)
+    assert parser.value, stderr
+    return json.loads("".join(parser.value))
+
+
+def test_nutri_browser_preserves_reference_panels_and_dynamic_content(tmp_path):
+    dom = _browser_dom(render_report("nutri", _nutri_payload()), tmp_path)
+
+    assert dom["company"] == "Acme Foods"
+    assert dom["period"] == "01 jul 2026 — 31 jul 2026"
+    assert dom["visible"] == {panel: True for panel in dom["visible"]}
+    assert dom["summary"] == {"kpis": 8, "charts": 1, "tables": 1, "narratives": 1}
+    assert dom["competitionRows"] == 2
+    for platform in ("facebook", "instagram", "tiktok"):
+        assert dom["platforms"][platform] == {
+            "kpis": 6, "charts": 1, "tables": 1, "content": 1, "demographics": 1, "narratives": 1,
+        }
+    assert dom["investment"] == {"tables": 1, "optimization": 1}
+    assert dom["maxTrendTicks"] <= 7
+    assert dom["minTrendRows"] == 31
+    assert dom["minAccentContrast"] >= 4.5
+
+
+def test_nutri_browser_hides_empty_panels_and_does_not_show_investment_for_summary_spend(tmp_path):
+    payload = {
         "meta": {"company_name": "Acme", "platforms": [], "period": {"start": "2026-07-01", "end": "2026-07-31"}},
-        "summary": {}, "rates": {}, "deltas": {}, "by_platform": {}, "daily_series": [],
+        "summary": {"spend": 25}, "summary_previous": {}, "rates": {}, "deltas": {}, "by_platform": {},
+        "daily_series": [], "rows": {"current": [], "prior": [], "supplemental": []},
+        "breakdowns": {}, "tables": {"export": []}, "narratives": [], "availability": {},
+    }
+
+    dom = _browser_dom(render_report("nutri", payload), tmp_path)
+
+    assert dom["company"] == "Acme"
+    assert dom["period"] == "01 jul 2026 — 31 jul 2026"
+    assert dom["visible"] == {
+        "summary-panel": True,
+        "competition-panel": False,
+        "facebook-panel": False,
+        "instagram-panel": False,
+        "tiktok-panel": False,
+        "investment-panel": False,
+    }
+    assert "Datos no disponibles" not in dom["text"]
+
+
+def test_nutri_browser_hides_missing_subsections_inside_an_available_platform(tmp_path):
+    payload = {
+        "meta": {"company_name": "Acme", "platforms": ["facebook"], "period": {"start": "2026-07-01", "end": "2026-07-31"}},
+        "summary": {}, "summary_previous": {}, "rates": {}, "deltas": {},
+        "by_platform": {"facebook": {"spend": 25}}, "daily_series": [],
         "rows": {"current": [], "prior": [], "supplemental": []},
         "breakdowns": {}, "tables": {"export": []}, "narratives": [], "availability": {},
-    })
+    }
 
-    assert rendered.count('data-report-section="true" hidden') == 8
-    assert 'showSection("audience-section", audienceRows.length > 0)' in rendered
-    assert 'showSection("narratives-section", narratives.length > 0)' in rendered
-    assert "Datos no disponibles" not in rendered
-    assert "innerHTML" not in rendered
-    assert "contenteditable" not in rendered
-    assert "downloadHTML" not in rendered
-    assert "downloadPDF" not in rendered
-    assert "openPin" not in rendered
-    assert "<img" not in rendered
-    assert "http://" not in rendered and "https://" not in rendered
-    for leaked_identity in ("parmalat", "la lechera", "toni", "vita", "shamuna", "adriana hoyos", "artz"):
+    dom = _browser_dom(render_report("nutri", payload), tmp_path)
+
+    assert dom["visible"] == {
+        "summary-panel": True,
+        "competition-panel": False,
+        "facebook-panel": True,
+        "instagram-panel": False,
+        "tiktok-panel": False,
+        "investment-panel": True,
+    }
+    assert dom["platforms"]["facebook"] == {
+        "kpis": 1, "charts": 0, "tables": 0, "content": 0, "demographics": 0, "narratives": 0,
+    }
+
+
+def test_nutri_template_has_no_reference_assets_requests_or_authoring_controls():
+    rendered = render_report("nutri", _nutri_payload())
+
+    for forbidden in (
+        "innerHTML", "contenteditable", "downloadHTML", "downloadPDF", "openPin", "<img", "<iframe",
+        "http://", "https://", "fetch(", "XMLHttpRequest", "WebSocket", "window.open",
+    ):
+        assert forbidden not in rendered
+    for leaked_identity in (
+        "parmalat", "la lechera", "toni", "vita", "shamuna", "adriana hoyos", "artz",
+        "dra. gaby", "la toña", "yogurt fresa", "cumbayá",
+    ):
         assert leaked_identity not in rendered.casefold()
 
 
