@@ -1334,6 +1334,38 @@ def test_adriana_hoyos_template_has_no_reference_facts_assets_requests_or_contro
         assert leaked_identity not in rendered.casefold()
 
 
+def test_adriana_hoyos_browser_resolves_row_aliases_and_string_metrics(tmp_path):
+    rows = []
+    for day in range(1, 4):
+        rows.append({
+            "campaign_name": f"Aliased Meta Campaign {day}",
+            "date": f"2026-07-0{day}",
+            "dimensions": {"city": "Quito", "country": "Ecuador"},
+            "metrics": {
+                "social_spend": str(day * 10),
+                "impressions": str(day * 1000),
+                "unique_clicks": str(day * 5),
+                "lead": str(day),
+            },
+        })
+    frame = process_api_response(rows, "meta_ads", "client_1", "user_1")
+    context = _context({"platform": "meta_ads", "account_id": "act_alias", "account_name": "Acme Alias"})
+    context["required_metrics"] = ["spend", "impressions", "clicks", "lead"]
+    payload = build_report_payload("adriana_hoyos", frame, query_context=context)
+
+    dom = _browser_dom(
+        render_report("adriana_hoyos", payload),
+        tmp_path,
+        _ADRIANA_BROWSER_PROBE,
+        "adriana-alias-browser.html",
+    )
+
+    assert dom["season"]["campaigns"] == 3
+    assert dom["summer"]["campaigns"] == 3
+    assert dom["errors"] == []
+
+
+
 _ARTZ_BROWSER_PROBE = r"""
 <script>
 (() => {
