@@ -490,3 +490,100 @@ def test_safety_render_report_rejects_paths_and_assets_outside_allowlists(tmp_pa
     )
     with pytest.raises(ValueError, match="^Report template contains an unsafe asset URL$"):
         render_report("nutri", {})
+
+
+def _complete_template_payload():
+    return {
+        "meta": {
+            "company_name": "Acme Foods",
+            "accounts": [{"account_id": "act_1", "name": "Acme Foods", "platform": "meta_ads"}],
+            "platforms": ["meta_ads", "google_ads"],
+            "filters": {"campaign": ["Launch"]},
+            "period": {"start": "2026-07-01", "end": "2026-07-31"},
+            "previous_period": {"start": "2026-06-01", "end": "2026-06-30"},
+            "generated_at": "2026-08-17T12:00:00+00:00",
+        },
+        "summary": {"spend": 1500, "impressions": 250000, "reach": 180000, "clicks": 5000, "conversions": 320},
+        "summary_previous": {"spend": 1400, "impressions": 225000, "reach": 170000, "clicks": 4500, "conversions": 280},
+        "rates": {"ctr": 2, "cpc": 0.3, "cpm": 6, "cpa": 4.6875, "conversion_rate": 6.4},
+        "deltas": {"spend": 7.1429, "impressions": 11.1111, "reach": 5.8824, "clicks": 11.1111, "conversions": 14.2857},
+        "by_platform": {
+            "meta_ads": {"spend": 900, "impressions": 150000, "reach": 110000, "clicks": 3200},
+            "google_ads": {"spend": 600, "impressions": 100000, "reach": 70000, "clicks": 1800},
+        },
+        "daily_series": [
+            {"date": "2026-07-01T00:00:00", "platform": "meta_ads", "metrics": {"spend": 400, "impressions": 70000, "clicks": 1400}},
+            {"date": "2026-07-02T00:00:00", "platform": "meta_ads", "metrics": {"spend": 500, "impressions": 80000, "clicks": 1800}},
+            {"date": "2026-07-02T00:00:00", "platform": "google_ads", "metrics": {"spend": 600, "impressions": 100000, "clicks": 1800}},
+        ],
+        "rows": {
+            "current": [
+                {"campaign_name": "Launch video", "date": "2026-07-02", "source_platform": "meta_ads", "source_metrics": {"spend": 500, "impressions": 80000, "reach": 60000, "clicks": 1800}},
+                {"campaign_name": "Search launch", "date": "2026-07-02", "source_platform": "google_ads", "source_metrics": {"spend": 600, "impressions": 100000, "clicks": 1800, "conversions": 180}},
+            ],
+            "prior": [],
+            "supplemental": [],
+        },
+        "breakdowns": {
+            "age": [{"label": "25–34", "value": 45}, {"label": "35–44", "value": 30}],
+            "gender": [{"label": "Women", "value": 62}, {"label": "Men", "value": 38}],
+            "country": [{"label": "Ecuador", "value": 125000}],
+            "city": [{"label": "Quito", "value": 70000}, {"label": "Guayaquil", "value": 55000}],
+        },
+        "tables": {"export": [{"campaign_name": "Launch video", "spend": 500, "impressions": 80000}]},
+        "narratives": ["Acme Foods recorded 250000 impressions during 2026-07-01 to 2026-07-31."],
+        "availability": {
+            "summary": True,
+            "daily_series": True,
+            "breakdowns": True,
+            "export_table": True,
+            "narratives": True,
+        },
+    }
+
+
+def test_nutri_template_is_a_complete_payload_driven_report():
+    rendered = render_report("nutri", _complete_template_payload())
+
+    for section_id in (
+        "cover-section",
+        "summary-section",
+        "platforms-section",
+        "kpis-section",
+        "trends-section",
+        "content-section",
+        "audience-section",
+        "investment-section",
+        "narratives-section",
+    ):
+        assert f'id="{section_id}"' in rendered
+    assert rendered.count('data-report-section="true"') == 8
+    assert "Acme Foods" in rendered
+    assert "2026-07-01" in rendered
+    assert 'timeZone: "UTC"' in rendered
+    assert "window.REPORT_DATA" in rendered
+    assert ".textContent" in rendered
+    assert "Number.isFinite" in rendered
+
+
+def test_nutri_template_hides_unavailable_sections_and_has_no_reference_leaks():
+    rendered = render_report("nutri", {
+        "meta": {"company_name": "Acme", "platforms": [], "period": {"start": "2026-07-01", "end": "2026-07-31"}},
+        "summary": {}, "rates": {}, "deltas": {}, "by_platform": {}, "daily_series": [],
+        "rows": {"current": [], "prior": [], "supplemental": []},
+        "breakdowns": {}, "tables": {"export": []}, "narratives": [], "availability": {},
+    })
+
+    assert rendered.count('data-report-section="true" hidden') == 8
+    assert 'showSection("audience-section", audienceRows.length > 0)' in rendered
+    assert 'showSection("narratives-section", narratives.length > 0)' in rendered
+    assert "Datos no disponibles" not in rendered
+    assert "innerHTML" not in rendered
+    assert "contenteditable" not in rendered
+    assert "downloadHTML" not in rendered
+    assert "downloadPDF" not in rendered
+    assert "openPin" not in rendered
+    assert "<img" not in rendered
+    assert "http://" not in rendered and "https://" not in rendered
+    for leaked_identity in ("parmalat", "la lechera", "toni", "vita", "shamuna", "adriana hoyos", "artz"):
+        assert leaked_identity not in rendered.casefold()
