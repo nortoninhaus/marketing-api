@@ -600,6 +600,83 @@ def _adriana_builder_payload():
     )
 
 
+def _artz_builder_payload(with_publishers=True):
+    meta_rows = []
+    for day in range(1, 32):
+        item = {
+            "campaign_name": f"Meta daily {day}",
+            "date": f"2026-07-{day:02d}",
+            "metrics": {
+                "social_spend": "1",
+                "impressions": str(day * 100),
+                "reach": str(day * 80),
+                "total_interactions": str(day * 2),
+                "unique_clicks": "1",
+            },
+        }
+        if with_publishers:
+            item["dimensions"] = {"publisher_platform": "facebook"}
+        meta_rows.append(item)
+    if with_publishers:
+        meta_rows.append({
+            "campaign_name": "Instagram launch",
+            "date": "2026-07-15",
+            "dimensions": {"publisher_platform": "instagram"},
+            "metrics": {
+                "social_spend": 20.5,
+                "impressions": 2000,
+                "reach": 1500,
+                "total_interactions": 100,
+                "unique_clicks": 2.5,
+                "lead": 3,
+            },
+        })
+    frames = [process_api_response(meta_rows, "meta_ads", "client_1", "user_1")]
+    frames.append(process_api_response([{
+        "campaign_name": "TikTok awareness",
+        "date": "2026-07-16",
+        "metrics": {
+            "cost": "30",
+            "views": "5000",
+            "reach": "4000",
+            "total_interactions": "250",
+            "unique_clicks": "75",
+        },
+    }], "tiktok_ads", "client_1", "user_1"))
+    frames.append(process_api_response([{
+        "campaign_name": "Google search",
+        "date": "2026-07-17",
+        "metrics": {
+            "cost": 40,
+            "impressions": 6000,
+            "unique_clicks": 120.5,
+            "actions": 8,
+        },
+    }], "google_ads", "client_1", "user_1"))
+    context = _context(
+        {"platform": "meta_ads", "account_id": "act_1", "account_name": "Acme Center"},
+        {"platform": "tiktok_ads", "account_id": "tt_1", "account_name": "Acme Center"},
+        {"platform": "google_ads", "account_id": "ga_1", "account_name": "Acme Center"},
+    )
+    context["required_metrics"] = [
+        "spend", "impressions", "reach", "engagement", "clicks", "conversions", "views",
+    ]
+    return build_report_payload(
+        "artz",
+        pd.concat(frames, ignore_index=True),
+        query_context=context,
+        optional={"breakdowns": {
+            "competition": [
+                {"label": "Market Alpha", "followers": 7200, "engagement": 3.4},
+                {"label": "Market Beta", "followers": 6800, "engagement": 2.8},
+            ],
+            "facebook": {"age": [{"label": "25–34", "value": 45}]},
+            "instagram": {"gender": [{"label": "Women", "value": 62}]},
+            "tiktok": {"age": [{"label": "18–24", "value": 51}]},
+        }},
+    )
+
+
 def _nutri_payload():
     payload = _complete_template_payload()
     payload["meta"]["platforms"] = ["facebook", "instagram", "tiktok"]
@@ -1257,58 +1334,160 @@ def test_adriana_hoyos_template_has_no_reference_facts_assets_requests_or_contro
         assert leaked_identity not in rendered.casefold()
 
 
-def test_artz_template_is_a_complete_payload_driven_report():
-    rendered = render_report("artz", _complete_template_payload())
+_ARTZ_BROWSER_PROBE = r"""
+<script>
+(() => {
+  const panelIds = ["summary-panel", "competition-panel", "facebook-panel", "instagram-panel", "tiktok-panel", "google-panel", "investment-panel"];
+  const platformNames = ["facebook", "instagram", "tiktok", "google"];
+  const visible = id => {
+    const node = document.getElementById(id);
+    return Boolean(node && !node.hidden && getComputedStyle(node).display !== "none");
+  };
+  const kpis = name => Object.fromEntries([...document.querySelectorAll(`#${name}-kpis [data-metric]`)].map(card => [card.dataset.metric, card.querySelector(".stat-value")?.textContent]));
+  const result = {
+    company: document.getElementById("company-name")?.textContent,
+    period: document.getElementById("report-period")?.textContent,
+    visible: Object.fromEntries(panelIds.map(id => [id, visible(id)])),
+    platformKpis: Object.fromEntries(platformNames.map(name => [name, kpis(name)])),
+    trendRows: Object.fromEntries(platformNames.map(name => [name, document.querySelectorAll(`#${name}-trend-body tr`).length])),
+    trendTicks: Object.fromEntries(platformNames.map(name => [name, document.querySelectorAll(`#${name}-chart [data-trend-tick]`).length])),
+    trendTitles: Object.fromEntries(platformNames.map(name => [name, [...document.querySelectorAll(`#${name}-chart title`)].map(node => node.textContent)])),
+    contentRows: Object.fromEntries(platformNames.map(name => [name, [...document.querySelectorAll(`#${name}-content-body tr td:first-child`)].map(cell => cell.textContent)])),
+    sharedNotices: Object.fromEntries(["facebook", "instagram"].map(name => [name, document.getElementById(`${name}-shared-meta`)?.textContent || ""])),
+    competitionRows: document.querySelectorAll("#competition-body tr").length,
+    investmentRows: document.querySelectorAll("#investment-body tr").length,
+    optimizationItems: document.querySelectorAll("#optimization-list .breakdown-meta").length,
+    errors: [...window.__browserErrors, ...window.__browserConsoleErrors],
+    resources: performance.getEntriesByType("resource").map(entry => entry.name),
+    text: document.body.textContent,
+  };
+  const output = document.createElement("script");
+  output.id = "browser-result";
+  output.type = "application/json";
+  output.textContent = JSON.stringify(result);
+  document.body.append(output);
+})();
+</script>
+"""
 
-    for section_id in (
-        "cover-section",
-        "overview-section",
-        "budget-section",
-        "channels-section",
-        "trend-section",
-        "campaigns-section",
-        "audience-section",
-        "creative-section",
-        "insights-section",
+
+def test_artz_browser_restores_reference_hierarchy_with_builder_numeric_metrics(tmp_path):
+    payload = _artz_builder_payload()
+
+    facebook = next(row for row in payload["rows"]["current"] if row["platform"] == "Facebook Ads")
+    instagram = next(row for row in payload["rows"]["current"] if row["platform"] == "Instagram Ads")
+    assert isinstance(facebook["source_metrics"]["social_spend"], str)
+    assert facebook["spend"] == 1
+    assert instagram["source_metrics"]["unique_clicks"] == 2.5
+    assert instagram["clicks"] == 2
+
+    dom = _browser_dom(
+        render_report("artz", payload),
+        tmp_path,
+        _ARTZ_BROWSER_PROBE,
+        "artz-browser.html",
+    )
+
+    assert dom["company"] == "Acme Center"
+    assert dom["period"] == "01 jul 2026 — 31 jul 2026"
+    assert dom["visible"] == {panel: True for panel in dom["visible"]}
+    assert dom["competitionRows"] == 2
+    assert dom["platformKpis"]["facebook"] == {
+        "spend": "$31,00",
+        "impressions": "49.600",
+        "reach": "39.680",
+        "engagement": "992",
+        "clicks": "31",
+    }
+    assert dom["platformKpis"]["instagram"] == {
+        "spend": "$20,50",
+        "impressions": "2.000",
+        "reach": "1.500",
+        "engagement": "100",
+        "clicks": "2,5",
+        "conversions": "3",
+    }
+    assert dom["platformKpis"]["tiktok"] == {
+        "spend": "$30,00",
+        "impressions": "5.000",
+        "reach": "4.000",
+        "engagement": "250",
+        "clicks": "75",
+    }
+    assert dom["platformKpis"]["google"] == {
+        "spend": "$40,00",
+        "impressions": "6.000",
+        "clicks": "120,5",
+        "conversions": "8",
+    }
+    assert dom["trendRows"]["facebook"] == 31
+    assert dom["trendTicks"]["facebook"] <= 7
+    assert len(dom["trendTitles"]["facebook"]) == 31
+    assert dom["trendTitles"]["facebook"][-1] == "31 jul 2026: 3.100"
+    assert dom["investmentRows"] == 3
+    assert dom["optimizationItems"] > 0
+    assert dom["sharedNotices"] == {"facebook": "", "instagram": ""}
+    assert dom["errors"] == []
+    assert dom["resources"] == []
+
+
+def test_artz_browser_labels_unsplit_meta_as_shared_without_attributing_content(tmp_path):
+    payload = _artz_builder_payload(with_publishers=False)
+
+    assert all(row["platform"] == "meta_ads" for row in payload["rows"]["current"] if row["source_platform"] == "meta_ads")
+
+    dom = _browser_dom(
+        render_report("artz", payload),
+        tmp_path,
+        _ARTZ_BROWSER_PROBE,
+        "artz-unsplit-browser.html",
+    )
+
+    notice = "Datos agregados de Meta compartidos entre Facebook e Instagram; no se atribuye una distribución por red."
+    assert dom["visible"]["facebook-panel"] is True
+    assert dom["visible"]["instagram-panel"] is True
+    assert dom["platformKpis"]["facebook"] == dom["platformKpis"]["instagram"]
+    assert dom["platformKpis"]["facebook"]["spend"] == "$31,00"
+    assert dom["sharedNotices"] == {"facebook": notice, "instagram": notice}
+    assert dom["contentRows"]["facebook"] == []
+    assert dom["contentRows"]["instagram"] == []
+    assert dom["investmentRows"] == 3
+    assert dom["errors"] == []
+    assert dom["resources"] == []
+
+
+def test_artz_browser_hides_every_unavailable_panel_from_real_builder_payload(tmp_path):
+    context = _context({"platform": "meta_ads", "account_id": "act_2", "account_name": "Acme Empty"})
+    payload = build_report_payload("artz", pd.DataFrame(), query_context=context)
+
+    dom = _browser_dom(
+        render_report("artz", payload),
+        tmp_path,
+        _ARTZ_BROWSER_PROBE,
+        "artz-empty-browser.html",
+    )
+
+    assert dom["company"] == "Acme Empty"
+    assert dom["period"] == "01 jul 2026 — 31 jul 2026"
+    assert dom["visible"] == {panel: False for panel in dom["visible"]}
+    assert dom["competitionRows"] == 0
+    assert dom["investmentRows"] == 0
+    assert "Datos no disponibles" not in dom["text"]
+    assert dom["errors"] == []
+    assert dom["resources"] == []
+
+
+def test_artz_template_has_no_reference_facts_assets_requests_or_controls():
+    rendered = render_report("artz", _artz_builder_payload())
+
+    for forbidden in (
+        "innerHTML", "contenteditable", "downloadHTML", "downloadPDF", "openPin", "<img", "<video", "<iframe",
+        "src=", "href=", "http://", "https://", "fetch(", "XMLHttpRequest", "WebSocket", "window.open",
+        "updateEmbed", "../ARTZ_files", "assets ARTZ",
     ):
-        assert f'id="{section_id}"' in rendered
-    assert rendered.count('data-report-section="true"') == 8
-    assert "Acme Foods" in rendered
-    assert "2026-07-01" in rendered
-    assert 'timeZone: "UTC"' in rendered
-    assert "Centro de rendimiento multicanal" in rendered
-    assert "Salud de campaña" in rendered
-    assert "Rendimiento por plataforma" in rendered
-    assert "Evolución de resultados" in rendered
-    assert "window.REPORT_DATA" in rendered
-    assert ".textContent" in rendered
-    assert "Number.isFinite" in rendered
-
-
-def test_artz_template_hides_unavailable_sections_without_broken_or_external_assets():
-    rendered = render_report("artz", {
-        "meta": {"company_name": "Acme", "platforms": [], "period": {"start": "2026-07-01", "end": "2026-07-31"}},
-        "summary": {}, "rates": {}, "deltas": {}, "by_platform": {}, "daily_series": [],
-        "rows": {"current": [], "prior": [], "supplemental": []},
-        "breakdowns": {}, "tables": {"export": []}, "narratives": [], "availability": {},
-    })
-
-    assert rendered.count('data-report-section="true" hidden') == 8
-    assert 'showSection("audience-section", audienceRows.length > 0)' in rendered
-    assert 'showSection("insights-section", narratives.length > 0)' in rendered
-    assert "Datos no disponibles" not in rendered
-    assert "innerHTML" not in rendered
-    assert "contenteditable" not in rendered
-    assert "downloadHTML" not in rendered
-    assert "downloadPDF" not in rendered
-    assert "openPin" not in rendered
-    for forbidden_asset_or_request in (
-        "<img", "<iframe", "src=", "href=", "fetch(", "XMLHttpRequest", "WebSocket",
-        "window.open", "updateEmbed", "../ARTZ_files", "assets ARTZ", "http://", "https://",
-    ):
-        assert forbidden_asset_or_request not in rendered
+        assert forbidden not in rendered
     for leaked_identity in (
         "parmalat", "la lechera", "toni", "vita", "nutri", "shamuna", "adriana hoyos", "artz",
-        "dra. gaby", "la toña", "yogurt fresa", "cumbayá",
+        "dra. gaby", "la toña", "yogurt fresa", "cumbayá", "feed normal", "modo agencia",
     ):
         assert leaked_identity not in rendered.casefold()
