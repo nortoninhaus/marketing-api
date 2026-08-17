@@ -641,3 +641,60 @@ def test_adriana_hoyos_template_hides_unavailable_sections_and_has_no_reference_
         "season refresh", "summer sale", "galápagos iconic",
     ):
         assert leaked_identity not in rendered.casefold()
+
+
+def test_artz_template_is_a_complete_payload_driven_report():
+    rendered = render_report("artz", _complete_template_payload())
+
+    for section_id in (
+        "cover-section",
+        "overview-section",
+        "budget-section",
+        "channels-section",
+        "trend-section",
+        "campaigns-section",
+        "audience-section",
+        "creative-section",
+        "insights-section",
+    ):
+        assert f'id="{section_id}"' in rendered
+    assert rendered.count('data-report-section="true"') == 8
+    assert "Acme Foods" in rendered
+    assert "2026-07-01" in rendered
+    assert 'timeZone: "UTC"' in rendered
+    assert "Centro de rendimiento multicanal" in rendered
+    assert "Salud de campaña" in rendered
+    assert "Rendimiento por plataforma" in rendered
+    assert "Evolución de resultados" in rendered
+    assert "window.REPORT_DATA" in rendered
+    assert ".textContent" in rendered
+    assert "Number.isFinite" in rendered
+
+
+def test_artz_template_hides_unavailable_sections_without_broken_or_external_assets():
+    rendered = render_report("artz", {
+        "meta": {"company_name": "Acme", "platforms": [], "period": {"start": "2026-07-01", "end": "2026-07-31"}},
+        "summary": {}, "rates": {}, "deltas": {}, "by_platform": {}, "daily_series": [],
+        "rows": {"current": [], "prior": [], "supplemental": []},
+        "breakdowns": {}, "tables": {"export": []}, "narratives": [], "availability": {},
+    })
+
+    assert rendered.count('data-report-section="true" hidden') == 8
+    assert 'showSection("audience-section", audienceRows.length > 0)' in rendered
+    assert 'showSection("insights-section", narratives.length > 0)' in rendered
+    assert "Datos no disponibles" not in rendered
+    assert "innerHTML" not in rendered
+    assert "contenteditable" not in rendered
+    assert "downloadHTML" not in rendered
+    assert "downloadPDF" not in rendered
+    assert "openPin" not in rendered
+    for forbidden_asset_or_request in (
+        "<img", "<iframe", "src=", "href=", "fetch(", "XMLHttpRequest", "WebSocket",
+        "window.open", "updateEmbed", "../ARTZ_files", "assets ARTZ", "http://", "https://",
+    ):
+        assert forbidden_asset_or_request not in rendered
+    for leaked_identity in (
+        "parmalat", "la lechera", "toni", "vita", "nutri", "shamuna", "adriana hoyos", "artz",
+        "dra. gaby", "la toña", "yogurt fresa", "cumbayá",
+    ):
+        assert leaked_identity not in rendered.casefold()
