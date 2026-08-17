@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reporte Estratégico Multicanal</title>
+  <style>
+    :root {
+      --forest: #1A3E2F;
+      --forest-light: #2D5C46;
+      --gold: #D4A373;
+      --gold-dark: #C58F59;
+      --gold-bg: rgba(212, 163, 115, 0.08);
+      --clay: #E9EDC6;
+      --cream: #FEFAE0;
+      --bg: #F9F8F3;
+      --card: #FFFFFF;
+      --border: rgba(26, 62, 47, 0.08);
+      --border-light: rgba(26, 62, 47, 0.15);
+      --text: #1A2E26;
+      --muted: #5A6E65;
+      --shadow: 0 4px 20px rgba(26, 62, 47, 0.04);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      color: var(--text);
+      background: var(--bg);
+      font-family: Sora, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 13.5px;
+      line-height: 1.6;
+    }
+    button, select { font: inherit; }
+    [hidden] { display: none !important; }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      min-height: 64px;
+      padding: 0 4vw;
+      overflow-x: auto;
+      border-bottom: 1px solid var(--border);
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+    .brand {
+      color: var(--forest);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    .nav-btn {
+      padding: 18px 0 14px;
+      border: 0;
+      border-bottom: 3px solid transparent;
+      color: var(--muted);
+      background: transparent;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+    .nav-btn:hover { color: var(--forest); border-bottom-color: var(--gold); }
+    .hero {
+      padding: 56px 4vw 40px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, #FFFFFF 0%, var(--bg) 100%);
+    }
+    .eyebrow {
+      color: var(--gold-dark);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 8px 0 12px;
+      color: var(--forest);
+      font-size: clamp(26px, 4vw, 40px);
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -.03em;
+    }
+    .meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px 28px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .meta-item strong { color: var(--text); }
+    .chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+    .chip {
+      padding: 5px 12px;
+      border: 1px solid var(--border-light);
+      border-radius: 999px;
+      color: var(--forest);
+      background: var(--card);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    main { width: min(1200px, calc(100% - 32px)); margin: 0 auto; padding: 40px 0 80px; }
+    .panel { scroll-margin-top: 80px; margin-bottom: 56px; }
+    .panel-head {
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid var(--forest);
+    }
+    .panel-title {
+      color: var(--forest);
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -.02em;
+    }
+    .panel-sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+    .grid { display: grid; gap: 20px; }
+    .kpi-grid { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+    .card {
+      padding: 22px 24px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+    .stat-card { border-top: 4px solid var(--forest); }
+    .stat-card:nth-child(2n) { border-top-color: var(--gold); }
+    .stat-card:nth-child(3n) { border-top-color: var(--forest-light); }
+    .stat-label {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .stat-value {
+      margin-top: 8px;
+      color: var(--forest);
+      font-size: clamp(22px, 2.8vw, 32px);
+      font-weight: 800;
+      line-height: 1.1;
+    }
+    .stat-delta { margin-top: 6px; font-size: 12px; font-weight: 700; }
+    .stat-delta.up { color: #2D5C46; }
+    .stat-delta.down { color: #C58F59; }
+    .stat-delta.neutral { color: var(--muted); }
+    .card-title {
+      margin-bottom: 16px;
+      color: var(--forest);
+      font-size: 16px;
+      font-weight: 700;
+    }
+    .chart-box {
+      margin-top: 20px;
+      padding: 20px 16px 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--card);
+    }
+    .chart-label {
+      font-size: 10px;
+      fill: var(--muted);
+      font-family: inherit;
+    }
+    .chart-line { fill: none; stroke: var(--forest); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    .chart-area { fill: rgba(26, 62, 47, 0.08); }
+    .chart-dot { fill: var(--card); stroke: var(--forest); stroke-width: 2; cursor: pointer; }
+    .chart-dot:hover { fill: var(--gold); }
+    .chart-axis { stroke: var(--border-light); stroke-dasharray: 3 3; }
+    .table-wrap { overflow-x: auto; margin-top: 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+    table { width: 100%; min-width: 620px; border-collapse: collapse; text-align: left; }
+    th, td { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+    th {
+      color: var(--muted);
+      background: rgba(26, 62, 47, 0.03);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    td { font-size: 13px; }
+    tbody tr:last-child td { border-bottom: 0; }
+    td:first-child { font-weight: 700; color: var(--forest); }
+    .shared-notice {
+      margin-bottom: 16px;
+      padding: 12px 16px;
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--gold);
+      border-radius: 8px;
+      color: var(--text);
+      background: var(--gold-bg);
+      font-size: 12px;
+    }
+    .breakdown-list { display: grid; gap: 10px; }
+    .breakdown-row { display: grid; gap: 4px; }
+    .breakdown-meta { display: flex; justify-content: space-between; font-size: 12px; }
+    .breakdown-name { font-weight: 600; color: var(--text); }
+    .breakdown-value { color: var(--muted); font-weight: 700; }
+    .breakdown-bar { height: 8px; border-radius: 999px; background: var(--bg); overflow: hidden; }
+    .breakdown-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--forest), var(--gold)); }
+    .narrative {
+      margin-top: 12px;
+      padding: 16px 20px;
+      border-left: 4px solid var(--forest);
+      border-radius: 8px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+      color: var(--text);
+      font-size: 13px;
+    }
+    footer {
+      padding: 32px 4vw;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      background: var(--card);
+      text-align: center;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <nav class="topbar" aria-label="Navegación del reporte">
+    <span class="brand">Estratégico</span>
+    <button class="nav-btn" data-target="summary-panel" hidden>Consolidado</button>
+    <button class="nav-btn" data-target="competition-panel" hidden>Competencia</button>
+    <button class="nav-btn" data-target="facebook-panel" hidden>Facebook</button>
+    <button class="nav-btn" data-target="instagram-panel" hidden>Instagram</button>
+    <button class="nav-btn" data-target="tiktok-panel" hidden>TikTok</button>
+    <button class="nav-btn" data-target="google-panel" hidden>Google</button>
+    <button class="nav-btn" data-target="investment-panel" hidden>Inversión</button>
+  </nav>
+
+  <header class="hero">
+    <div class="eyebrow">Diagnóstico y Rendimiento</div>
+    <h1>Análisis Estratégico: <span id="company-name"></span></h1>
+    <div class="meta-row">
+      <div class="meta-item">Período: <strong id="report-period"></strong></div>
+      <div class="meta-item">Generado: <strong id="generated-at"></strong></div>
+    </div>
+    <div class="chip-row" id="hero-platforms" aria-label="Canales analizados"></div>
+  </header>
+
+  <main>
+    <section class="panel" id="summary-panel" hidden>
+      <div class="panel-head">
+        <h2 class="panel-title">Rendimiento Consolidado</h2>
+        <p class="panel-sub">Lectura global de los canales activos en el período analizado.</p>
+      </div>
+      <div class="grid kpi-grid" id="summary-kpis"></div>
+      <div class="chart-box" id="summary-trend" hidden>
+        <h3 class="card-title" id="summary-trend-label">Evolución del período</h3>
+        <svg id="summary-chart" role="img" aria-label="Evolución del período"></svg>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Fecha</th><th>Resultado</th></tr></thead>
+            <tbody id="summary-trend-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="table-wrap" id="health-table" hidden>
+        <table>
+          <thead><tr id="health-head"></tr></thead>
+          <tbody id="health-body"></tbody>
+        </table>
+      </div>
+      <div id="summary-narratives"></div>
+    </section>
+
+    <section class="panel" id="competition-panel" hidden>
+      <div class="panel-head">
+        <h2 class="panel-title">Benchmark y Competencia</h2>
+        <p class="panel-sub">Comparativa de presencia y métricas frente a cuentas del sector.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr id="competition-head"></tr></thead>
+          <tbody id="competition-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" id="facebook-panel" hidden>
+      <div class="panel-head">
+        <h2 class="panel-title">Canal Facebook</h2>
+        <p class="panel-sub">Rendimiento, interacción y campañas de Facebook.</p>
+      </div>
+      <div class="shared-notice" id="facebook-shared-meta" hidden></div>
+      <div class="grid kpi-grid" id="facebook-kpis"></div>
+      <div class="chart-box" id="facebook-trend" hidden>
+        <h3 class="card-title" id="facebook-trend-label">Tendencia Facebook</h3>
+        <svg id="facebook-chart" role="img" aria-label="Tendencia Facebook"></svg>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Fecha</th><th>Resultado</th></tr></thead>
+            <tbody id="facebook-trend-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="table-wrap" id="facebook-content" hidden>
+        <table>
+          <thead><tr id="facebook-content-head"></tr></thead>
+          <tbody id="facebook-content-body"></tbody>
+        </table>
+      </div>
+      <div class="grid" id="facebook-breakdowns"></div>
+      <div id="facebook-narratives"></div>
+    </section>
+
+    <section class="panel" id="instagram-panel" hidden>
+      <div class="panel-head">
+        <h2 class="panel-title">Canal Instagram</h2>
+        <p class="panel-sub">Alcance, engagement y contenido en Instagram.</p>
+      </div>
+      <div class="shared-notice" id="instagram-shared-meta" hidden></div>
+      <div class="grid kpi-grid" id="instagram-kpis"></div>
+      <div class="chart-box" id="instagram-trend" hidden>
+        <h3 class="card-title" id="instagram-trend-label">Tendencia Instagram</h3>
+        <svg id="instagram-chart" role="img" aria-label="Tendencia Instagram"></svg>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Fecha</th><th>Resultado</th></tr></thead>
+            <tbody id="instagram-trend-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="table-wrap" id="instagram-content" hidden>
+        <table>
+          <thead><tr id="instagram-content-head"></tr></thead>
+          <tbody id="instagram-content-body"></tbody>
+        </table>
+      </div>
+      <div class="grid" id="instagram-breakdowns"></div>
+      <div id="instagram-narratives"></div>
+    </section>
+
+    <section class="panel" id="tiktok-panel" hidden>
+      <div class="panel-head">
+        <h2 class="panel-title">Canal TikTok</h2>
+        <p class="panel-sub">Reproducciones, alcance y resultados de TikTok Ads y orgánico.</p>
+      </div>
+      <div class="grid kpi-grid" id="tiktok-kpis"></div>
+      <div class="chart-box" id="tiktok-trend" hidden>
+        <h3 class="card-title" id="tiktok-trend-label">Tendencia TikTok</h3>
+        <svg id="tiktok-chart" role="img" aria-label="Tendencia TikTok"></svg>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Fecha</th><th>Resultado</th></tr></thead>
+            <tbody id="tiktok-trend-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="table-wrap" id="tiktok-content" hidden>
+        <table>
+          <thead><tr id="tiktok-content-head"></tr></thead>
+          <tbody id="tiktok-content-body"></tbody>
+        </table>
+      </div>
+      <div class="grid" id="tiktok-breakdowns"></div>
+      <div id="tiktok-narratives"></div>
+    </section>
+
+    <section class="panel" id="google-panel" hidden>
+      <div class="panel-head">
+        <h2 class="panel-title">Canal Google & Web</h2>
+        <p class="panel-sub">Tráfico, búsqueda y conversiones de Google.</p>
+      </div>
+      <div class="grid kpi-grid" id="google-kpis"></div>
+      <div class="chart-box" id="google-trend" hidden>
+        <h3 class="card-title" id="google-trend-label">Tendencia Google</h3>
+        <svg id="google-chart" role="img" aria-label="Tendencia Google"></svg>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Fecha</th><th>Resultado</th></tr></thead>
+            <tbody id="google-trend-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="table-wrap" id="google-content" hidden>
+        <table>
+          <thead><tr id="google-content-head"></tr></thead>
+          <tbody id="google-content-body"></tbody>
+        </table>
+      </div>
+      <div class="grid" id="google-breakdowns"></div>
+      <div id="google-narratives"></div>
+    </section>
+
+    <section class="panel" id="investment-panel" hidden>
+      <div class="panel-head">
+        <h2 class="panel-title">Inversión y Eficiencia</h2>
+        <p class="panel-sub">Distribución presupuestaria y variación respecto al período previo.</p>
+      </div>
+      <div class="table-wrap" id="investment-table" hidden>
+        <table>
+          <thead>
+            <tr><th>Canal</th><th>Inversión</th><th>Participación</th></tr>
+          </thead>
+          <tbody id="investment-body"></tbody>
+        </table>
+      </div>
+      <div class="card" id="optimization-card" style="margin-top: 20px;" hidden>
+        <h3 class="card-title">Métricas de Optimización</h3>
+        <div class="breakdown-list" id="optimization-list"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer><span id="footer-company"></span> · <span id="footer-period"></span></footer>
+
+  <!-- REPORT_DATA -->
+  <script>
+  (()=>{"use strict";
+    const data=window.REPORT_DATA||{},meta=data.meta||{},summary=data.summary||{},rates=data.rates||{},deltas=data.deltas||{},byPlatform=data.by_platform||{},rows=data.rows||{},breakdowns=data.breakdowns||{},narratives=Array.isArray(data.narratives)?data.narratives:[];
+    const labels={spend:"Inversión",impressions:"Impresiones",reach:"Alcance",engagement:"Interacciones",views:"Visualizaciones",clicks:"Clics",conversions:"Conversiones",results:"Resultados",likes:"Me gusta",comments:"Comentarios",shares:"Compartidos",sessions:"Sesiones",users:"Usuarios",pageviews:"Páginas vistas",ctr:"CTR",cpc:"CPC",cpm:"CPM",cpa:"CPA",conversion_rate:"Tasa de conversión"},money=new Set(["spend","cpc","cpm","cpa","cost","cost_per_result"]),percent=new Set(["ctr","conversion_rate","share"]),priority=["spend","impressions","reach","engagement","views","clicks","conversions","results","sessions","users","likes","comments","shares"];
+    const number=value=>typeof value==="number"&&Number.isFinite(value),finite=value=>value!==null&&value!==""&&Number.isFinite(Number(value)),numeric=value=>finite(value)?Number(value):null,element=(tag,className,value)=>{const node=document.createElement(tag);if(className)node.className=className;if(value!==undefined&&value!==null)node.textContent=String(value);return node},show=(node,visible)=>{if(node)node.hidden=!visible;return visible},metricLabel=key=>labels[key]||String(key).replaceAll("_"," ").replace(/\b\w/g,letter=>letter.toUpperCase()),platformLabel=key=>String(key).replaceAll("_"," ").replace(/\b\w/g,letter=>letter.toUpperCase());
+    const format=(key,value)=>{const num=numeric(value);if(num===null)return"";if(money.has(key))return new Intl.NumberFormat("es-EC",{style:"currency",currency:"USD",maximumFractionDigits:2}).format(num);if(percent.has(key)||key.startsWith("delta_"))return new Intl.NumberFormat("es-EC",{maximumFractionDigits:2}).format(num)+"%";return new Intl.NumberFormat("es-EC",{notation:Math.abs(num)>=1000000?"compact":"standard",maximumFractionDigits:2}).format(num)},formatDate=value=>{if(!value)return"";const parsed=new Date(value);return Number.isNaN(parsed.getTime())?String(value):new Intl.DateTimeFormat("es-EC",{day:"2-digit",month:"short",year:"numeric",timeZone:"UTC"}).format(parsed)},ordered=values=>{const keys=Object.entries(values||{}).filter(([,value])=>finite(value)).map(([key])=>key);return[...new Set([...priority.filter(key=>keys.includes(key)),...keys.sort()])]};
+    const canonical=value=>{const source=String(value||"").toLowerCase();if(source.includes("instagram"))return"instagram";if(source.includes("facebook"))return"facebook";if(source.includes("tiktok"))return"tiktok";if(source.includes("google"))return"google";if(source.includes("shopify"))return"shopify";return source},isMeta=value=>{const source=String(value||"").toLowerCase();return source==="meta"||source.startsWith("meta_")||source.startsWith("meta ")},rowPlatform=row=>{const source=row.source_platform||row.platform||(row.source_metrics||{}).platform,publisher=row.publisher_platform||(row.source_metrics||{}).publisher_platform;return canonical(isMeta(source)?publisher||row.platform||source:row.platform||source)},setPanel=(id,visible)=>{show(document.getElementById(id),visible);show(document.querySelector('[data-target="'+id+'"]'),visible)};
+    const company=meta.company_name||"Cuenta seleccionada",period=meta.period||{},periodText=[formatDate(period.start),formatDate(period.end)].filter(Boolean).join(" — ");document.getElementById("company-name").textContent=company;document.getElementById("report-period").textContent=periodText;document.getElementById("generated-at").textContent=formatDate(meta.generated_at);document.getElementById("footer-company").textContent=company;document.getElementById("footer-period").textContent=periodText;(Array.isArray(meta.platforms)?meta.platforms:[]).forEach(value=>document.getElementById("hero-platforms").append(element("span","chip",platformLabel(value))));
+    const contentRows=[...(Array.isArray(rows.current)?rows.current:[]),...(Array.isArray(rows.supplemental)?rows.supplemental:[])],platformEntries=Object.entries(byPlatform).filter(([,metrics])=>metrics&&typeof metrics==="object"),aliasMetrics={social_spend:"spend",cost:"spend",unique_clicks:"clicks",actions:"conversions",purchase:"conversions",add_to_cart:"conversions",lead:"conversions",total_interactions:"engagement",accounts_engaged:"engagement",like_count:"likes",comment_count:"comments",views:"pageviews",__results__:"results"},metricSources={spend:["spend","social_spend","cost"],clicks:["clicks","unique_clicks"],conversions:["conversions","actions","purchase","add_to_cart","lead"],engagement:["engagement","total_interactions","accounts_engaged","likes","comments","shares","saved"],impressions:["impressions","reach","views"],reach:["reach","impressions","views"],likes:["likes","like_count"],comments:["comments","comment_count"],results:["results","__results__"]};
+    const platformMetricKeys=item=>{const source=canonical(item.source_platform||item.platform),entry=platformEntries.find(([key])=>canonical(key)===source)?.[1]||{};return Object.keys(entry).map(key=>aliasMetrics[key]||key)},rowMetrics=item=>{const source=item.source_metrics&&typeof item.source_metrics==="object"?item.source_metrics:{},keys=new Set([...Object.keys(source).map(key=>aliasMetrics[key]||key),...platformMetricKeys(item)]),values={},consumed=new Set;keys.forEach(key=>{const sources=metricSources[key]||[key],raw=sources.find(sourceKey=>!consumed.has(sourceKey)&&(sourceKey===key||aliasMetrics[sourceKey]===key)&&finite(source[sourceKey]));if(raw!==undefined){values[key]=numeric(source[raw]);consumed.add(raw);return}const supplied=sources.find(sourceKey=>!consumed.has(sourceKey)&&Object.hasOwn(source,sourceKey));if(supplied!==undefined&&finite(item[key])){values[key]=numeric(item[key]);consumed.add(supplied)}});return values},aggregateRows=items=>items.reduce((totals,item)=>{Object.entries(rowMetrics(item)).forEach(([key,value])=>{totals[key]=(totals[key]||0)+value});return totals},{}),canonicalAggregate=metrics=>{const values={};Object.keys(metrics||{}).map(key=>aliasMetrics[key]||key).forEach(key=>{const source=(metricSources[key]||[key]).find(sourceKey=>finite(metrics[sourceKey]));if(source!==undefined&&!Object.hasOwn(values,key))values[key]=numeric(metrics[source])});return values};
+    const renderKpis=(id,values,withDeltas=false)=>{const container=document.getElementById(id),keys=ordered(values);keys.forEach(key=>{const card=element("article","card stat-card");card.dataset.metric=key;card.append(element("div","stat-label",metricLabel(key)),element("div","stat-value",format(key,values[key])));if(withDeltas&&finite(deltas[key])){const delta=numeric(deltas[key]);card.append(element("div","stat-delta "+(delta>0?"up":delta<0?"down":"neutral"),(delta>0?"↑ ":delta<0?"↓ ":"")+format("delta_"+key,Math.abs(delta))+" vs. período anterior"))}container.append(card)});return keys.length};
+    const renderTrend=(prefix,items)=>{const candidates=ordered(Object.assign({},...items.map(item=>item.metrics||{}))),metric=["impressions","reach","views","spend","engagement","clicks"].find(key=>candidates.includes(key))||candidates[0];if(!metric)return false;const daily=new Map;items.forEach(item=>{const value=(item.metrics||{})[metric];if(finite(value))daily.set(item.date,(daily.get(item.date)||0)+numeric(value))});const points=[...daily.entries()].sort(([a],[b])=>String(a).localeCompare(String(b)));if(!points.length)return false;const svg=document.getElementById(prefix+"-chart"),width=900,height=250,left=52,right=20,top=22,bottom=50,max=Math.max(...points.map(([,value])=>value),1),x=index=>left+(points.length===1?(width-left-right)/2:index*(width-left-right)/(points.length-1)),y=value=>top+(height-top-bottom)*(1-value/max),ns="http:"+"//www.w3.org/2000/svg";svg.setAttribute("viewBox","0 0 "+width+" "+height);const axis=document.createElementNS(ns,"line");for(const[key,value]of Object.entries({class:"chart-axis",x1:left,x2:width-right,y1:height-bottom,y2:height-bottom}))axis.setAttribute(key,value);svg.append(axis);const coords=points.map(([,value],index)=>x(index)+","+y(value)),area=document.createElementNS(ns,"polygon");area.setAttribute("class","chart-area");area.setAttribute("points",left+","+(height-bottom)+" "+coords.join(" ")+" "+(width-right)+","+(height-bottom));svg.append(area);const line=document.createElementNS(ns,"polyline");line.setAttribute("class","chart-line");line.setAttribute("points",coords.join(" "));svg.append(line);const every=Math.max(1,Math.ceil(points.length/7));points.forEach(([day,value],index)=>{const dot=document.createElementNS(ns,"circle");dot.setAttribute("class","chart-dot");dot.setAttribute("cx",x(index));dot.setAttribute("cy",y(value));dot.setAttribute("r",4);const title=document.createElementNS(ns,"title");title.textContent=formatDate(day)+": "+format(metric,value);dot.append(title);svg.append(dot);if(index%every===0||index===points.length-1){const label=document.createElementNS(ns,"text");label.setAttribute("class","chart-label");label.setAttribute("data-trend-tick","true");label.setAttribute("x",x(index));label.setAttribute("y",height-17);label.setAttribute("text-anchor","end");label.setAttribute("transform","rotate(-28 "+x(index)+" "+(height-17)+")");label.textContent=formatDate(day);svg.append(label)}});document.getElementById(prefix+"-trend-label").textContent="Evolución · "+metricLabel(metric);points.forEach(([day,value])=>{const row=element("tr");row.append(element("td","",formatDate(day)),element("td","",format(metric,value)));document.getElementById(prefix+"-trend-body").append(row)});return true};
+    const renderContent=(name,items)=>{const normalized=items.map(item=>({item,values:rowMetrics(item)})),metrics=normalized.length?ordered(normalized[0].values).filter(key=>normalized.every(entry=>finite(entry.values[key]))).slice(0,6):[];if(!normalized.length||!metrics.length)return false;const head=document.getElementById(name+"-content-head");head.append(element("th","","Campaña o contenido"));metrics.forEach(key=>head.append(element("th","",metricLabel(key))));normalized.sort((a,b)=>(numeric(b.values[metrics[0]])||0)-(numeric(a.values[metrics[0]])||0)).slice(0,12).forEach(({item,values})=>{const row=element("tr");row.append(element("td","",item.campaign_name||item.ad_name||item.content_name||item.name||"Contenido"));metrics.forEach(key=>row.append(element("td","",format(key,values[key]))));document.getElementById(name+"-content-body").append(row)});return true};
+    const normalizeBreakdown=(key,value)=>{if(Array.isArray(value))return value.map(item=>item&&typeof item==="object"?{label:item.label??item.name??item[key]??item.dimension,value:item.value??item.count??item.impressions??item.reach??item.percentage??item.share}:null).filter(item=>item&&item.label!==undefined&&finite(item.value));if(value&&typeof value==="object")return Object.entries(value).filter(([,amount])=>finite(amount)).map(([label,amount])=>({label,value:numeric(amount)}));return[]},platformBreakdowns=name=>{const direct=breakdowns[name];if(direct&&typeof direct==="object"&&!Array.isArray(direct))return direct;return{}},renderBreakdowns=name=>{const target=document.getElementById(name+"-breakdowns");Object.entries(platformBreakdowns(name)).forEach(([group,value])=>{const items=normalizeBreakdown(group,value);if(!items.length)return;const card=element("article","card"),list=element("div","breakdown-list"),max=Math.max(...items.map(item=>item.value),1);card.append(element("h3","card-title",metricLabel(group)));items.sort((a,b)=>b.value-a.value).slice(0,10).forEach(item=>{const row=element("div","breakdown-row"),metaRow=element("div","breakdown-meta"),bar=element("div","breakdown-bar"),fill=element("div","breakdown-fill");metaRow.append(element("span","breakdown-name",item.label),element("span","breakdown-value",format(group.includes("share")||group.includes("percent")?"share":"value",item.value)));fill.style.width=Math.max(2,item.value/max*100)+"%";bar.append(fill);row.append(metaRow,bar);list.append(row)});card.append(list);target.append(card)});return target.children.length>0};
+    const summaryKpis=renderKpis("summary-kpis",Object.fromEntries(priority.filter(key=>finite(summary[key])).map(key=>[key,numeric(summary[key])])),true),summaryItems=contentRows.map(item=>({date:item.date,metrics:rowMetrics(item)})),hasSummaryTrend=renderTrend("summary",summaryItems);show(document.getElementById("summary-trend"),hasSummaryTrend);const healthMetrics=["spend","impressions","reach","clicks","conversions"].filter(key=>platformEntries.length&&platformEntries.every(([,metrics])=>finite(canonicalAggregate(metrics)[key]))),healthHead=document.getElementById("health-head");if(healthMetrics.length){healthHead.append(element("th","","Plataforma"));healthMetrics.forEach(key=>healthHead.append(element("th","",metricLabel(key))));platformEntries.forEach(([name,metrics])=>{const values=canonicalAggregate(metrics),row=element("tr");row.append(element("td","",platformLabel(name)));healthMetrics.forEach(key=>row.append(element("td","",format(key,values[key]))));document.getElementById("health-body").append(row)})}show(document.getElementById("health-table"),document.getElementById("health-body").children.length>0);const generalNarratives=narratives.filter(item=>typeof item==="string"||(item&&!item.platform)).map(item=>typeof item==="string"?item:item.text||item.summary||item.value).filter(Boolean);generalNarratives.forEach(value=>document.getElementById("summary-narratives").append(element("p","narrative",value)));setPanel("summary-panel",summaryKpis>0||hasSummaryTrend||healthMetrics.length>0||generalNarratives.length>0);
+    const competition=Array.isArray(breakdowns.competition)?breakdowns.competition.filter(item=>item&&typeof item==="object"):[],competitionMetrics=competition.length?Object.keys(competition[0]).filter(key=>!["label","name"].includes(key)&&competition.every(item=>finite(item[key]))):[];if(competition.length&&competitionMetrics.length){const head=document.getElementById("competition-head");head.append(element("th","","Cuenta"));competitionMetrics.forEach(key=>head.append(element("th","",metricLabel(key))));competition.forEach(item=>{const row=element("tr");row.append(element("td","",item.label||item.name||"Cuenta"));competitionMetrics.forEach(key=>row.append(element("td","",format(key,item[key]))));document.getElementById("competition-body").append(row)})}setPanel("competition-panel",document.getElementById("competition-body").children.length>0);
+    const publisherRows=Object.fromEntries(["facebook","instagram"].map(name=>[name,contentRows.filter(item=>isMeta(item.source_platform)&&rowPlatform(item)===name)])),hasMetaPublisherIdentity=contentRows.some(item=>isMeta(item.source_platform)&&!isMeta(rowPlatform(item))),hasDirectMetaChannels=platformEntries.some(([key])=>["facebook","instagram"].includes(canonical(key))),metaEntry=platformEntries.find(([key])=>isMeta(key)),sharedMeta=Boolean(metaEntry&&!hasMetaPublisherIdentity&&!hasDirectMetaChannels),metaRows=contentRows.filter(item=>isMeta(item.source_platform));
+    for(const name of["facebook","instagram","tiktok","google"]){const directItems=contentRows.filter(item=>rowPlatform(item)===name),publisherItems=publisherRows[name]||[],usesSharedMeta=sharedMeta&&(name==="facebook"||name==="instagram"),items=(name==="facebook"||name==="instagram")?publisherItems:directItems,metricItems=items.length?items:usesSharedMeta?metaRows:[],metrics=metricItems.length?aggregateRows(metricItems):{},trendItems=metricItems.map(item=>({date:item.date,metrics:rowMetrics(item)})),contentItems=usesSharedMeta?[]:items,kpis=renderKpis(name+"-kpis",metrics),hasTrend=renderTrend(name,trendItems),hasContent=renderContent(name,contentItems),hasBreakdowns=renderBreakdowns(name),platformNarratives=narratives.filter(item=>item&&typeof item==="object"&&canonical(item.platform)===name).map(item=>item.text||item.summary||item.value).filter(Boolean);if(name==="facebook"||name==="instagram"){const notice=document.getElementById(name+"-shared-meta");notice.textContent=usesSharedMeta?"Datos agregados de Meta compartidos entre Facebook e Instagram; no se atribuye una distribución por red.":"";show(notice,usesSharedMeta)}show(document.getElementById(name+"-trend"),hasTrend);show(document.getElementById(name+"-content"),hasContent);platformNarratives.forEach(value=>document.getElementById(name+"-narratives").append(element("p","narrative",value)));setPanel(name+"-panel",kpis>0||hasTrend||hasContent||hasBreakdowns||platformNarratives.length>0)}
+    const investmentRows=platformEntries.map(([name,metrics])=>[name,canonicalAggregate(metrics)]).filter(([,metrics])=>finite(metrics.spend)),platformSpend=investmentRows.reduce((total,[,metrics])=>total+numeric(metrics.spend),0);investmentRows.forEach(([name,metrics])=>{const row=element("tr");row.append(element("td","",platformLabel(name)),element("td","",format("spend",metrics.spend)),element("td","",platformSpend>0?format("share",numeric(metrics.spend)/platformSpend*100):""));document.getElementById("investment-body").append(row)});show(document.getElementById("investment-table"),investmentRows.length>0);const optimization=[...Object.entries(rates).filter(([,value])=>finite(value)),...Object.entries(deltas).filter(([,value])=>finite(value)).map(([key,value])=>["delta_"+key,value])];optimization.slice(0,12).forEach(([key,value])=>{const row=element("div","breakdown-meta"),isDelta=key.startsWith("delta_");row.append(element("span","breakdown-name",isDelta?"Variación de "+metricLabel(key.slice(6)):metricLabel(key)),element("span","breakdown-value "+(isDelta?(numeric(value)>0?"up":numeric(value)<0?"down":"neutral"):""),format(key,value)));document.getElementById("optimization-list").append(row)});show(document.getElementById("optimization-card"),optimization.length>0);setPanel("investment-panel",investmentRows.length>0||optimization.length>0);
+    document.querySelectorAll(".nav-btn").forEach(button=>button.addEventListener("click",()=>document.getElementById(button.dataset.target)?.scrollIntoView({behavior:"smooth"})));
+  })();
+  </script>
+</body>
+</html>

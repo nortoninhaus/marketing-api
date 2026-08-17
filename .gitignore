@@ -50,4 +50,6 @@ htmlcov/
 *performance_fixed.json
 real_ad_previews.json
 *.html
+!dashboard/report_templates/*.html
 .atl/
+

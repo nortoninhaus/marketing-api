@@ -677,6 +677,83 @@ def _artz_builder_payload(with_publishers=True):
     )
 
 
+def _shamuna_builder_payload(with_publishers=True):
+    meta_rows = []
+    for day in range(1, 32):
+        item = {
+            "campaign_name": f"Meta daily {day}",
+            "date": f"2026-07-{day:02d}",
+            "metrics": {
+                "social_spend": "1",
+                "impressions": str(day * 100),
+                "reach": str(day * 80),
+                "total_interactions": str(day * 2),
+                "unique_clicks": "1",
+            },
+        }
+        if with_publishers:
+            item["dimensions"] = {"publisher_platform": "facebook"}
+        meta_rows.append(item)
+    if with_publishers:
+        meta_rows.append({
+            "campaign_name": "Instagram launch",
+            "date": "2026-07-15",
+            "dimensions": {"publisher_platform": "instagram"},
+            "metrics": {
+                "social_spend": 20.5,
+                "impressions": 2000,
+                "reach": 1500,
+                "total_interactions": 100,
+                "unique_clicks": 2.5,
+                "lead": 3,
+            },
+        })
+    frames = [process_api_response(meta_rows, "meta_ads", "client_1", "user_1")]
+    frames.append(process_api_response([{
+        "campaign_name": "TikTok awareness",
+        "date": "2026-07-16",
+        "metrics": {
+            "cost": "30",
+            "impressions": "5000",
+            "reach": "4000",
+            "total_interactions": "250",
+            "unique_clicks": "75",
+        },
+    }], "tiktok_ads", "client_1", "user_1"))
+    frames.append(process_api_response([{
+        "campaign_name": "Search campaigns",
+        "date": "2026-07-17",
+        "metrics": {
+            "cost": 40,
+            "impressions": 6000,
+            "unique_clicks": 120.5,
+            "actions": 8,
+        },
+    }], "google_ads", "client_1", "user_1"))
+    context = _context(
+        {"platform": "meta_ads", "account_id": "act_1", "account_name": "Acme Shamuna"},
+        {"platform": "tiktok_ads", "account_id": "tt_1", "account_name": "Acme Shamuna"},
+        {"platform": "google_ads", "account_id": "ga_1", "account_name": "Acme Shamuna"},
+    )
+    context["required_metrics"] = [
+        "spend", "impressions", "reach", "engagement", "clicks", "conversions", "views",
+    ]
+    return build_report_payload(
+        "shamuna",
+        pd.concat(frames, ignore_index=True),
+        query_context=context,
+        optional={"breakdowns": {
+            "competition": [
+                {"label": "Market Alpha", "followers": 7200, "engagement": 3.4},
+                {"label": "Market Beta", "followers": 6800, "engagement": 2.8},
+            ],
+            "facebook": {"age": [{"label": "25–34", "value": 45}]},
+            "instagram": {"gender": [{"label": "Women", "value": 62}]},
+            "tiktok": {"age": [{"label": "18–24", "value": 51}]},
+        }},
+    )
+
+
 def _nutri_payload():
     payload = _complete_template_payload()
     payload["meta"]["platforms"] = ["facebook", "instagram", "tiktok"]
@@ -1523,3 +1600,187 @@ def test_artz_template_has_no_reference_facts_assets_requests_or_controls():
         "dra. gaby", "la toña", "yogurt fresa", "cumbayá", "feed normal", "modo agencia",
     ):
         assert leaked_identity not in rendered.casefold()
+
+
+_SHAMUNA_BROWSER_PROBE = r"""
+<script>
+(() => {
+  const panelIds = ["summary-panel", "competition-panel", "facebook-panel", "instagram-panel", "tiktok-panel", "google-panel", "investment-panel"];
+  const visible = id => {
+    const node = document.getElementById(id);
+    return Boolean(node && !node.hidden && getComputedStyle(node).display !== "none");
+  };
+  const panelKpis = prefix => Object.fromEntries(
+    [...document.querySelectorAll(`#${prefix}-kpis [data-metric]`)].map(card => [
+      card.dataset.metric,
+      card.querySelector(".stat-value")?.textContent?.trim(),
+    ])
+  );
+  const result = {
+    company: document.getElementById("company-name")?.textContent,
+    period: document.getElementById("report-period")?.textContent,
+    visible: Object.fromEntries(panelIds.map(id => [id, visible(id)])),
+    competitionRows: document.querySelectorAll("#competition-body tr").length,
+    platformKpis: {
+      facebook: panelKpis("facebook"),
+      instagram: panelKpis("instagram"),
+      tiktok: panelKpis("tiktok"),
+      google: panelKpis("google"),
+    },
+    trendRows: {
+      facebook: document.querySelectorAll("#facebook-trend-body tr").length,
+      instagram: document.querySelectorAll("#instagram-trend-body tr").length,
+      tiktok: document.querySelectorAll("#tiktok-trend-body tr").length,
+      google: document.querySelectorAll("#google-trend-body tr").length,
+    },
+    trendTicks: {
+      facebook: document.querySelectorAll("#facebook-chart [data-trend-tick]").length,
+    },
+    trendTitles: {
+      facebook: [...document.querySelectorAll("#facebook-chart .chart-dot title")].map(node => node.textContent),
+    },
+    contentRows: {
+      facebook: [...document.querySelectorAll("#facebook-content-body tr")].map(row => row.cells[0]?.textContent),
+      instagram: [...document.querySelectorAll("#instagram-content-body tr")].map(row => row.cells[0]?.textContent),
+    },
+    investmentRows: document.querySelectorAll("#investment-body tr").length,
+    optimizationItems: document.querySelectorAll("#optimization-list .breakdown-meta").length,
+    sharedNotices: {
+      facebook: document.getElementById("facebook-shared-meta")?.textContent || "",
+      instagram: document.getElementById("instagram-shared-meta")?.textContent || "",
+    },
+    errors: [...window.__browserErrors, ...window.__browserConsoleErrors],
+    resources: performance.getEntriesByType("resource").map(entry => entry.name),
+    text: document.body.textContent,
+  };
+  const output = document.createElement("script");
+  output.id = "browser-result";
+  output.type = "application/json";
+  output.textContent = JSON.stringify(result);
+  document.body.append(output);
+})();
+</script>
+"""
+
+
+def test_shamuna_browser_restores_reference_hierarchy_with_builder_numeric_metrics(tmp_path):
+    payload = _shamuna_builder_payload()
+
+    facebook = next(row for row in payload["rows"]["current"] if row["platform"] == "Facebook Ads")
+    instagram = next(row for row in payload["rows"]["current"] if row["platform"] == "Instagram Ads")
+    assert isinstance(facebook["source_metrics"]["social_spend"], str)
+    assert facebook["spend"] == 1
+    assert instagram["source_metrics"]["unique_clicks"] == 2.5
+    assert instagram["clicks"] == 2
+
+    dom = _browser_dom(
+        render_report("shamuna", payload),
+        tmp_path,
+        _SHAMUNA_BROWSER_PROBE,
+        "shamuna-browser.html",
+    )
+
+    assert dom["company"] == "Acme Shamuna"
+    assert dom["period"] == "01 jul 2026 — 31 jul 2026"
+    assert dom["visible"] == {panel: True for panel in dom["visible"]}
+    assert dom["competitionRows"] == 2
+    assert dom["platformKpis"]["facebook"] == {
+        "spend": "$31,00",
+        "impressions": "49.600",
+        "reach": "39.680",
+        "engagement": "992",
+        "clicks": "31",
+    }
+    assert dom["platformKpis"]["instagram"] == {
+        "spend": "$20,50",
+        "impressions": "2.000",
+        "reach": "1.500",
+        "engagement": "100",
+        "clicks": "2,5",
+        "conversions": "3",
+    }
+    assert dom["platformKpis"]["tiktok"] == {
+        "spend": "$30,00",
+        "impressions": "5.000",
+        "reach": "4.000",
+        "engagement": "250",
+        "clicks": "75",
+    }
+    assert dom["platformKpis"]["google"] == {
+        "spend": "$40,00",
+        "impressions": "6.000",
+        "clicks": "120,5",
+        "conversions": "8",
+    }
+    assert dom["trendRows"]["facebook"] == 31
+    assert dom["trendTicks"]["facebook"] <= 7
+    assert len(dom["trendTitles"]["facebook"]) == 31
+    assert dom["trendTitles"]["facebook"][-1] == "31 jul 2026: 3.100"
+    assert dom["investmentRows"] == 3
+    assert dom["optimizationItems"] > 0
+    assert dom["sharedNotices"] == {"facebook": "", "instagram": ""}
+    assert dom["errors"] == []
+    assert dom["resources"] == []
+
+
+def test_shamuna_browser_labels_unsplit_meta_as_shared_without_attributing_content(tmp_path):
+    payload = _shamuna_builder_payload(with_publishers=False)
+
+    assert all(row["platform"] == "meta_ads" for row in payload["rows"]["current"] if row["source_platform"] == "meta_ads")
+
+    dom = _browser_dom(
+        render_report("shamuna", payload),
+        tmp_path,
+        _SHAMUNA_BROWSER_PROBE,
+        "shamuna-unsplit-browser.html",
+    )
+
+    notice = "Datos agregados de Meta compartidos entre Facebook e Instagram; no se atribuye una distribución por red."
+    assert dom["visible"]["facebook-panel"] is True
+    assert dom["visible"]["instagram-panel"] is True
+    assert dom["platformKpis"]["facebook"] == dom["platformKpis"]["instagram"]
+    assert dom["platformKpis"]["facebook"]["spend"] == "$31,00"
+    assert dom["sharedNotices"] == {"facebook": notice, "instagram": notice}
+    assert dom["contentRows"]["facebook"] == []
+    assert dom["contentRows"]["instagram"] == []
+    assert dom["investmentRows"] == 3
+    assert dom["errors"] == []
+    assert dom["resources"] == []
+
+
+def test_shamuna_browser_hides_every_unavailable_panel_from_real_builder_payload(tmp_path):
+    context = _context({"platform": "meta_ads", "account_id": "act_2", "account_name": "Acme Empty"})
+    payload = build_report_payload("shamuna", pd.DataFrame(), query_context=context)
+
+    dom = _browser_dom(
+        render_report("shamuna", payload),
+        tmp_path,
+        _SHAMUNA_BROWSER_PROBE,
+        "shamuna-empty-browser.html",
+    )
+
+    assert dom["company"] == "Acme Empty"
+    assert dom["period"] == "01 jul 2026 — 31 jul 2026"
+    assert dom["visible"] == {panel: False for panel in dom["visible"]}
+    assert dom["competitionRows"] == 0
+    assert dom["investmentRows"] == 0
+    assert "Datos no disponibles" not in dom["text"]
+    assert dom["errors"] == []
+    assert dom["resources"] == []
+
+
+def test_shamuna_template_has_no_reference_facts_assets_requests_or_controls():
+    rendered = render_report("shamuna", _shamuna_builder_payload())
+
+    for forbidden in (
+        "innerHTML", "contenteditable", "downloadHTML", "downloadPDF", "openPin", "<img", "<video", "<iframe",
+        "src=", "href=", "http://", "https://", "fetch(", "XMLHttpRequest", "WebSocket", "window.open",
+        "updateEmbed", "../Shamuna_files", "assets Shamuna",
+    ):
+        assert forbidden not in rendered
+    for leaked_identity in (
+        "parmalat", "la lechera", "toni", "vita", "nutri", "adriana hoyos", "artz",
+        "dra. gaby", "la toña", "yogurt fresa", "cumbayá", "feed normal", "modo agencia",
+    ):
+        assert leaked_identity not in rendered.casefold()
+
