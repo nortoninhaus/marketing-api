@@ -1,5 +1,6 @@
 import re
 import json
+from copy import deepcopy
 import requests
 import pandas as pd
 import streamlit as st
@@ -470,6 +471,8 @@ def process_api_response(api_data, platform_key, client_id, user_id):
         # Include dynamic fields from dimensions if present
         row = {
             "platform": platform_key,
+            "source_platform": platform_key,
+            "source_metrics": deepcopy(metrics),
             "client_id": client_id,
             "user_id": user_id,
             "campaign_name": item.get("campaign_name", "N/A"),
@@ -496,11 +499,13 @@ def process_api_response(api_data, platform_key, client_id, user_id):
             "comments": int(comments),
         }
         # Add dimensions to the row dict dynamically
+        protected_source_fields = {"source_platform", "source_metrics"}
         for key, val in item.get("dimensions", {}).items():
-            row[key] = translate_dimension_value(key, val)
+            if key not in protected_source_fields:
+                row[key] = translate_dimension_value(key, val)
 
         for key, val in item.items():
-            if key not in ["metrics", "dimensions", "platform", "client_id", "user_id"]:
+            if key not in {"metrics", "dimensions", "platform", "client_id", "user_id", *protected_source_fields}:
                 row[key] = translate_dimension_value(key, val)
 
         if platform_key == "meta_ads":
@@ -516,7 +521,7 @@ def process_api_response(api_data, platform_key, client_id, user_id):
     df = pd.DataFrame(flat_rows)
     if df.empty:
         return pd.DataFrame(columns=[
-            "platform", "client_id", "user_id", "campaign_name", "date", "spend", "impressions", "clicks", "conversions", "lead", "results", "cost_per_result", "result_indicator",
+            "platform", "source_platform", "source_metrics", "client_id", "user_id", "campaign_name", "date", "spend", "impressions", "clicks", "conversions", "lead", "results", "cost_per_result", "result_indicator",
             "sessions", "users", "pageviews", "bounce_rate", "downloads", "ratings", "engagement", "post_engagement", "followers", "reach", "likes", "comments"
         ])
     return df
