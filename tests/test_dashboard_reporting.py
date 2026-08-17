@@ -546,6 +546,60 @@ def _complete_template_payload():
     }
 
 
+def _adriana_builder_payload():
+    rows = []
+    for day in range(1, 32):
+        rows.append({
+            "campaign_name": f"City campaign {day}",
+            "date": f"2026-07-{day:02d}",
+            "dimensions": {"city": "Quito" if day % 2 else "Guayaquil", "country": "Ecuador"},
+            "metrics": {
+                "spend": str(day),
+                "impressions": str(day * 1000),
+                "reach": str(day * 800),
+                "clicks": str(day * 10),
+                "lead": str(day),
+            },
+        })
+    frames = [process_api_response(rows, "meta_ads", "client_1", "user_1")]
+    frames.append(process_api_response([{
+        "campaign_name": "Product collection pin",
+        "date": "2026-07-15",
+        "dimensions": {"country": "United States", "product_name": "Product Alpha"},
+        "metrics": {"spend": "125.5", "impressions": "18000", "clicks": "420", "outbound_clicks": "205", "saves": "31"},
+    }], "pinterest_ads", "client_1", "user_1"))
+    frames.append(process_api_response([{
+        "campaign_name": "Search traffic",
+        "date": "2026-07-16",
+        "dimensions": {"country": "United States"},
+        "metrics": {"spend": "240", "impressions": "22000", "clicks": "510", "conversions": "24"},
+    }], "google_ads", "client_1", "user_1"))
+    frames.append(process_api_response([{
+        "campaign_name": "Product Alpha traffic",
+        "date": "2026-07-17",
+        "dimensions": {"country": "United States", "product_name": "Product Alpha"},
+        "metrics": {"sessions": "380", "users": "290", "pageviews": "640"},
+    }], "google_analytics", "client_1", "user_1"))
+    context = _context(
+        {"platform": "meta_ads", "account_id": "act_1", "account_name": "Acme Design"},
+        {"platform": "pinterest_ads", "account_id": "pin_1", "account_name": "Acme Design"},
+        {"platform": "google_ads", "account_id": "ads_1", "account_name": "Acme Design"},
+        {"platform": "google_analytics", "account_id": "ga_1", "account_name": "Acme Design"},
+    )
+    context["required_metrics"] = [
+        "spend", "impressions", "reach", "clicks", "lead", "conversions",
+        "outbound_clicks", "saves", "sessions", "users", "pageviews",
+    ]
+    return build_report_payload(
+        "adriana_hoyos",
+        pd.concat(frames, ignore_index=True),
+        query_context=context,
+        optional={"breakdowns": {
+            "campaign": [{"label": "City campaign", "value": 496000}, {"label": "Product collection pin", "value": 18000}],
+        }},
+    )
+
+
 def _nutri_payload():
     payload = _complete_template_payload()
     payload["meta"]["platforms"] = ["facebook", "instagram", "tiktok"]
@@ -673,7 +727,7 @@ class _BrowserResultParser(HTMLParser):
             self.value.append(data)
 
 
-def _browser_dom(rendered, tmp_path):
+def _browser_dom(rendered, tmp_path, custom_probe=None, filename="nutri-browser.html"):
     browser = (
         shutil.which("google-chrome")
         or shutil.which("chromium")
@@ -693,7 +747,7 @@ console.error = (...args) => {
 };
 </script>
 """
-    probe = r"""
+    probe = custom_probe or r"""
 <script>
 (() => {
   const panelIds = ["summary-panel", "competition-panel", "facebook-panel", "instagram-panel", "tiktok-panel", "investment-panel"];
@@ -753,7 +807,7 @@ console.error = (...args) => {
 })();
 </script>
 """
-    report_path = tmp_path / "nutri-browser.html"
+    report_path = tmp_path / filename
     report_path.write_text(
         rendered.replace("<head>", "<head>" + instrumentation).replace("</body>", probe + "</body>"),
         encoding="utf-8",
@@ -1033,56 +1087,172 @@ def test_nutri_template_has_no_reference_assets_requests_or_authoring_controls()
         assert leaked_identity not in rendered.casefold()
 
 
-def test_adriana_hoyos_template_is_a_complete_payload_driven_report():
-    rendered = render_report("adriana_hoyos", _complete_template_payload())
+_ADRIANA_BROWSER_PROBE = r"""
+<script>
+(() => {
+  const visible = id => {
+    const node = document.getElementById(id);
+    return Boolean(node && !node.hidden && getComputedStyle(node).display !== "none");
+  };
+  const countVisible = selector => [...document.querySelectorAll(selector)].filter(node => !node.hidden && node.getClientRects().length).length;
+  const rgb = value => (value.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+  const luminance = value => {
+    const parts = rgb(value).map(channel => {
+      const normalized = channel / 255;
+      return normalized <= .03928 ? normalized / 12.92 : ((normalized + .055) / 1.055) ** 2.4;
+    });
+    return .2126 * parts[0] + .7152 * parts[1] + .0722 * parts[2];
+  };
+  const contrast = node => {
+    const foreground = luminance(getComputedStyle(node).color);
+    const background = luminance(getComputedStyle(document.body).backgroundColor);
+    return (Math.max(foreground, background) + .05) / (Math.min(foreground, background) + .05);
+  };
+  const sectionIds = ["season-report", "summer-report", "ao2-report", "insights-report"];
+  const accents = [...document.querySelectorAll(".accent-text")];
+  const result = {
+    company: document.getElementById("company-name")?.textContent,
+    period: document.getElementById("report-period")?.textContent,
+    visible: Object.fromEntries(sectionIds.map(id => [id, visible(id)])),
+    season: {
+      funnel: countVisible("#season-funnel [data-stage]"),
+      cities: countVisible("#season-city-body tr"),
+      campaigns: countVisible("#season-campaign-body tr"),
+    },
+    summer: {
+      kpis: countVisible("#summer-kpis [data-metric]"),
+      charts: countVisible('#summer-report [data-family="daily-chart"]'),
+      daily: countVisible("#summer-daily-body tr"),
+      campaigns: countVisible("#summer-campaign-body tr"),
+    },
+    ao2: {
+      channels: countVisible("#ao2-channels [data-platform]"),
+      pinterest: countVisible("#pinterest-body tr"),
+      products: countVisible("#product-body tr"),
+      traffic: countVisible("#traffic-body tr"),
+      countries: countVisible("#country-body tr"),
+      charts: countVisible('#ao2-report [data-family="traffic-chart"]'),
+    },
+    insights: [...document.querySelectorAll("#insights-list .narrative")].map(node => node.textContent),
+    cityValues: Object.fromEntries([...document.querySelectorAll("#season-city-body tr")].map(row => [row.cells[0].textContent, row.cells[1].textContent])),
+    countryValues: Object.fromEntries([...document.querySelectorAll("#country-body tr")].map(row => [row.cells[0].textContent, row.cells[1].textContent])),
+    maxTrendTicks: Math.max(0, ...[...document.querySelectorAll('[data-family="daily-chart"]')].map(chart => chart.querySelectorAll("[data-trend-tick]").length)),
+    minAccentContrast: accents.length ? Math.min(...accents.map(contrast)) : null,
+    errors: [...window.__browserErrors, ...window.__browserConsoleErrors],
+    resources: performance.getEntriesByType("resource").map(entry => entry.name),
+    text: document.body.textContent,
+  };
+  const output = document.createElement("script");
+  output.id = "browser-result";
+  output.type = "application/json";
+  output.textContent = JSON.stringify(result);
+  document.body.append(output);
+})();
+</script>
+"""
 
-    for section_id in (
-        "cover-section",
-        "overview-section",
-        "funnel-section",
-        "channels-section",
-        "trend-section",
-        "campaigns-section",
-        "geography-section",
-        "content-section",
-        "insights-section",
+
+def test_adriana_hoyos_browser_preserves_distinct_reports_with_real_builder_data(tmp_path):
+    payload = _adriana_builder_payload()
+
+    assert payload["meta"]["platforms"] == ["meta_ads", "pinterest_ads", "google_ads", "google_analytics"]
+    assert isinstance(payload["rows"]["current"][0]["source_metrics"]["spend"], str)
+
+    dom = _browser_dom(
+        render_report("adriana_hoyos", payload),
+        tmp_path,
+        _ADRIANA_BROWSER_PROBE,
+        "adriana-browser.html",
+    )
+
+    assert dom["company"] == "Acme Design"
+    assert dom["period"] == "01 jul 2026 — 31 jul 2026"
+    assert dom["visible"] == {section: True for section in dom["visible"]}
+    assert dom["season"] == {"funnel": 5, "cities": 2, "campaigns": 2}
+    assert dom["summer"]["kpis"] >= 8
+    assert dom["summer"]["charts"] == 1
+    assert dom["summer"]["daily"] == 33
+    assert dom["summer"]["campaigns"] == 12
+    assert dom["ao2"] == {
+        "channels": 3,
+        "pinterest": 1,
+        "products": 1,
+        "traffic": 3,
+        "countries": 2,
+        "charts": 1,
+    }
+    assert dom["cityValues"] == {"Quito": "256.000", "Guayaquil": "240.000"}
+    assert dom["countryValues"] == {"Ecuador": "496.000", "United States": "40.000"}
+    assert dom["insights"] == ["Acme Design recorded 536000 impressions during 2026-07-01 to 2026-07-31."]
+    assert dom["maxTrendTicks"] <= 7
+    assert dom["minAccentContrast"] >= 4.5
+    assert dom["errors"] == []
+    assert dom["resources"] == []
+
+
+def test_adriana_hoyos_browser_hides_every_unavailable_report_from_real_builder_payload(tmp_path):
+    context = _context({"platform": "meta_ads", "account_id": "act_2", "account_name": "Acme Empty"})
+    payload = build_report_payload("adriana_hoyos", pd.DataFrame(), query_context=context)
+
+    dom = _browser_dom(
+        render_report("adriana_hoyos", payload),
+        tmp_path,
+        _ADRIANA_BROWSER_PROBE,
+        "adriana-empty-browser.html",
+    )
+
+    assert dom["company"] == "Acme Empty"
+    assert dom["period"] == "01 jul 2026 — 31 jul 2026"
+    assert dom["visible"] == {section: False for section in dom["visible"]}
+    assert dom["season"] == {"funnel": 0, "cities": 0, "campaigns": 0}
+    assert dom["summer"] == {"kpis": 0, "charts": 0, "daily": 0, "campaigns": 0}
+    assert dom["ao2"] == {"channels": 0, "pinterest": 0, "products": 0, "traffic": 0, "countries": 0, "charts": 0}
+    assert dom["insights"] == []
+    assert "Datos no disponibles" not in dom["text"]
+    assert dom["errors"] == []
+    assert dom["resources"] == []
+
+
+def test_adriana_hoyos_browser_hides_missing_subsections_in_partial_builder_payload(tmp_path):
+    frame = process_api_response([{
+        "campaign_name": "Discovery campaign",
+        "date": "2026-07-20",
+        "dimensions": {"country": "United States"},
+        "metrics": {"spend": "40", "impressions": "5000", "clicks": "125"},
+    }], "pinterest_ads", "client_1", "user_1")
+    context = _context({"platform": "pinterest_ads", "account_id": "pin_2", "account_name": "Acme Partial"})
+    context["required_metrics"] = ["spend", "impressions", "clicks"]
+    payload = build_report_payload("adriana_hoyos", frame, query_context=context)
+
+    dom = _browser_dom(
+        render_report("adriana_hoyos", payload),
+        tmp_path,
+        _ADRIANA_BROWSER_PROBE,
+        "adriana-partial-browser.html",
+    )
+
+    assert dom["visible"] == {section: True for section in dom["visible"]}
+    assert dom["season"] == {"funnel": 2, "cities": 0, "campaigns": 1}
+    assert dom["summer"] == {"kpis": 6, "charts": 1, "daily": 1, "campaigns": 1}
+    assert dom["ao2"] == {"channels": 1, "pinterest": 1, "products": 0, "traffic": 1, "countries": 1, "charts": 1}
+    assert dom["cityValues"] == {}
+    assert dom["countryValues"] == {"United States": "5.000"}
+    assert "Datos no disponibles" not in dom["text"]
+    assert dom["errors"] == []
+    assert dom["resources"] == []
+
+
+def test_adriana_hoyos_template_has_no_reference_facts_assets_requests_or_controls():
+    rendered = render_report("adriana_hoyos", _adriana_builder_payload())
+
+    for forbidden in (
+        "innerHTML", "contenteditable", "downloadHTML", "downloadPDF", "openPin", "<img", "<video", "<iframe",
+        "http://", "https://", "fetch(", "XMLHttpRequest", "WebSocket", "window.open",
     ):
-        assert f'id="{section_id}"' in rendered
-    assert rendered.count('data-report-section="true"') == 8
-    assert "Acme Foods" in rendered
-    assert "2026-07-01" in rendered
-    assert 'timeZone: "UTC"' in rendered
-    assert "Embudo de resultados" in rendered
-    assert "Rendimiento por canal" in rendered
-    assert "Detalle de campañas" in rendered
-    assert "Análisis geográfico" in rendered
-    assert "window.REPORT_DATA" in rendered
-    assert ".textContent" in rendered
-    assert "Number.isFinite" in rendered
-
-
-def test_adriana_hoyos_template_hides_unavailable_sections_and_has_no_reference_leaks():
-    rendered = render_report("adriana_hoyos", {
-        "meta": {"company_name": "Acme", "platforms": [], "period": {"start": "2026-07-01", "end": "2026-07-31"}},
-        "summary": {}, "rates": {}, "deltas": {}, "by_platform": {}, "daily_series": [],
-        "rows": {"current": [], "prior": [], "supplemental": []},
-        "breakdowns": {}, "tables": {"export": []}, "narratives": [], "availability": {},
-    })
-
-    assert rendered.count('data-report-section="true" hidden') == 8
-    assert 'showSection("geography-section", geographyRows.length > 0)' in rendered
-    assert 'showSection("insights-section", narratives.length > 0)' in rendered
-    assert "Datos no disponibles" not in rendered
-    assert "innerHTML" not in rendered
-    assert "contenteditable" not in rendered
-    assert "downloadHTML" not in rendered
-    assert "downloadPDF" not in rendered
-    assert "openPin" not in rendered
-    assert "<img" not in rendered
-    assert "http://" not in rendered and "https://" not in rendered
+        assert forbidden not in rendered
     for leaked_identity in (
         "parmalat", "la lechera", "toni", "vita", "nutri", "shamuna", "adriana hoyos", "artz",
-        "season refresh", "summer sale", "galápagos iconic",
+        "season refresh", "summer sale", "galápagos iconic", "miami", "florida",
     ):
         assert leaked_identity not in rendered.casefold()
 

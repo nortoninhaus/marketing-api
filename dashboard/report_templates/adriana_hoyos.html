@@ -3,585 +3,98 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Reporte estratégico de marketing</title>
+  <title>Reporte ejecutivo de marketing</title>
   <style>
-    :root {
-      --ink: #2d251e;
-      --ink-soft: #6f665f;
-      --teal: #476f68;
-      --teal-dark: #254942;
-      --gold: #c5a059;
-      --sand: #f4efe8;
-      --paper: #fffdf9;
-      --line: #e4ddd4;
-      --white: #ffffff;
-      --shadow: 0 16px 45px rgba(45, 37, 30, 0.08);
-    }
-    * { box-sizing: border-box; }
-    html { scroll-behavior: smooth; }
-    body {
-      margin: 0;
-      color: var(--ink);
-      background: linear-gradient(180deg, #fbf8f3 0%, #f5f0e9 56%, #fbfaf7 100%);
-      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      line-height: 1.5;
-    }
-    button, select { font: inherit; }
-    [hidden] { display: none !important; }
-    .topbar {
-      position: sticky;
-      top: 0;
-      z-index: 20;
-      display: flex;
-      align-items: center;
-      gap: 20px;
-      min-height: 64px;
-      padding: 0 4vw;
-      overflow-x: auto;
-      border-bottom: 1px solid rgba(228, 221, 212, 0.9);
-      background: rgba(255, 253, 249, 0.92);
-      backdrop-filter: blur(14px);
-    }
-    .brand {
-      flex: 0 0 auto;
-      color: var(--teal-dark);
-      font-size: 12px;
-      font-weight: 900;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
-    }
-    .nav-button {
-      flex: 0 0 auto;
-      padding: 21px 0 18px;
-      border: 0;
-      border-bottom: 3px solid transparent;
-      color: var(--ink-soft);
-      background: transparent;
-      font-size: 11px;
-      font-weight: 850;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      cursor: pointer;
-    }
-    .nav-button:hover { color: var(--teal); border-bottom-color: var(--gold); }
-    .hero {
-      position: relative;
-      min-height: 500px;
-      padding: 84px max(6vw, 24px) 72px;
-      overflow: hidden;
-      border-bottom: 1px solid var(--line);
-      background:
-        radial-gradient(circle at 82% 28%, rgba(197, 160, 89, 0.18), transparent 23%),
-        radial-gradient(circle at 76% 74%, rgba(71, 111, 104, 0.17), transparent 27%),
-        var(--paper);
-    }
-    .hero::after {
-      content: "";
-      position: absolute;
-      right: -90px;
-      top: 70px;
-      width: 390px;
-      height: 390px;
-      border: 1px solid rgba(197, 160, 89, 0.34);
-      border-radius: 50% 40% 58% 42%;
-      transform: rotate(14deg);
-    }
-    .hero-content { position: relative; z-index: 1; max-width: 920px; }
-    .eyebrow {
-      margin-bottom: 18px;
-      color: var(--gold);
-      font-size: 12px;
-      font-weight: 900;
-      letter-spacing: 0.24em;
-      text-transform: uppercase;
-    }
-    h1 { margin: 0; max-width: 900px; font-family: Georgia, serif; font-size: clamp(48px, 7vw, 92px); line-height: 0.98; letter-spacing: -0.045em; }
-    h1 span { display: block; color: var(--teal); }
-    .hero-copy { max-width: 720px; margin: 28px 0 0; color: var(--ink-soft); font-size: 18px; }
-    .badge-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 30px; }
-    .badge, .chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 8px 14px;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      background: rgba(255,255,255,0.72);
-      color: var(--ink-soft);
-      font-size: 13px;
-      font-weight: 650;
-    }
-    .badge strong { color: var(--teal-dark); }
-    .chip-row { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 16px; }
-    .chip { border-color: rgba(71,111,104,0.24); color: var(--teal-dark); background: rgba(71,111,104,0.08); font-weight: 800; }
-    main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 72px 0 96px; }
-    .report-section { scroll-margin-top: 84px; margin-bottom: 88px; }
-    .section-head { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr); gap: 28px; align-items: end; margin-bottom: 24px; }
-    .section-kicker { margin-bottom: 7px; color: var(--gold); font-size: 11px; font-weight: 900; letter-spacing: 0.2em; text-transform: uppercase; }
-    .section-title { margin: 0; color: var(--teal-dark); font-family: Georgia, serif; font-size: clamp(32px, 4vw, 50px); line-height: 1.03; letter-spacing: -0.035em; }
-    .section-desc { margin: 0; color: var(--ink-soft); font-size: 15px; }
-    .period-banner {
-      display: flex;
-      justify-content: space-between;
-      gap: 16px;
-      margin-bottom: 24px;
-      padding: 20px 24px;
-      border-radius: 18px;
-      color: var(--white);
-      background: linear-gradient(125deg, var(--ink), #473b31);
-      box-shadow: var(--shadow);
-    }
-    .period-banner strong { font-family: Georgia, serif; font-size: 22px; }
-    .period-banner span { color: #e4d7c5; }
-    .grid { display: grid; gap: 18px; }
-    .stats-grid { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
-    .two-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .card {
-      min-width: 0;
-      padding: 24px;
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      background: rgba(255,255,255,0.86);
-      box-shadow: var(--shadow);
-    }
-    .stat-card { position: relative; overflow: hidden; border-top: 4px solid var(--gold); }
-    .stat-card:nth-child(even) { border-top-color: var(--teal); }
-    .stat-label { color: var(--ink-soft); font-size: 11px; font-weight: 850; letter-spacing: 0.12em; text-transform: uppercase; }
-    .stat-value { margin-top: 7px; color: var(--teal-dark); font-family: Georgia, serif; font-size: clamp(24px, 2.4vw, 36px); font-weight: 700; line-height: 1; }
-    .stat-delta { margin-top: 11px; font-size: 12px; font-weight: 800; }
-    .up { color: #23764d; }
-    .down { color: #a33c32; }
-    .neutral { color: var(--ink-soft); }
-    .funnel { display: grid; gap: 10px; align-items: center; }
-    .funnel-stage {
-      display: flex;
-      justify-content: space-between;
-      gap: 20px;
-      min-width: 46%;
-      margin-inline: auto;
-      padding: 15px 22px;
-      border-radius: 12px;
-      color: var(--white);
-      background: linear-gradient(105deg, var(--teal-dark), var(--teal));
-      box-shadow: 0 8px 20px rgba(37, 73, 66, 0.14);
-    }
-    .funnel-stage:nth-child(even) { background: linear-gradient(105deg, #7d6040, var(--gold)); }
-    .funnel-name { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
-    .funnel-value { font-family: Georgia, serif; font-size: 22px; font-weight: 700; }
-    .channel-list { display: grid; gap: 16px; }
-    .channel-card { border-left: 5px solid var(--teal); }
-    .channel-head { display: flex; justify-content: space-between; gap: 16px; align-items: baseline; }
-    .channel-name { color: var(--teal-dark); font-family: Georgia, serif; font-size: 24px; font-weight: 700; }
-    .channel-total { color: var(--gold); font-size: 14px; font-weight: 850; }
-    .meter { height: 8px; margin: 16px 0; overflow: hidden; border-radius: 999px; background: #ebe6df; }
-    .meter-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--teal-dark), var(--gold)); }
-    .metric-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-    .metric-chip { padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--sand); color: var(--ink-soft); font-size: 12px; }
-    .card-title { margin: 0 0 18px; color: var(--teal-dark); font-family: Georgia, serif; font-size: 21px; }
-    .chart-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-    .chart-select { padding: 8px 12px; border: 1px solid var(--line); border-radius: 9px; color: var(--teal-dark); background: var(--white); }
-    .chart-frame { min-height: 300px; padding: 14px 0; }
-    #trend-chart { display: block; width: 100%; min-width: 620px; height: 280px; }
-    .chart-scroll { overflow-x: auto; }
-    .chart-axis { stroke: #cfc7bd; stroke-width: 1; }
-    .chart-area { fill: rgba(71, 111, 104, 0.12); }
-    .chart-line { fill: none; stroke: var(--teal); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
-    .chart-dot { fill: var(--gold); stroke: var(--white); stroke-width: 3; }
-    .chart-label { fill: var(--ink-soft); font-size: 11px; }
-    .chart-value { fill: var(--teal-dark); font-size: 11px; font-weight: 800; }
-    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; }
-    table { width: 100%; min-width: 680px; border-collapse: collapse; background: var(--white); }
-    caption { padding: 14px 16px; color: var(--teal-dark); font-weight: 850; text-align: left; }
-    th, td { padding: 13px 15px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
-    th { color: var(--ink-soft); background: var(--sand); font-size: 10px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; }
-    td { color: var(--ink); font-size: 13px; }
-    tbody tr:last-child td { border-bottom: 0; }
-    td:first-child { color: var(--teal-dark); font-weight: 800; }
-    .breakdown-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-    .breakdown-list { display: grid; gap: 12px; }
-    .breakdown-meta { display: flex; justify-content: space-between; gap: 14px; color: var(--ink-soft); font-size: 13px; }
-    .breakdown-name { font-weight: 700; }
-    .breakdown-value { color: var(--teal-dark); font-weight: 850; }
-    .breakdown-bar { height: 7px; margin-top: 6px; overflow: hidden; border-radius: 999px; background: #ece7e0; }
-    .breakdown-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--gold), var(--teal)); }
-    .content-grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-    .content-card { position: relative; border-top: 4px solid var(--teal); }
-    .content-rank { color: var(--gold); font-size: 11px; font-weight: 900; letter-spacing: 0.14em; text-transform: uppercase; }
-    .content-name { margin: 9px 0 14px; color: var(--teal-dark); font-family: Georgia, serif; font-size: 21px; font-weight: 700; }
-    .content-platform { margin-bottom: 14px; color: var(--ink-soft); font-size: 12px; font-weight: 750; }
-    .narrative-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
-    .narrative { margin: 0; padding: 23px 25px; border: 1px solid rgba(197,160,89,0.35); border-left: 5px solid var(--gold); border-radius: 16px; background: rgba(255,253,249,0.92); color: var(--ink); box-shadow: var(--shadow); }
-    footer { padding: 28px 20px 42px; border-top: 1px solid var(--line); color: var(--ink-soft); text-align: center; font-size: 12px; }
-    @media (max-width: 760px) {
-      .topbar { gap: 16px; padding-inline: 18px; }
-      .brand { display: none; }
-      .hero { min-height: auto; padding: 58px 20px; }
-      .hero::after { width: 230px; height: 230px; opacity: 0.55; }
-      .hero-copy { font-size: 16px; }
-      main { width: min(100% - 28px, 1180px); padding-top: 54px; }
-      .report-section { margin-bottom: 64px; }
-      .section-head, .two-grid { grid-template-columns: 1fr; }
-      .section-desc { margin-top: -8px; }
-      .period-banner { flex-direction: column; }
-      .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .card { padding: 20px; }
-      .funnel-stage { width: 100% !important; }
-      .chart-toolbar { align-items: flex-start; }
-      .narrative-list { grid-template-columns: 1fr; }
-    }
-    @media print {
-      .topbar { display: none; }
-      body { background: var(--white); }
-      .hero { min-height: auto; }
-      .report-section { break-inside: avoid; }
-      .card { box-shadow: none; }
-    }
+    :root{--ink:#241f1a;--muted:#655f58;--teal:#315e58;--teal-dark:#183f3a;--gold:#76591b;--gold-soft:#eadfca;--paper:#fffdf9;--sand:#f2ede5;--line:#d9d1c6;--white:#fff;--shadow:0 16px 42px rgba(36,31,26,.09)}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background:#f7f4ef;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.5}[hidden]{display:none!important}button{font:inherit}
+    .topbar{position:sticky;top:0;z-index:10;display:flex;gap:22px;align-items:center;min-height:62px;padding:0 4vw;overflow-x:auto;border-bottom:1px solid var(--line);background:rgba(255,253,249,.96)}
+    .brand{flex:0 0 auto;color:var(--teal-dark);font-size:11px;font-weight:900;letter-spacing:.18em;text-transform:uppercase}.nav-button{flex:0 0 auto;padding:21px 0 17px;border:0;border-bottom:3px solid transparent;color:var(--muted);background:transparent;font-size:11px;font-weight:850;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}.nav-button:hover{color:var(--teal-dark);border-bottom-color:var(--gold)}
+    .hero{position:relative;display:grid;grid-template-columns:minmax(0,1.35fr) minmax(280px,.65fr);gap:48px;align-items:end;min-height:540px;padding:78px max(6vw,24px);overflow:hidden;color:var(--white);background:linear-gradient(130deg,#172c29 0%,#315e58 58%,#234640 100%)}
+    .hero::after{content:"";position:absolute;right:-90px;top:30px;width:390px;height:480px;border:1px solid rgba(234,223,202,.42);border-radius:50% 34% 55% 39%;transform:rotate(13deg)}.hero-main,.hero-card{position:relative;z-index:1}
+    .eyebrow,.section-kicker{color:var(--gold);font-size:11px;font-weight:900;letter-spacing:.2em;text-transform:uppercase}.hero .eyebrow{color:#f2dfb5}h1{max-width:820px;margin:18px 0 0;font-family:Georgia,serif;font-size:clamp(50px,7vw,92px);line-height:.96;letter-spacing:-.045em}h1 span{display:block;color:#f2dfb5}.hero-copy{max-width:660px;margin:28px 0 0;color:#e2ecea;font-size:17px}
+    .hero-card{padding:28px;border:1px solid rgba(255,255,255,.24);border-radius:22px;background:rgba(12,33,30,.36);backdrop-filter:blur(10px)}.hero-label{color:#d9e5e2;font-size:10px;font-weight:850;letter-spacing:.14em;text-transform:uppercase}.hero-period{margin-top:8px;color:var(--white);font-family:Georgia,serif;font-size:24px}.chip-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:24px}.chip{padding:7px 10px;border:1px solid rgba(255,255,255,.22);border-radius:999px;color:#e2ecea;font-size:12px;font-weight:750}
+    main{width:min(1180px,calc(100% - 40px));margin:0 auto;padding:76px 0 96px}.report-section{scroll-margin-top:82px;margin-bottom:92px}.section-head{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(260px,.8fr);gap:30px;align-items:end;margin-bottom:26px}.section-title{margin:7px 0 0;color:var(--teal-dark);font-family:Georgia,serif;font-size:clamp(34px,4.5vw,54px);line-height:1;letter-spacing:-.035em}.section-desc{margin:0;color:var(--muted)}
+    .section-band{display:flex;justify-content:space-between;gap:18px;margin-bottom:22px;padding:18px 22px;border-radius:16px;color:var(--white);background:var(--teal-dark);box-shadow:var(--shadow)}.section-band strong{font-family:Georgia,serif;font-size:21px}.section-band span{color:#d8e6e3}.stack{display:grid;gap:22px}.grid{display:grid;gap:18px}.stats-grid{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}.two-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .card{min-width:0;padding:24px;border:1px solid var(--line);border-radius:18px;background:var(--paper);box-shadow:var(--shadow)}.card-title{margin:0 0 18px;color:var(--teal-dark);font-family:Georgia,serif;font-size:22px}.stat-card{border-top:4px solid var(--teal)}.stat-card:nth-child(3n+2){border-top-color:var(--gold)}.stat-label{color:var(--muted);font-size:10px;font-weight:900;letter-spacing:.11em;text-transform:uppercase}.stat-value{margin-top:8px;overflow-wrap:anywhere;color:var(--teal-dark);font-family:Georgia,serif;font-size:clamp(24px,2.5vw,36px);font-weight:700;line-height:1}.stat-delta{margin-top:10px;color:var(--muted);font-size:12px;font-weight:750}
+    .funnel{display:grid;gap:9px}.funnel-stage{display:flex;justify-content:space-between;gap:20px;margin-inline:auto;padding:14px 20px;border-radius:10px;color:var(--white);background:linear-gradient(105deg,var(--teal-dark),var(--teal))}.funnel-stage:nth-child(even){background:linear-gradient(105deg,#5e4818,var(--gold))}.funnel-stage span:first-child{font-size:11px;font-weight:850;letter-spacing:.08em;text-transform:uppercase}.funnel-stage span:last-child{font-family:Georgia,serif;font-size:20px;font-weight:700}
+    .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:14px}table{width:100%;min-width:680px;border-collapse:collapse;background:var(--white)}caption{padding:13px 15px;color:var(--teal-dark);font-weight:850;text-align:left}th,td{padding:12px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{color:var(--muted);background:var(--sand);font-size:10px;font-weight:900;letter-spacing:.09em;text-transform:uppercase}td{font-size:13px}tbody tr:last-child td{border-bottom:0}td:first-child{color:var(--teal-dark);font-weight:800}
+    .chart{display:flex;align-items:end;gap:4px;min-height:260px;padding:28px 10px 38px;border-bottom:1px solid var(--line);overflow:hidden}.chart-point{position:relative;flex:1 1 0;min-width:4px;max-width:24px;border-radius:5px 5px 0 0;background:linear-gradient(180deg,var(--gold),var(--teal))}.chart-point:hover::after{content:attr(data-value);position:absolute;left:50%;bottom:calc(100% + 6px);padding:3px 6px;border-radius:5px;color:var(--white);background:var(--ink);font-size:10px;transform:translateX(-50%)}.chart-point[data-trend-tick]::before{content:attr(data-label);position:absolute;left:50%;top:calc(100% + 8px);color:var(--muted);font-size:9px;white-space:nowrap;transform:translateX(-50%) rotate(-35deg);transform-origin:top center}
+    .channel-grid{grid-template-columns:repeat(auto-fit,minmax(235px,1fr))}.channel-card{border-left:5px solid var(--teal)}.channel-name{color:var(--teal-dark);font-family:Georgia,serif;font-size:22px;font-weight:700}.metric-list{display:flex;flex-wrap:wrap;gap:7px;margin-top:14px}.metric-chip{padding:6px 9px;border-radius:8px;color:var(--muted);background:var(--sand);font-size:12px}.traffic-chart{display:grid;gap:12px}.bar-row{display:grid;grid-template-columns:minmax(110px,.35fr) minmax(0,1fr) auto;gap:12px;align-items:center;font-size:12px}.bar-track{height:9px;overflow:hidden;border-radius:999px;background:var(--sand)}.bar-fill{height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--teal),var(--gold))}
+    .narrative-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}.narrative{margin:0;padding:22px 24px;border:1px solid var(--gold-soft);border-left:5px solid var(--gold);border-radius:15px;background:var(--paper);box-shadow:var(--shadow)}.accent-text{color:var(--gold)}footer{padding:28px 20px 42px;border-top:1px solid var(--line);color:var(--muted);text-align:center;font-size:12px}
+    @media(max-width:760px){.brand{display:none}.topbar{padding-inline:18px}.hero{grid-template-columns:1fr;min-height:auto;padding:58px 20px}.hero-card{max-width:440px}main{width:min(100% - 28px,1180px);padding-top:54px}.report-section{margin-bottom:66px}.section-head,.two-grid{grid-template-columns:1fr}.section-band{flex-direction:column}.stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.card{padding:19px}.funnel-stage{width:100%!important}.bar-row{grid-template-columns:90px minmax(0,1fr)}.bar-row strong{grid-column:2}}
+    @media print{.topbar{display:none}body{background:var(--white)}.hero{min-height:auto}.report-section,.card{break-inside:avoid;box-shadow:none}}
   </style>
 </head>
 <body>
   <nav class="topbar" aria-label="Secciones del reporte">
-    <span class="brand">Reporte estratégico</span>
-    <button class="nav-button" data-target="overview-section" hidden>Resumen</button>
-    <button class="nav-button" data-target="funnel-section" hidden>Embudo</button>
-    <button class="nav-button" data-target="channels-section" hidden>Canales</button>
-    <button class="nav-button" data-target="trend-section" hidden>Tendencia</button>
-    <button class="nav-button" data-target="campaigns-section" hidden>Campañas</button>
-    <button class="nav-button" data-target="geography-section" hidden>Segmentos</button>
-    <button class="nav-button" data-target="content-section" hidden>Contenido</button>
-    <button class="nav-button" data-target="insights-section" hidden>Hallazgos</button>
+    <span class="brand">Reporte ejecutivo</span>
+    <button class="nav-button" data-target="season-report" hidden>Campaña regional</button>
+    <button class="nav-button" data-target="summer-report" hidden>Rendimiento consolidado</button>
+    <button class="nav-button" data-target="ao2-report" hidden>Tráfico multicanal</button>
+    <button class="nav-button" data-target="insights-report" hidden>Hallazgos</button>
   </nav>
-
   <header class="hero" id="cover-section">
-    <div class="hero-content">
-      <div class="eyebrow">Reporte consolidado de agencia</div>
-      <h1>Marketing digital <span id="company-name"></span></h1>
-      <p class="hero-copy">Resultados de las cuentas, canales y filtros seleccionados, organizados en una lectura ejecutiva de rendimiento.</p>
-      <div class="badge-row">
-        <span class="badge">Período <strong id="report-period"></strong></span>
-        <span class="badge">Generado <strong id="generated-at"></strong></span>
-      </div>
-      <div class="chip-row" id="cover-platforms" aria-label="Canales incluidos"></div>
-    </div>
+    <div class="hero-main"><div class="eyebrow">Reporte de pauta y tráfico</div><h1>Resultados digitales <span id="company-name"></span></h1><p class="hero-copy">Una lectura por campaña, mercado y fuente construida únicamente con la información disponible para la cuenta seleccionada.</p></div>
+    <div class="hero-card"><div class="hero-label">Período analizado</div><div class="hero-period" id="report-period"></div><div class="chip-row" id="platform-chips" aria-label="Fuentes incluidas"></div></div>
   </header>
-
   <main>
-    <section class="report-section" id="overview-section" data-report-section="true" hidden>
-      <div class="period-banner"><strong id="overview-company"></strong><span id="overview-period"></span></div>
-      <div class="section-head">
-        <div><div class="section-kicker">Panorama del período</div><h2 class="section-title">Métricas consolidadas</h2></div>
-        <p class="section-desc">Indicadores oficiales disponibles para la selección activa y su variación frente al período anterior.</p>
-      </div>
-      <div class="grid stats-grid" id="overview-cards"></div>
-    </section>
-
-    <section class="report-section" id="funnel-section" data-report-section="true" hidden>
-      <div class="section-head">
-        <div><div class="section-kicker">Recorrido de resultados</div><h2 class="section-title">Embudo de resultados</h2></div>
-        <p class="section-desc">Secuencia construida únicamente con etapas medibles presentes en los datos del período.</p>
-      </div>
-      <div class="card"><div class="funnel" id="result-funnel"></div></div>
-    </section>
-
-    <section class="report-section" id="channels-section" data-report-section="true" hidden>
-      <div class="section-head">
-        <div><div class="section-kicker">Distribución multicanal</div><h2 class="section-title">Rendimiento por canal</h2></div>
-        <p class="section-desc">Comparación de inversión, alcance y resultados según las métricas disponibles en cada fuente.</p>
-      </div>
-      <div class="channel-list" id="channel-list"></div>
-    </section>
-
-    <section class="report-section" id="trend-section" data-report-section="true" hidden>
-      <div class="section-head">
-        <div><div class="section-kicker">Evolución temporal</div><h2 class="section-title">Tendencia del período</h2></div>
-        <p class="section-desc">Comportamiento diario agregado de los canales seleccionados.</p>
-      </div>
-      <div class="card">
-        <div class="chart-toolbar"><h3 class="card-title">Serie diaria</h3><label>Métrica <select class="chart-select" id="trend-metric" aria-label="Métrica de tendencia"></select></label></div>
-        <div class="chart-scroll"><div class="chart-frame"><svg id="trend-chart" role="img" aria-label="Gráfico de tendencia"></svg></div></div>
-        <div class="table-wrap"><table><caption>Detalle de la serie</caption><thead><tr><th>Fecha</th><th>Canal</th><th id="trend-table-metric">Valor</th></tr></thead><tbody id="trend-table"></tbody></table></div>
+    <section class="report-section" id="season-report" hidden>
+      <div class="section-band"><strong id="season-company"></strong><span id="season-period"></span></div>
+      <div class="section-head"><div><div class="section-kicker accent-text">Campaña regional</div><h2 class="section-title">Resultados por ciudad y campaña</h2></div><p class="section-desc">Embudo medible, distribución geográfica y detalle de campañas con datos actuales.</p></div>
+      <div class="stack">
+        <article class="card" id="season-funnel-card" hidden><h3 class="card-title">Embudo de resultados</h3><div class="funnel" id="season-funnel"></div></article>
+        <div class="two-grid grid">
+          <article class="card" id="season-city-card" hidden><h3 class="card-title">Desglose por ciudad</h3><div class="table-wrap"><table><thead><tr><th>Ciudad</th><th>Resultado disponible</th></tr></thead><tbody id="season-city-body"></tbody></table></div></article>
+          <article class="card" id="season-campaign-card" hidden><h3 class="card-title">Segmentación por campaña</h3><div class="table-wrap"><table><thead><tr><th>Campaña</th><th>Resultado disponible</th></tr></thead><tbody id="season-campaign-body"></tbody></table></div></article>
+        </div>
       </div>
     </section>
-
-    <section class="report-section" id="campaigns-section" data-report-section="true" hidden>
-      <div class="section-head">
-        <div><div class="section-kicker">Portafolio activo</div><h2 class="section-title">Detalle de campañas</h2></div>
-        <p class="section-desc">Campañas ordenadas por su principal indicador medible, sin incorporar objetivos o resultados ajenos a la cuenta.</p>
+    <section class="report-section" id="summer-report" hidden>
+      <div class="section-head"><div><div class="section-kicker accent-text">Rendimiento consolidado</div><h2 class="section-title">Campaña y evolución diaria</h2></div><p class="section-desc">Totales del período, tendencia diaria y campañas ordenadas por el primer resultado medible.</p></div>
+      <div class="stack">
+        <div class="grid stats-grid" id="summer-kpis"></div>
+        <article class="card" id="summer-trend-card" hidden><h3 class="card-title">Tendencia diaria de impresiones</h3><div class="chart" id="summer-chart" data-family="daily-chart" role="img" aria-label="Tendencia diaria de impresiones"></div><div class="table-wrap"><table><caption>Detalle diario por fuente</caption><thead><tr><th>Fecha</th><th>Fuente</th><th>Impresiones</th></tr></thead><tbody id="summer-daily-body"></tbody></table></div></article>
+        <article class="card" id="summer-campaign-card" hidden><h3 class="card-title">Rendimiento de campañas</h3><div class="table-wrap"><table><thead><tr id="summer-campaign-head"></tr></thead><tbody id="summer-campaign-body"></tbody></table></div></article>
       </div>
-      <div class="card"><div class="table-wrap"><table><caption>Rendimiento de campañas</caption><thead><tr id="campaign-head"></tr></thead><tbody id="campaign-table"></tbody></table></div></div>
     </section>
-
-    <section class="report-section" id="geography-section" data-report-section="true" hidden>
-      <div class="section-head">
-        <div><div class="section-kicker">Ubicación y segmentos</div><h2 class="section-title">Análisis geográfico</h2></div>
-        <p class="section-desc">Desgloses disponibles por ubicación, edad, género u otras dimensiones obtenidas de las plataformas.</p>
+    <section class="report-section" id="ao2-report" hidden>
+      <div class="section-head"><div><div class="section-kicker accent-text">Tráfico multicanal</div><h2 class="section-title">Pauta, producto y analítica</h2></div><p class="section-desc">Fuentes de tráfico, campañas de descubrimiento, productos medidos y segmentación por país.</p></div>
+      <div class="stack">
+        <div class="grid channel-grid" id="ao2-channels"></div>
+        <article class="card" id="traffic-chart-card" hidden><h3 class="card-title">Distribución de tráfico medible</h3><div class="traffic-chart" id="traffic-chart" data-family="traffic-chart"></div></article>
+        <article class="card" id="pinterest-card" hidden><h3 class="card-title">Resultados de descubrimiento visual</h3><div class="table-wrap"><table><thead><tr id="pinterest-head"></tr></thead><tbody id="pinterest-body"></tbody></table></div></article>
+        <article class="card" id="product-card" hidden><h3 class="card-title">Rendimiento por producto</h3><div class="table-wrap"><table><thead><tr><th>Producto</th><th>Sesiones</th><th>Usuarios</th><th>Páginas vistas</th></tr></thead><tbody id="product-body"></tbody></table></div></article>
+        <div class="two-grid grid">
+          <article class="card" id="traffic-card" hidden><h3 class="card-title">Resumen por fuente</h3><div class="table-wrap"><table><thead><tr><th>Fuente</th><th>Sesiones o clics</th><th>Inversión</th></tr></thead><tbody id="traffic-body"></tbody></table></div></article>
+          <article class="card" id="country-card" hidden><h3 class="card-title">Segmentación por país</h3><div class="table-wrap"><table><thead><tr><th>País</th><th>Resultado disponible</th></tr></thead><tbody id="country-body"></tbody></table></div></article>
+        </div>
       </div>
-      <div class="grid breakdown-grid" id="geography-grid"></div>
     </section>
-
-    <section class="report-section" id="content-section" data-report-section="true" hidden>
-      <div class="section-head">
-        <div><div class="section-kicker">Piezas destacadas</div><h2 class="section-title">Contenido con mejor resultado</h2></div>
-        <p class="section-desc">Ranking dinámico basado en la primera métrica de resultado disponible para cada pieza o campaña.</p>
-      </div>
-      <div class="grid content-grid" id="content-grid"></div>
-    </section>
-
-    <section class="report-section" id="insights-section" data-report-section="true" hidden>
-      <div class="section-head">
-        <div><div class="section-kicker">Lectura ejecutiva</div><h2 class="section-title">Hallazgos del período</h2></div>
-        <p class="section-desc">Narrativas generadas exclusivamente con datos de la cuenta seleccionada.</p>
-      </div>
-      <div class="narrative-list" id="narrative-list"></div>
-    </section>
+    <section class="report-section" id="insights-report" hidden><div class="section-head"><div><div class="section-kicker accent-text">Insights del período</div><h2 class="section-title">Hallazgos respaldados por datos</h2></div><p class="section-desc">Narrativas generadas para la cuenta y el período seleccionados, sin recomendaciones inventadas.</p></div><div class="narrative-list" id="insights-list"></div></section>
   </main>
-
   <footer><span id="footer-company"></span> · <span id="footer-period"></span></footer>
-
   <!-- REPORT_DATA -->
   <script>
-    (() => {
-      "use strict";
-      const data = window.REPORT_DATA || {};
-      const meta = data.meta || {};
-      const summary = data.summary || {};
-      const previous = data.summary_previous || {};
-      const rates = data.rates || {};
-      const deltas = data.deltas || {};
-      const channels = data.by_platform || {};
-      const series = Array.isArray(data.daily_series) ? data.daily_series : [];
-      const rows = data.rows || {};
-      const breakdowns = data.breakdowns || {};
-      const narratives = Array.isArray(data.narratives) ? data.narratives : [];
-      const labels = {
-        spend: "Inversión", impressions: "Impresiones", reach: "Alcance", clicks: "Clics",
-        conversions: "Conversiones", lead: "Clientes potenciales", results: "Resultados",
-        engagement: "Interacciones", post_engagement: "Interacciones con publicaciones",
-        followers: "Seguidores", views: "Visualizaciones", sessions: "Sesiones", users: "Usuarios",
-        pageviews: "Páginas vistas", outbound_clicks: "Clics salientes", saves: "Guardados",
-        ctr: "CTR", cpc: "CPC", cpm: "CPM", cpa: "CPA", conversion_rate: "Tasa de conversión"
-      };
-      const moneyMetrics = new Set(["spend", "cpc", "cpm", "cpa", "cost", "cost_per_result"]);
-      const percentMetrics = new Set(["ctr", "conversion_rate", "bounce_rate", "share"]);
-      const number = value => typeof value === "number" && Number.isFinite(value);
-      const metricLabel = key => labels[key] || key.replaceAll("_", " ").replace(/\b\w/g, letter => letter.toUpperCase());
-      const channelLabel = key => key.replaceAll("_", " ").replace(/\b\w/g, letter => letter.toUpperCase());
-      const format = (key, value) => {
-        if (!number(value)) return "";
-        if (moneyMetrics.has(key)) return new Intl.NumberFormat("es-EC", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(value);
-        if (percentMetrics.has(key)) return new Intl.NumberFormat("es-EC", { maximumFractionDigits: 2 }).format(value) + "%";
-        return new Intl.NumberFormat("es-EC", { notation: Math.abs(value) >= 1000000 ? "compact" : "standard", maximumFractionDigits: 2 }).format(value);
-      };
-      const formatDate = value => {
-        if (!value) return "";
-        const parsed = new Date(value);
-        return Number.isNaN(parsed.getTime()) ? String(value) : new Intl.DateTimeFormat("es-EC", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(parsed);
-      };
-      const element = (tag, className, value) => {
-        const node = document.createElement(tag);
-        if (className) node.className = className;
-        if (value !== undefined && value !== null) node.textContent = String(value);
-        return node;
-      };
-      const showSection = (id, visible) => {
-        const section = document.getElementById(id);
-        const nav = document.querySelector('[data-target="' + id + '"]');
-        if (visible) {
-          section.hidden = false;
-          if (nav) nav.hidden = false;
-        }
-      };
-
-      const company = meta.company_name || "Cuenta seleccionada";
-      const period = meta.period || {};
-      const periodText = [formatDate(period.start), formatDate(period.end)].filter(Boolean).join(" — ");
-      window.reportText(document.getElementById("company-name"), company);
-      window.reportText(document.getElementById("overview-company"), company);
-      window.reportText(document.getElementById("overview-period"), periodText);
-      window.reportText(document.getElementById("report-period"), periodText);
-      window.reportText(document.getElementById("generated-at"), formatDate(meta.generated_at));
-      window.reportText(document.getElementById("footer-company"), company);
-      window.reportText(document.getElementById("footer-period"), periodText);
-
-      const coverPlatforms = document.getElementById("cover-platforms");
-      (Array.isArray(meta.platforms) ? meta.platforms : Object.keys(channels)).forEach(key => coverPlatforms.append(element("span", "chip", channelLabel(key))));
-
-      const priority = ["spend", "impressions", "reach", "clicks", "conversions", "lead", "results", "engagement", "followers", "views", "sessions", "users"];
-      const summaryEntries = priority.filter(key => number(summary[key])).map(key => [key, summary[key]]);
-      Object.keys(summary).filter(key => !priority.includes(key) && number(summary[key])).forEach(key => summaryEntries.push([key, summary[key]]));
-      const overviewCards = document.getElementById("overview-cards");
-      [...summaryEntries, ...Object.entries(rates).filter(([, value]) => number(value))].slice(0, 10).forEach(([key, value]) => {
-        const card = element("article", "card stat-card");
-        card.append(element("div", "stat-label", metricLabel(key)));
-        card.append(element("div", "stat-value", format(key, value)));
-        if (number(deltas[key])) {
-          const delta = deltas[key];
-          card.append(element("div", "stat-delta " + (delta > 0 ? "up" : delta < 0 ? "down" : "neutral"), (delta > 0 ? "↑ " : delta < 0 ? "↓ " : "") + format("share", Math.abs(delta)) + " vs. período anterior"));
-        }
-        overviewCards.append(card);
-      });
-      showSection("overview-section", summaryEntries.length > 0 || Object.values(rates).some(number));
-
-      const funnelKeys = ["impressions", "reach", "views", "clicks", "engagement", "conversions", "lead", "results"];
-      const funnelEntries = funnelKeys.filter(key => number(summary[key])).map(key => [key, summary[key]]);
-      const resultFunnel = document.getElementById("result-funnel");
-      funnelEntries.forEach(([key, value], index) => {
-        const stage = element("div", "funnel-stage");
-        stage.style.width = Math.max(46, 100 - index * (54 / Math.max(funnelEntries.length - 1, 1))) + "%";
-        stage.append(element("span", "funnel-name", metricLabel(key)));
-        stage.append(element("span", "funnel-value", format(key, value)));
-        resultFunnel.append(stage);
-      });
-      showSection("funnel-section", funnelEntries.length > 1);
-
-      const channelEntries = Object.entries(channels).filter(([, metrics]) => metrics && Object.values(metrics).some(number));
-      const totalSpend = channelEntries.reduce((total, [, metrics]) => total + (number(metrics.spend) ? metrics.spend : 0), 0);
-      const channelList = document.getElementById("channel-list");
-      channelEntries.forEach(([key, metrics]) => {
-        const card = element("article", "card channel-card");
-        const head = element("div", "channel-head");
-        head.append(element("div", "channel-name", channelLabel(key)));
-        head.append(element("div", "channel-total", number(metrics.spend) ? format("spend", metrics.spend) : ""));
-        card.append(head);
-        if (totalSpend > 0 && number(metrics.spend)) {
-          const meter = element("div", "meter");
-          const fill = element("div", "meter-fill");
-          fill.style.width = Math.max(2, metrics.spend / totalSpend * 100) + "%";
-          meter.append(fill); card.append(meter);
-        }
-        const chips = element("div", "metric-chips");
-        Object.entries(metrics).filter(([, value]) => number(value)).slice(0, 8).forEach(([metric, value]) => chips.append(element("span", "metric-chip", metricLabel(metric) + ": " + format(metric, value))));
-        card.append(chips); channelList.append(card);
-      });
-      showSection("channels-section", channelEntries.length > 0);
-
-      const seriesMetrics = [...new Set(series.flatMap(item => Object.entries(item.metrics || {}).filter(([, value]) => number(value)).map(([key]) => key)))];
-      const trendSelect = document.getElementById("trend-metric");
-      seriesMetrics.forEach(key => { const option = element("option", "", metricLabel(key)); option.value = key; trendSelect.append(option); });
-      const drawTrend = metric => {
-        const daily = new Map();
-        series.forEach(item => { const value = (item.metrics || {})[metric]; if (number(value)) daily.set(item.date, (daily.get(item.date) || 0) + value); });
-        const points = [...daily.entries()].sort(([a], [b]) => a.localeCompare(b));
-        const svg = document.getElementById("trend-chart");
-        while (svg.firstChild) svg.removeChild(svg.firstChild);
-        const width = 900, height = 260, left = 58, right = 22, top = 28, bottom = 44;
-        svg.setAttribute("viewBox", "0 0 " + width + " " + height);
-        const max = Math.max(...points.map(([, value]) => value), 1);
-        const x = index => left + (points.length === 1 ? (width - left - right) / 2 : index * (width - left - right) / (points.length - 1));
-        const y = value => top + (height - top - bottom) * (1 - value / max);
-        const ns = "http:" + "//www.w3.org/2000/svg";
-        const axis = document.createElementNS(ns, "line");
-        axis.setAttribute("class", "chart-axis"); axis.setAttribute("x1", left); axis.setAttribute("x2", width - right); axis.setAttribute("y1", height - bottom); axis.setAttribute("y2", height - bottom); svg.append(axis);
-        if (points.length) {
-          const coords = points.map(([, value], index) => x(index) + "," + y(value));
-          const area = document.createElementNS(ns, "polygon");
-          area.setAttribute("class", "chart-area"); area.setAttribute("points", left + "," + (height - bottom) + " " + coords.join(" ") + " " + (width - right) + "," + (height - bottom)); svg.append(area);
-          const line = document.createElementNS(ns, "polyline");
-          line.setAttribute("class", "chart-line"); line.setAttribute("points", coords.join(" ")); svg.append(line);
-          points.forEach(([day, value], index) => {
-            const dot = document.createElementNS(ns, "circle");
-            dot.setAttribute("class", "chart-dot"); dot.setAttribute("cx", x(index)); dot.setAttribute("cy", y(value)); dot.setAttribute("r", 6); svg.append(dot);
-            const label = document.createElementNS(ns, "text");
-            label.setAttribute("class", "chart-label"); label.setAttribute("x", x(index)); label.setAttribute("y", height - 16); label.setAttribute("text-anchor", "middle"); label.textContent = formatDate(day); svg.append(label);
-            const valueText = document.createElementNS(ns, "text");
-            valueText.setAttribute("class", "chart-value"); valueText.setAttribute("x", x(index)); valueText.setAttribute("y", Math.max(16, y(value) - 12)); valueText.setAttribute("text-anchor", "middle"); valueText.textContent = format(metric, value); svg.append(valueText);
-          });
-        }
-        const table = document.getElementById("trend-table");
-        while (table.firstChild) table.removeChild(table.firstChild);
-        window.reportText(document.getElementById("trend-table-metric"), metricLabel(metric));
-        series.filter(item => number((item.metrics || {})[metric])).forEach(item => {
-          const row = element("tr");
-          row.append(element("td", "", formatDate(item.date)));
-          row.append(element("td", "", channelLabel(item.platform || "unscoped")));
-          row.append(element("td", "", format(metric, item.metrics[metric])));
-          table.append(row);
-        });
-      };
-      if (seriesMetrics.length) {
-        const preferred = ["impressions", "reach", "spend", "clicks", "conversions"].find(key => seriesMetrics.includes(key)) || seriesMetrics[0];
-        trendSelect.value = preferred; drawTrend(preferred);
-        trendSelect.addEventListener("change", event => drawTrend(event.target.value));
-      }
-      showSection("trend-section", seriesMetrics.length > 0);
-
-      const rawContent = [...(Array.isArray(rows.current) ? rows.current : []), ...(Array.isArray(rows.supplemental) ? rows.supplemental : [])];
-      const contentRows = rawContent.length ? rawContent : (Array.isArray((data.tables || {}).export) ? data.tables.export : []);
-      const metricPriority = ["conversions", "results", "lead", "clicks", "engagement", "post_engagement", "reach", "impressions", "spend"];
-      const contentMetrics = [...new Set(contentRows.flatMap(row => Object.entries(row.source_metrics || row).filter(([key, value]) => number(value) && !["client_id", "user_id"].includes(key)).map(([key]) => key)))];
-      contentMetrics.sort((a, b) => {
-        const ai = metricPriority.indexOf(a), bi = metricPriority.indexOf(b);
-        return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi) || a.localeCompare(b);
-      });
-      const visibleMetrics = contentMetrics.slice(0, 6);
-      const scoreMetric = visibleMetrics[0];
-      const rankedContent = [...contentRows].sort((a, b) => ((b.source_metrics || b)[scoreMetric] || 0) - ((a.source_metrics || a)[scoreMetric] || 0));
-      const campaignHead = document.getElementById("campaign-head");
-      campaignHead.append(element("th", "", "Campaña o contenido"));
-      campaignHead.append(element("th", "", "Canal"));
-      visibleMetrics.forEach(key => campaignHead.append(element("th", "", metricLabel(key))));
-      const campaignTable = document.getElementById("campaign-table");
-      rankedContent.slice(0, 14).forEach(item => {
-        const metrics = item.source_metrics || item;
-        const row = element("tr");
-        row.append(element("td", "", item.campaign_name || item.ad_name || item.content_name || item.name || "Contenido"));
-        row.append(element("td", "", channelLabel(item.source_platform || item.platform || "unscoped")));
-        visibleMetrics.forEach(key => row.append(element("td", "", format(key, metrics[key]))));
-        campaignTable.append(row);
-      });
-      showSection("campaigns-section", rankedContent.length > 0 && visibleMetrics.length > 0);
-
-      const normalizeBreakdown = (key, value) => {
-        if (Array.isArray(value)) return value.map(item => {
-          if (item && typeof item === "object") {
-            const label = item.label ?? item.name ?? item[key] ?? item.dimension ?? item.value_name;
-            const amount = item.value ?? item.count ?? item.impressions ?? item.reach ?? item.percentage ?? item.share;
-            return { group: key, label, value: amount };
-          }
-          return { group: key, label: String(item), value: null };
-        }).filter(item => item.label !== undefined && number(item.value));
-        if (value && typeof value === "object") return Object.entries(value).filter(([, amount]) => number(amount)).map(([label, amount]) => ({ group: key, label, value: amount }));
-        return [];
-      };
-      const geographyRows = Object.entries(breakdowns).flatMap(([key, value]) => normalizeBreakdown(key, value));
-      const groupedBreakdowns = new Map();
-      geographyRows.forEach(item => groupedBreakdowns.set(item.group, [...(groupedBreakdowns.get(item.group) || []), item]));
-      const geographyGrid = document.getElementById("geography-grid");
-      groupedBreakdowns.forEach((items, group) => {
-        const card = element("article", "card");
-        card.append(element("h3", "card-title", metricLabel(group)));
-        const list = element("div", "breakdown-list");
-        const max = Math.max(...items.map(item => item.value), 1);
-        items.sort((a, b) => b.value - a.value).slice(0, 10).forEach(item => {
-          const row = element("div", "breakdown-row");
-          const metaRow = element("div", "breakdown-meta");
-          metaRow.append(element("span", "breakdown-name", item.label));
-          metaRow.append(element("span", "breakdown-value", format(group.includes("share") || group.includes("percent") ? "share" : "value", item.value)));
-          const bar = element("div", "breakdown-bar");
-          const fill = element("div", "breakdown-fill"); fill.style.width = Math.max(2, item.value / max * 100) + "%"; bar.append(fill);
-          row.append(metaRow, bar); list.append(row);
-        });
-        card.append(list); geographyGrid.append(card);
-      });
-      showSection("geography-section", geographyRows.length > 0);
-
-      const contentGrid = document.getElementById("content-grid");
-      rankedContent.slice(0, 6).forEach((item, index) => {
-        const metrics = item.source_metrics || item;
-        const card = element("article", "card content-card");
-        card.append(element("div", "content-rank", "Posición " + (index + 1)));
-        card.append(element("div", "content-name", item.campaign_name || item.ad_name || item.content_name || item.name || "Contenido"));
-        card.append(element("div", "content-platform", channelLabel(item.source_platform || item.platform || "unscoped")));
-        const chips = element("div", "metric-chips");
-        visibleMetrics.slice(0, 4).forEach(key => { if (number(metrics[key])) chips.append(element("span", "metric-chip", metricLabel(key) + ": " + format(key, metrics[key]))); });
-        card.append(chips); contentGrid.append(card);
-      });
-      showSection("content-section", rankedContent.length > 0 && visibleMetrics.length > 0);
-
-      const narrativeList = document.getElementById("narrative-list");
-      narratives.map(item => typeof item === "string" ? item : item?.text ?? item?.summary ?? item?.value).filter(Boolean).forEach(value => narrativeList.append(element("p", "narrative", value)));
-      showSection("insights-section", narratives.length > 0);
-
-      document.querySelectorAll(".nav-button").forEach(button => button.addEventListener("click", () => document.getElementById(button.dataset.target)?.scrollIntoView({ behavior: "smooth" })));
+    (()=>{"use strict";
+      const data=window.REPORT_DATA||{},meta=data.meta||{},summary=data.summary||{},rates=data.rates||{},deltas=data.deltas||{},byPlatform=data.by_platform||{},series=Array.isArray(data.daily_series)?data.daily_series:[],rows=[...(Array.isArray(data.rows?.current)?data.rows.current:[]),...(Array.isArray(data.rows?.supplemental)?data.rows.supplemental:[])],breakdowns=data.breakdowns||{},narratives=Array.isArray(data.narratives)?data.narratives:[];
+      const labels={spend:"Inversión",impressions:"Impresiones",reach:"Alcance",clicks:"Clics",conversions:"Conversiones",lead:"Clientes potenciales",results:"Resultados",engagement:"Interacciones",outbound_clicks:"Clics salientes",saves:"Guardados",sessions:"Sesiones",users:"Usuarios",pageviews:"Páginas vistas",ctr:"CTR",cpc:"CPC",cpm:"CPM",cpa:"CPA",conversion_rate:"Tasa de conversión"},money=new Set(["spend","cpc","cpm","cpa","cost","cost_per_result"]),percent=new Set(["ctr","conversion_rate","bounce_rate","share"]);
+      const finite=value=>value!==null&&value!==""&&Number.isFinite(Number(value)),numeric=value=>finite(value)?Number(value):null,metricLabel=key=>labels[key]||String(key).replaceAll("_"," ").replace(/\b\w/g,letter=>letter.toUpperCase()),platformLabel=key=>String(key).replaceAll("_"," ").replace(/\b\w/g,letter=>letter.toUpperCase());
+      const format=(key,value)=>{const number=numeric(value);if(number===null)return"";if(money.has(key))return new Intl.NumberFormat("es-EC",{style:"currency",currency:"USD",maximumFractionDigits:2}).format(number);if(percent.has(key))return new Intl.NumberFormat("es-EC",{maximumFractionDigits:2}).format(number)+"%";return new Intl.NumberFormat("es-EC",{notation:Math.abs(number)>=1000000?"compact":"standard",maximumFractionDigits:2}).format(number)};
+      const formatDate=value=>{if(!value)return"";const parsed=new Date(value);return Number.isNaN(parsed.getTime())?String(value):new Intl.DateTimeFormat("es-EC",{day:"2-digit",month:"short",year:"numeric",timeZone:"UTC"}).format(parsed)},element=(tag,className,value)=>{const node=document.createElement(tag);if(className)node.className=className;if(value!==undefined&&value!==null)node.textContent=String(value);return node};
+      const reveal=(id,visible)=>{if(!visible)return;const node=document.getElementById(id);if(node)node.hidden=false;const nav=document.querySelector('[data-target="'+id+'"]');if(nav)nav.hidden=false},rowMetrics=row=>row?.source_metrics&&typeof row.source_metrics==="object"?row.source_metrics:row||{},metricValue=(metrics,key)=>numeric(metrics?.[key]),rowName=row=>row.campaign_name||row.ad_name||row.product_name||row.content_name||row.name||"Registro",appendRow=(body,values)=>{const tr=element("tr");values.forEach(value=>tr.append(element("td","",value)));body.append(tr)};
+      const breakdownRows=key=>{const value=breakdowns[key];if(Array.isArray(value))return value.map(item=>({label:item?.label??item?.name??item?.[key],value:numeric(item?.value??item?.count??item?.impressions??item?.reach??item?.share)})).filter(item=>item.label!==undefined&&item.value!==null);if(value&&typeof value==="object")return Object.entries(value).map(([label,amount])=>({label,value:numeric(amount)})).filter(item=>item.value!==null);return[]};
+      const rowBreakdown=key=>{const candidates=rows.filter(row=>row?.[key]),metric=["impressions","reach","clicks","sessions","pageviews","spend"].find(name=>candidates.some(row=>finite(rowMetrics(row)[name])));if(!metric)return[];const totals=new Map();candidates.forEach(row=>{const value=numeric(rowMetrics(row)[metric]);if(value!==null)totals.set(String(row[key]),(totals.get(String(row[key]))||0)+value)});return[...totals.entries()].map(([label,value])=>({label,value}))};
+      const company=meta.company_name||"Cuenta seleccionada",period=meta.period||{},periodText=[formatDate(period.start),formatDate(period.end)].filter(Boolean).join(" — ");["company-name","season-company","footer-company"].forEach(id=>window.reportText(document.getElementById(id),company));["report-period","season-period","footer-period"].forEach(id=>window.reportText(document.getElementById(id),periodText));(Array.isArray(meta.platforms)?meta.platforms:Object.keys(byPlatform)).forEach(key=>document.getElementById("platform-chips").append(element("span","chip",platformLabel(key))));
+      const funnelKeys=["impressions","reach","clicks","conversions","lead","results"],funnel=funnelKeys.filter(key=>finite(summary[key])).map(key=>[key,numeric(summary[key])]);funnel.forEach(([key,value],index)=>{const stage=element("div","funnel-stage");stage.dataset.stage=key;stage.style.width=Math.max(48,100-index*(52/Math.max(funnel.length-1,1)))+"%";stage.append(element("span","",metricLabel(key)),element("span","",format(key,value)));document.getElementById("season-funnel").append(stage)});reveal("season-funnel-card",funnel.length>1);
+      const suppliedCities=breakdownRows("city"),cities=suppliedCities.length?suppliedCities:rowBreakdown("city");cities.forEach(item=>appendRow(document.getElementById("season-city-body"),[item.label,format("value",item.value)]));reveal("season-city-card",cities.length>0);const campaignSegments=breakdownRows("campaign"),seasonCampaigns=campaignSegments.length?campaignSegments:rows.slice(0,12).map(row=>({label:rowName(row),value:metricValue(rowMetrics(row),"impressions")??metricValue(rowMetrics(row),"clicks")})).filter(item=>item.value!==null);seasonCampaigns.slice(0,12).forEach(item=>appendRow(document.getElementById("season-campaign-body"),[item.label,format("value",item.value)]));reveal("season-campaign-card",seasonCampaigns.length>0);reveal("season-report",funnel.length>1||cities.length>0||seasonCampaigns.length>0);
+      const metricPriority=["spend","impressions","reach","clicks","conversions","lead","outbound_clicks","saves","sessions","users","pageviews"],summaryMetrics=[...metricPriority.filter(key=>finite(summary[key])),...Object.keys(summary).filter(key=>!metricPriority.includes(key)&&finite(summary[key]))];[...summaryMetrics.map(key=>[key,numeric(summary[key])]),...Object.entries(rates).filter(([,value])=>finite(value)).map(([key,value])=>[key,numeric(value)])].slice(0,12).forEach(([key,value])=>{const card=element("article","card stat-card");card.dataset.metric=key;card.append(element("div","stat-label",metricLabel(key)),element("div","stat-value",format(key,value)));if(finite(deltas[key]))card.append(element("div","stat-delta",format("share",Math.abs(Number(deltas[key])))+" vs. período anterior"));document.getElementById("summer-kpis").append(card)});
+      const daily=series.filter(item=>finite(item?.metrics?.impressions)),totals=new Map();daily.forEach(item=>totals.set(item.date,(totals.get(item.date)||0)+Number(item.metrics.impressions)));const points=[...totals.entries()].sort(([a],[b])=>a.localeCompare(b)),maxPoint=Math.max(1,...points.map(([,value])=>value)),tickStep=Math.max(1,Math.ceil(points.length/7));points.forEach(([day,value],index)=>{const point=element("div","chart-point");point.style.height=Math.max(3,value/maxPoint*200)+"px";point.dataset.value=format("impressions",value);if(index%tickStep===0||index===points.length-1){point.dataset.trendTick="true";point.dataset.label=formatDate(day).replace(/ de /g," ")}document.getElementById("summer-chart").append(point)});daily.forEach(item=>appendRow(document.getElementById("summer-daily-body"),[formatDate(item.date),platformLabel(item.platform||"unscoped"),format("impressions",item.metrics.impressions)]));reveal("summer-trend-card",daily.length>0);
+      const campaignMetricKeys=["conversions","lead","clicks","outbound_clicks","sessions","reach","impressions","spend"].filter(key=>rows.some(row=>finite(rowMetrics(row)[key]))).slice(0,5),campaignHead=document.getElementById("summer-campaign-head");["Campaña","Fuente",...campaignMetricKeys.map(metricLabel)].forEach(label=>campaignHead.append(element("th","",label)));const score=campaignMetricKeys[0],ranked=[...rows].filter(row=>campaignMetricKeys.some(key=>finite(rowMetrics(row)[key]))).sort((a,b)=>(metricValue(rowMetrics(b),score)||0)-(metricValue(rowMetrics(a),score)||0));ranked.slice(0,12).forEach(row=>appendRow(document.getElementById("summer-campaign-body"),[rowName(row),platformLabel(row.source_platform||row.platform||"unscoped"),...campaignMetricKeys.map(key=>format(key,rowMetrics(row)[key]))]));reveal("summer-campaign-card",ranked.length>0);reveal("summer-report",summaryMetrics.length>0||daily.length>0||ranked.length>0);
+      const trafficPlatforms=Object.entries(byPlatform).filter(([key,metrics])=>/(pinterest|google|analytics)/i.test(String(key))&&metrics&&Object.values(metrics).some(finite));trafficPlatforms.forEach(([key,metrics])=>{const card=element("article","card channel-card");card.dataset.platform=key;card.append(element("div","channel-name",platformLabel(key)));const list=element("div","metric-list");Object.entries(metrics).filter(([,value])=>finite(value)).slice(0,7).forEach(([metric,value])=>list.append(element("span","metric-chip",metricLabel(metric)+": "+format(metric,value))));card.append(list);document.getElementById("ao2-channels").append(card)});
+      const trafficValues=trafficPlatforms.map(([key,metrics])=>[key,numeric(metrics.sessions)??numeric(metrics.clicks)??numeric(metrics.pageviews)]).filter(([,value])=>value!==null),maxTraffic=Math.max(1,...trafficValues.map(([,value])=>value));trafficValues.forEach(([key,value])=>{const row=element("div","bar-row"),track=element("div","bar-track"),fill=element("div","bar-fill");fill.style.width=value/maxTraffic*100+"%";track.append(fill);row.append(element("span","",platformLabel(key)),track,element("strong","",format("value",value)));document.getElementById("traffic-chart").append(row)});reveal("traffic-chart-card",trafficValues.length>0);
+      const pinterestRows=rows.filter(row=>String(row.source_platform||row.platform||"").toLowerCase().includes("pinterest")),pinterestMetrics=["spend","impressions","clicks","outbound_clicks","saves"].filter(key=>pinterestRows.some(row=>finite(rowMetrics(row)[key])));["Campaña",...pinterestMetrics.map(metricLabel)].forEach(label=>document.getElementById("pinterest-head").append(element("th","",label)));pinterestRows.forEach(row=>appendRow(document.getElementById("pinterest-body"),[rowName(row),...pinterestMetrics.map(key=>format(key,rowMetrics(row)[key]))]));reveal("pinterest-card",pinterestRows.length>0&&pinterestMetrics.length>0);
+      const productRows=rows.filter(row=>row.product_name&&String(row.source_platform||row.platform||"").toLowerCase().includes("analytics"));productRows.forEach(row=>{const metrics=rowMetrics(row);appendRow(document.getElementById("product-body"),[row.product_name,format("sessions",metrics.sessions),format("users",metrics.users),format("pageviews",metrics.pageviews)])});reveal("product-card",productRows.length>0);trafficPlatforms.forEach(([key,metrics])=>appendRow(document.getElementById("traffic-body"),[platformLabel(key),format("value",numeric(metrics.sessions)??numeric(metrics.clicks)),format("spend",metrics.spend)]));reveal("traffic-card",trafficPlatforms.length>0);const suppliedCountries=breakdownRows("country"),countries=suppliedCountries.length?suppliedCountries:rowBreakdown("country");countries.forEach(item=>appendRow(document.getElementById("country-body"),[item.label,format("value",item.value)]));reveal("country-card",countries.length>0);reveal("ao2-report",trafficPlatforms.length>0||pinterestRows.length>0||productRows.length>0||countries.length>0);
+      narratives.map(item=>typeof item==="string"?item:item?.text??item?.summary??item?.value).filter(Boolean).forEach(value=>document.getElementById("insights-list").append(element("p","narrative",value)));reveal("insights-report",narratives.length>0);document.querySelectorAll(".nav-button").forEach(button=>button.addEventListener("click",()=>document.getElementById(button.dataset.target)?.scrollIntoView({behavior:"smooth"})));
     })();
   </script>
 </body>
