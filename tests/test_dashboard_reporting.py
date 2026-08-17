@@ -587,7 +587,13 @@ def _nutri_payload():
     return payload
 
 
-def _meta_builder_payload(with_publishers, publisher_values=None, campaign_suffixes=None):
+def _meta_builder_payload(
+    with_publishers,
+    publisher_values=None,
+    campaign_suffixes=None,
+    numeric_strings=False,
+    numeric_aliases=False,
+):
     publishers = publisher_values or (
         ("facebook", "facebook", "instagram", "instagram") if with_publishers else (None,) * 4
     )
@@ -600,16 +606,34 @@ def _meta_builder_payload(with_publishers, publisher_values=None, campaign_suffi
         (2, publishers[3], 40, 4000, 3000, 400, 800),
     )):
         suffix = f"_{suffixes[index]}" if suffixes[index] else ""
+        metrics = {
+            "spend": spend,
+            "impressions": impressions,
+            "reach": reach,
+            "engagement": engagement,
+            "views": views,
+        }
+        if numeric_strings:
+            metrics = {
+                "social_spend": str(spend),
+                "impressions": str(impressions),
+                "reach": str(reach),
+                "total_interactions": str(engagement),
+                "unique_clicks": str(spend // 10),
+            }
+        elif numeric_aliases:
+            metrics = {
+                "social_spend": spend,
+                "impressions": impressions,
+                "reach": reach,
+                "total_interactions": engagement,
+                "unique_clicks": spend // 10 + 0.5,
+                "lead": day,
+            }
         item = {
             "campaign_name": f"Meta launch {day}-{spend}{suffix}",
             "date": f"2026-07-{day:02d}",
-            "metrics": {
-                "spend": spend,
-                "impressions": impressions,
-                "reach": reach,
-                "engagement": engagement,
-                "views": views,
-            },
+            "metrics": metrics,
         }
         if publisher:
             item["dimensions"] = {"publisher_platform": publisher}
@@ -617,12 +641,16 @@ def _meta_builder_payload(with_publishers, publisher_values=None, campaign_suffi
     frame = process_api_response(raw_rows, "meta_ads", "client_1", "user_1")
     context = _context({"platform": "meta_ads", "account_id": "act_1", "account_name": "Acme Foods"})
     context["required_metrics"] = ["spend", "impressions", "reach", "engagement", "views"]
+    if numeric_strings or numeric_aliases:
+        context["required_metrics"].append("clicks")
+    if numeric_aliases:
+        context["required_metrics"].append("conversions")
     optional = {
         "breakdowns": {
             "facebook": {"age": [{"label": "25–34", "value": 45}]},
             "instagram": {"age": [{"label": "25–34", "value": 40}]},
         }
-    } if with_publishers else None
+    } if with_publishers and not (numeric_strings or numeric_aliases) else None
     return build_report_payload("nutri", frame, query_context=context, optional=optional)
 
 
@@ -834,6 +862,78 @@ def test_nutri_browser_maps_builder_meta_publishers_without_double_counting(tmp_
     assert dom["summaryKpis"]["spend"] == "$100,00"
     assert dom["sharedNotices"] == {"facebook": "", "instagram": ""}
     assert len(dom["investmentRows"]) == 1
+    assert dom["errors"] == []
+    assert dom["resources"] == []
+
+
+def test_nutri_browser_normalizes_numeric_string_meta_publisher_metrics(tmp_path):
+    payload = _meta_builder_payload(with_publishers=True, numeric_strings=True)
+
+    assert all(
+        isinstance(row["source_metrics"]["social_spend"], str)
+        for row in payload["rows"]["current"]
+    )
+    assert payload["by_platform"]["meta_ads"] == {
+        "clicks": 10,
+        "engagement": 1000,
+        "impressions": 10000,
+        "reach": 7500,
+        "spend": 100,
+    }
+
+    dom = _browser_dom(render_report("nutri", payload), tmp_path)
+
+    assert dom["visible"]["facebook-panel"] is True
+    assert dom["visible"]["instagram-panel"] is True
+    assert dom["platformKpis"]["facebook"] == {
+        "spend": "$30,00",
+        "impressions": "3.000",
+        "reach": "2.300",
+        "engagement": "300",
+        "clicks": "3",
+    }
+    assert dom["platformKpis"]["instagram"] == {
+        "spend": "$70,00",
+        "impressions": "7.000",
+        "reach": "5.200",
+        "engagement": "700",
+        "clicks": "7",
+    }
+    assert dom["platformTrendRows"]["facebook"] == ["1.000", "2.000"]
+    assert dom["platformTrendRows"]["instagram"] == ["3.000", "4.000"]
+    assert dom["platformContentRows"]["facebook"] == ["Meta launch 2-20", "Meta launch 1-10"]
+    assert dom["platformContentRows"]["instagram"] == ["Meta launch 2-40", "Meta launch 1-30"]
+    assert dom["summaryKpis"]["spend"] == "$100,00"
+    assert len(dom["investmentRows"]) == 1
+    assert dom["errors"] == []
+    assert dom["resources"] == []
+
+
+def test_nutri_browser_prefers_finite_numeric_aliases_over_normalized_rows(tmp_path):
+    payload = _meta_builder_payload(with_publishers=True, numeric_aliases=True)
+
+    assert payload["rows"]["current"][0]["source_metrics"]["unique_clicks"] == 1.5
+    assert payload["rows"]["current"][0]["clicks"] == 1
+    assert payload["by_platform"]["meta_ads"]["conversions"] == 6
+
+    dom = _browser_dom(render_report("nutri", payload), tmp_path)
+
+    assert dom["platformKpis"]["facebook"] == {
+        "spend": "$30,00",
+        "impressions": "3.000",
+        "reach": "2.300",
+        "engagement": "300",
+        "clicks": "4",
+        "conversions": "3",
+    }
+    assert dom["platformKpis"]["instagram"] == {
+        "spend": "$70,00",
+        "impressions": "7.000",
+        "reach": "5.200",
+        "engagement": "700",
+        "clicks": "8",
+        "conversions": "3",
+    }
     assert dom["errors"] == []
     assert dom["resources"] == []
 
