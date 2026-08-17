@@ -101,6 +101,11 @@ from dashboard.analytics import (
     log_demographics_check,
 )
 
+from dashboard.reporting import (
+    build_report_payload,
+    render_report,
+)
+
 DASHBOARD_CACHE_VERSION = 4
 
 
@@ -119,67 +124,51 @@ def log_demographics_toggle(user_id, platform_key, account_id):
 
 
 REPORT_TEMPLATES = {
-    "Nutri": {"background": "#F8FAFC", "surface": "#FFFFFF", "ink": "#154095", "accent": "#78BB42"},
-    "Adriana Hoyos": {"background": "#FAF9F6", "surface": "#FFFFFF", "ink": "#2D251E", "accent": "#C5A059"},
-    "ARTZ": {"background": "#F5F4F0", "surface": "#FFFFFF", "ink": "#2A2D26", "accent": "#646A58"},
-    "Shamuna": {"background": "#FEFAE0", "surface": "#FFFFFF", "ink": "#1A3E2F", "accent": "#D4A373"},
+    "Nutri": "nutri",
+    "Adriana Hoyos": "adriana_hoyos",
+    "ARTZ": "artz",
+    "Shamuna": "shamuna",
 }
 
 
-def template_report_html(frame, template_name, report_context):
-    theme = REPORT_TEMPLATES[template_name]
-    kpis = (("Filas", len(frame)), ("Columnas", len(frame.columns)))
-
-    context_html = "".join(
-        f"<li><strong>{html.escape(str(label))}:</strong> {html.escape(str(value))}</li>"
-        for label, value in report_context.items()
+def template_report_html(
+    frame: pd.DataFrame,
+    template_name: str,
+    report_context: dict[str, Any],
+    previous_frame: pd.DataFrame | None = None,
+    export_table: pd.DataFrame | None = None,
+    optional: dict[str, Any] | None = None,
+) -> str:
+    template_key = REPORT_TEMPLATES.get(template_name, template_name.lower().replace(" ", "_"))
+    account_name = str(report_context.get("Cuenta", report_context.get("account_name", "")))
+    account_id = str(report_context.get("account_id", ""))
+    platform = str(report_context.get("platform", "meta_ads"))
+    query_context = {
+        "connections": [{
+            "account_id": account_id or "default",
+            "account_name": account_name,
+            "platform": platform,
+        }] if account_name else [],
+        "account_id": account_id,
+        "account_name": account_name,
+        "platform": platform,
+        "start_date": report_context.get("start_date", ""),
+        "end_date": report_context.get("end_date", ""),
+        "period": {
+            "start": report_context.get("start_date", ""),
+            "end": report_context.get("end_date", ""),
+        },
+        "platforms": [report_context.get("Plataformas", platform)] if report_context.get("Plataformas") else [platform],
+    }
+    payload = build_report_payload(
+        template_key,
+        current=frame,
+        previous=previous_frame,
+        export_table=export_table if export_table is not None else frame,
+        query_context=query_context,
+        optional=optional,
     )
-    kpi_html = "".join(
-        f'<article class="kpi"><span>{html.escape(label)}</span><strong>{value:,}</strong></article>'
-        for label, value in kpis
-    )
-    table_html = frame.to_html(index=False, escape=True, classes="report-table", border=0)
-
-    return f"""<!doctype html>
-<html lang="es">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Reporte {html.escape(template_name)}</title>
-  <style>
-    :root {{ --background: {theme['background']}; --surface: {theme['surface']}; --ink: {theme['ink']}; --accent: {theme['accent']}; }}
-    * {{ box-sizing: border-box; }}
-    body {{ margin: 0; background: var(--background); color: var(--ink); font-family: Inter, Arial, sans-serif; }}
-    main {{ width: min(1400px, 94vw); margin: 0 auto; padding: 48px 0; }}
-    header {{ border-left: 8px solid var(--accent); padding: 8px 24px; }}
-    h1 {{ margin: 0 0 8px; font-size: clamp(2rem, 5vw, 4.5rem); }}
-    .template {{ color: var(--accent); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }}
-    .context {{ display: flex; flex-wrap: wrap; gap: 8px 24px; padding: 0; list-style: none; }}
-    .kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin: 32px 0; }}
-    .kpi, .table-wrap {{ background: var(--surface); border-radius: 16px; box-shadow: 0 8px 30px #00000012; }}
-    .kpi {{ padding: 20px; border-top: 4px solid var(--accent); }}
-    .kpi span, .empty-kpis {{ opacity: .72; }}
-    .kpi strong {{ display: block; margin-top: 8px; font-size: 1.8rem; }}
-    .table-wrap {{ overflow-x: auto; padding: 20px; }}
-    .report-table {{ width: 100%; border-collapse: collapse; font-size: .9rem; }}
-    th, td {{ padding: 12px; border-bottom: 1px solid color-mix(in srgb, var(--ink) 16%, transparent); text-align: left; white-space: nowrap; }}
-    th {{ background: var(--ink); color: var(--surface); }}
-    tbody tr:hover {{ background: color-mix(in srgb, var(--accent) 10%, transparent); }}
-    @media print {{ main {{ width: 100%; padding: 16px; }} .table-wrap, .kpi {{ box-shadow: none; }} }}
-  </style>
-</head>
-<body>
-  <main>
-    <header>
-      <div class="template">{html.escape(template_name)}</div>
-      <h1>Reporte de marketing</h1>
-      <ul class="context">{context_html}</ul>
-    </header>
-    <section class="kpis" aria-label="Indicadores principales">{kpi_html}</section>
-    <section class="table-wrap" aria-label="Datos del reporte">{table_html}</section>
-  </main>
-</body>
-</html>"""
+    return render_report(template_key, payload)
 
 
 def segmented_pdf_download_html(export_name, background_color):
@@ -2639,17 +2628,23 @@ with download_slot.container():
             icon=":material/download:",
             width="stretch",
         )
-        report_template = st.selectbox("Template HTML", REPORT_TEMPLATES)
+        report_template = st.selectbox("Template HTML", list(REPORT_TEMPLATES.keys()))
         st.download_button(
             "Descargar HTML",
             data=lambda: template_report_html(
-                csv_export_frame["frame"],
+                df_curr if "df_curr" in locals() and isinstance(df_curr, pd.DataFrame) and not df_curr.empty else csv_export_frame["frame"],
                 report_template,
                 {
                     "Plataformas": selected_platform_label,
                     "Cuenta": account_disp,
                     "Fechas": f"{start_date:%d/%m/%Y} – {end_date:%d/%m/%Y}",
+                    "account_id": account_id if "account_id" in locals() else "",
+                    "platform": platform_key if "platform_key" in locals() else "",
+                    "start_date": f"{start_date:%Y-%m-%d}" if "start_date" in locals() and start_date else "",
+                    "end_date": f"{end_date:%Y-%m-%d}" if "end_date" in locals() and end_date else "",
                 },
+                previous_frame=df_prev if "df_prev" in locals() and isinstance(df_prev, pd.DataFrame) else None,
+                export_table=csv_export_frame["frame"],
             ).encode("utf-8"),
             file_name=f"{export_name}_{report_template.lower().replace(' ', '-')}.html",
             mime="text/html;charset=utf-8",

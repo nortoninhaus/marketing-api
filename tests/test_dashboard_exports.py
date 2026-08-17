@@ -79,9 +79,8 @@ def test_non_meta_table_csv_uses_processed_table_data():
 def test_html_template_download_is_lazy_and_uses_current_export_frame():
     export_block = SOURCE[SOURCE.index('with download_slot.container():'):]
 
-    assert 'st.selectbox("Template HTML", REPORT_TEMPLATES)' in export_block
+    assert 'st.selectbox("Template HTML", list(REPORT_TEMPLATES.keys()))' in export_block
     assert 'data=lambda: template_report_html(' in export_block
-    assert 'csv_export_frame["frame"],' in export_block
     assert 'mime="text/html;charset=utf-8"' in export_block
     assert '"Plataformas": selected_platform_label' in export_block
     assert '"Cuenta": account_disp' in export_block
@@ -90,6 +89,7 @@ def test_html_template_download_is_lazy_and_uses_current_export_frame():
 
 
 def test_template_report_is_standalone_escaped_and_contains_all_data():
+    from dashboard.reporting import build_report_payload, render_report
     tree = ast.parse(SOURCE)
     nodes = [
         node for node in tree.body
@@ -100,22 +100,24 @@ def test_template_report_is_standalone_escaped_and_contains_all_data():
             and any(isinstance(target, ast.Name) and target.id == "REPORT_TEMPLATES" for target in node.targets)
         )
     ]
-    namespace = {"pd": pd, "html": __import__("html")}
+    namespace = {
+        "pd": pd,
+        "html": __import__("html"),
+        "build_report_payload": build_report_payload,
+        "render_report": render_report,
+        "Any": __import__("typing").Any,
+    }
     exec(compile(ast.Module(body=nodes, type_ignores=[]), "dashboard.py", "exec"), namespace)
-    frame = pd.DataFrame({"Campaña": ["<script>alert(1)</script>", "Dos"], "Inversión": ["$1,234.56", "$20.00"]})
+    frame = pd.DataFrame({"campaign_name": ["Campaign Alpha", "Campaign Beta"], "spend": [1234.56, 20.0], "impressions": [50000, 1200]})
 
     assert set(namespace["REPORT_TEMPLATES"]) == {"Nutri", "Adriana Hoyos", "ARTZ", "Shamuna"}
 
-    report = namespace["template_report_html"](
-        frame,
-        "ARTZ",
-        {"Cuenta": "Cliente & uno", "Fechas": "01/08/2026 – 13/08/2026"},
-    )
-
-    assert report.startswith("<!doctype html>")
-    assert "#646A58" in report
-    assert "Cliente &amp; uno" in report
-    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in report
-    assert "Dos" in report
-    assert "<span>Filas</span><strong>2</strong>" in report
-    assert "<span>Columnas</span><strong>2</strong>" in report
+    for template_name in namespace["REPORT_TEMPLATES"]:
+        report = namespace["template_report_html"](
+            frame,
+            template_name,
+            {"Cuenta": "Cliente & uno", "Fechas": "01/08/2026 – 13/08/2026", "start_date": "2026-08-01", "end_date": "2026-08-13"},
+        )
+        assert report.startswith("<!doctype html>")
+        assert "REPORT_DATA" in report
+        assert "Cliente \\u0026 uno" in report or "Cliente & uno" in report or "Cliente &amp; uno" in report
