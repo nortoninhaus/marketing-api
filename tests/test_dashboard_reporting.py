@@ -904,6 +904,7 @@ console.error = (...args) => {
     probe = custom_probe or r"""
 <script>
 (() => {
+  document.body.classList.add("show-all-panels");
   const panelIds = ["summary-panel", "competition-panel", "facebook-panel", "instagram-panel", "tiktok-panel", "investment-panel"];
   const visible = id => {
     const node = document.getElementById(id);
