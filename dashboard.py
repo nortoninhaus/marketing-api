@@ -2757,9 +2757,16 @@ with download_slot.container():
                 "account_name": str(ctx.get("Cuenta", "")),
                 "platform": str(ctx.get("platform", "meta_ads")),
             }]
+            platforms_list = [str(ctx.get("platform", "meta_ads"))]
             if add_tt and tt_acc_id:
                 try:
-                    tt_metrics = ["impressions", "clicks", "spend", "conversions", "reach", "ctr", "cpc", "cpm"]
+                    tt_metrics = [
+                        "spend", "impressions", "clicks", "reach", "conversion",
+                        "cost_per_conversion", "conversion_rate", "ctr", "cpc", "cpm",
+                        "frequency", "video_play_actions", "video_watched_2s",
+                        "video_watched_6s", "video_views_p25", "video_views_p50",
+                        "video_views_p75", "video_views_p100"
+                    ]
                     tt_dimensions = []
                     tt_rows = fetch_campaign_data_from_api(
                         "tiktok_ads", c_id, u_id, str(tt_acc_id),
@@ -2778,10 +2785,11 @@ with download_slot.container():
                         "account_name": str(tt_acc_name or f"TikTok Ads: {tt_acc_id}"),
                         "platform": "tiktok_ads",
                     })
-                    final_ctx["platforms"] = list(dict.fromkeys(final_ctx.get("platforms", []) + ["tiktok_ads"]))
-                except Exception:
-                    pass
+                    platforms_list.append("tiktok_ads")
+                except Exception as ex:
+                    print(f"Error fetching TikTok Ads for export: {ex}")
             final_ctx["connections"] = final_connections
+            final_ctx["platforms"] = list(dict.fromkeys(platforms_list))
             return template_report_html(
                 final_df,
                 tpl,
