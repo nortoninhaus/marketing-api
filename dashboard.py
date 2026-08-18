@@ -2631,22 +2631,26 @@ with download_slot.container():
             width="stretch",
         )
         report_template = st.selectbox("Template HTML", list(REPORT_TEMPLATES.keys()))
+        html_export_context = {
+            "Plataformas": selected_platform_label,
+            "Cuenta": account_disp,
+            "Fechas": f"{start_date:%d/%m/%Y} – {end_date:%d/%m/%Y}",
+            "account_id": str(account_id),
+            "platform": str(platform_key),
+            "start_date": f"{start_date:%Y-%m-%d}",
+            "end_date": f"{end_date:%Y-%m-%d}",
+        }
+        curr_frame_export = df_curr if isinstance(df_curr, pd.DataFrame) and not df_curr.empty else csv_export_frame["frame"]
+        prev_frame_export = df_prev if isinstance(df_prev, pd.DataFrame) and not df_prev.empty else None
+
         st.download_button(
             "Descargar HTML",
-            data=lambda: template_report_html(
-                df_curr if "df_curr" in locals() and isinstance(df_curr, pd.DataFrame) and not df_curr.empty else csv_export_frame["frame"],
-                report_template,
-                {
-                    "Plataformas": selected_platform_label,
-                    "Cuenta": account_disp,
-                    "Fechas": f"{start_date:%d/%m/%Y} – {end_date:%d/%m/%Y}",
-                    "account_id": account_id if "account_id" in locals() else "",
-                    "platform": platform_key if "platform_key" in locals() else "",
-                    "start_date": f"{start_date:%Y-%m-%d}" if "start_date" in locals() and start_date else "",
-                    "end_date": f"{end_date:%Y-%m-%d}" if "end_date" in locals() and end_date else "",
-                },
-                previous_frame=df_prev if "df_prev" in locals() and isinstance(df_prev, pd.DataFrame) else None,
-                export_table=csv_export_frame["frame"],
+            data=lambda curr_df=curr_frame_export, prev_df=prev_frame_export, tpl=report_template, ctx=html_export_context, exp_df=csv_export_frame: template_report_html(
+                curr_df,
+                tpl,
+                ctx,
+                previous_frame=prev_df,
+                export_table=exp_df["frame"],
             ).encode("utf-8"),
             file_name=f"{export_name}_{report_template.lower().replace(' ', '-')}.html",
             mime="text/html;charset=utf-8",
