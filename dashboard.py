@@ -145,12 +145,16 @@ def template_report_html(
     platform = str(report_context.get("platform", "meta_ads"))
     start_date = str(report_context.get("start_date", ""))
     end_date = str(report_context.get("end_date", ""))
-    query_context = {
-        "connections": [{
+    connections = report_context.get("connections")
+    if not connections:
+        connections = [{
             "account_id": account_id or "default",
             "account_name": account_name,
             "platform": platform,
-        }] if account_name else [],
+        }] if account_name else []
+    platforms = report_context.get("platforms") or ([platform] if platform else [])
+    query_context = {
+        "connections": connections,
         "account_id": account_id,
         "account_name": account_name,
         "platform": platform,
@@ -160,7 +164,7 @@ def template_report_html(
             "start": start_date,
             "end": end_date,
         },
-        "platforms": [platform] if platform else [],
+        "platforms": platforms,
     }
     payload = build_report_payload(
         template_key,
@@ -2643,15 +2647,89 @@ with download_slot.container():
         curr_frame_export = df_curr if isinstance(df_curr, pd.DataFrame) and not df_curr.empty else csv_export_frame["frame"]
         prev_frame_export = df_prev if isinstance(df_prev, pd.DataFrame) and not df_prev.empty else None
 
-        st.download_button(
-            "Descargar HTML",
-            data=lambda curr_df=curr_frame_export, prev_df=prev_frame_export, tpl=report_template, ctx=html_export_context, exp_df=csv_export_frame: template_report_html(
-                curr_df,
+        include_tiktok = False
+        tiktok_account_id = ""
+        tiktok_account_name = ""
+        if "tiktok_ads" not in selected_platform_keys:
+            include_tiktok = st.checkbox("¿Deseas agregar datos de TikTok?", value=False, key="export_add_tiktok")
+            if include_tiktok:
+                tt_connections = fetch_connections_from_api("tiktok_ads", client_id, api_key)
+                tt_connections = filter_dashboard_connections(tt_connections, dashboard_user, "tiktok_ads")
+                tt_allowed_ids = dashboard_allowed_account_ids(dashboard_user, "tiktok_ads")
+                if tt_connections:
+                    tt_options = {connection_account_label(c, "tiktok_ads"): (c["account_id"], connection_account_label(c, "tiktok_ads")) for c in tt_connections}
+                    selected_tt_label = st.selectbox("Cuenta de TikTok Ads", [""] + list(tt_options.keys()), key="export_conn_tiktok_ads")
+                    if selected_tt_label:
+                        tiktok_account_id, tiktok_account_name = tt_options[selected_tt_label]
+                else:
+                    tt_fallback = tt_allowed_ids or []
+                    tt_fallback_options = {connection_account_label({"account_id": a_id}, "tiktok_ads"): a_id for a_id in tt_fallback}
+                    selected_tt_label = st.selectbox("Cuenta de TikTok Ads", [""] + list(tt_fallback_options.keys()), key="export_allowed_tiktok_ads") if tt_allowed_ids else ""
+                    if selected_tt_label:
+                        tiktok_account_id = tt_fallback_options[selected_tt_label]
+                        tiktok_account_name = selected_tt_label
+                    elif not tt_allowed_ids:
+                        tiktok_account_id = st.text_input("ID de cuenta de TikTok Ads", key="export_account_tiktok_ads")
+                        tiktok_account_name = f"TikTok Ads: {tiktok_account_id}"
+
+        def _build_download_html(
+            curr_df=curr_frame_export,
+            prev_df=prev_frame_export,
+            tpl=report_template,
+            ctx=html_export_context,
+            exp_df=csv_export_frame,
+            add_tt=include_tiktok,
+            tt_acc_id=tiktok_account_id,
+            tt_acc_name=tiktok_account_name,
+            c_id=client_id,
+            u_id=user_id,
+            s_date=start_date,
+            e_date=end_date,
+            key=api_key,
+        ) -> bytes:
+            final_df = curr_df
+            final_ctx = dict(ctx)
+            final_connections = [{
+                "account_id": str(ctx.get("account_id", "")),
+                "account_name": str(ctx.get("Cuenta", "")),
+                "platform": str(ctx.get("platform", "meta_ads")),
+            }]
+            if add_tt and tt_acc_id:
+                try:
+                    tt_metrics = ["impressions", "clicks", "spend", "conversions", "reach", "engagement", "video_views"]
+                    tt_dimensions = ["campaign_name"]
+                    tt_rows = fetch_campaign_data_from_api(
+                        "tiktok_ads", c_id, u_id, tt_acc_id,
+                        s_date, e_date, tt_metrics, tt_dimensions,
+                        {}, False, key, show_errors=False
+                    )
+                    if tt_rows:
+                        df_tt = process_api_response(tt_rows, "tiktok_ads", c_id, u_id)
+                        if isinstance(df_tt, pd.DataFrame) and not df_tt.empty:
+                            if isinstance(final_df, pd.DataFrame) and not final_df.empty:
+                                final_df = pd.concat([final_df, df_tt], ignore_index=True)
+                            else:
+                                final_df = df_tt
+                    final_connections.append({
+                        "account_id": str(tt_acc_id),
+                        "account_name": str(tt_acc_name or f"TikTok Ads: {tt_acc_id}"),
+                        "platform": "tiktok_ads",
+                    })
+                    final_ctx["platforms"] = list(dict.fromkeys(final_ctx.get("platforms", []) + ["tiktok_ads"]))
+                except Exception:
+                    pass
+            final_ctx["connections"] = final_connections
+            return template_report_html(
+                final_df,
                 tpl,
-                ctx,
+                final_ctx,
                 previous_frame=prev_df,
                 export_table=exp_df["frame"],
-            ).encode("utf-8"),
+            ).encode("utf-8")
+
+        st.download_button(
+            "Descargar HTML",
+            data=_build_download_html,
             file_name=f"{export_name}_{report_template.lower().replace(' ', '-')}.html",
             mime="text/html;charset=utf-8",
             on_click="ignore",

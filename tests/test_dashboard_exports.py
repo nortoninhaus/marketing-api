@@ -81,12 +81,13 @@ def test_html_template_download_is_lazy_and_uses_current_export_frame():
     export_block = SOURCE[SOURCE.index('with download_slot.container():'):]
 
     assert 'st.selectbox("Template HTML", list(REPORT_TEMPLATES.keys()))' in export_block
-    assert 'data=lambda curr_df=' in export_block
+    assert 'data=_build_download_html' in export_block
     assert 'template_report_html(' in export_block
     assert 'mime="text/html;charset=utf-8"' in export_block
     assert '"Plataformas": selected_platform_label' in export_block
     assert '"Cuenta": account_disp' in export_block
     assert '"Fechas":' in export_block
+    assert 'export_add_tiktok' in export_block
     assert SOURCE.index('csv_export_frame["frame"] = df_table') < SOURCE.index('with download_slot.container():')
 
 
