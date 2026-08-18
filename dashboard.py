@@ -2759,10 +2759,10 @@ with download_slot.container():
             }]
             if add_tt and tt_acc_id:
                 try:
-                    tt_metrics = ["impressions", "clicks", "spend", "conversions", "reach", "engagement", "video_views"]
-                    tt_dimensions = ["campaign_name"]
+                    tt_metrics = ["impressions", "clicks", "spend", "conversions", "reach", "ctr", "cpc", "cpm"]
+                    tt_dimensions = []
                     tt_rows = fetch_campaign_data_from_api(
-                        "tiktok_ads", c_id, u_id, tt_acc_id,
+                        "tiktok_ads", c_id, u_id, str(tt_acc_id),
                         s_date, e_date, tt_metrics, tt_dimensions,
                         {}, False, key, show_errors=False
                     )
