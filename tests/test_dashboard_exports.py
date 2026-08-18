@@ -13,7 +13,8 @@ def test_dashboard_offers_segmented_pdf_and_csv_downloads():
     assert SOURCE.index("download_slot = st.empty()") < SOURCE.index('<div class="custom-header">')
     export_block = SOURCE[SOURCE.index('with download_slot.container():'):]
 
-    assert 'with st.popover("Descargar", icon=":material/download:", width="content")' in export_block
+    assert '@st.dialog("Descargar Reporte", width="small")' in export_block
+    assert 'st.button("Descargar", icon=":material/download:"' in export_block
     assert "segmented_pdf_download_html(export_name, chart_bg)" in export_block
     assert "unsafe_allow_javascript=True" in export_block
     assert "Descargar CSV" in export_block

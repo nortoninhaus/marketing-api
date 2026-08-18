@@ -548,7 +548,10 @@ span[data-testid="stSidebarCollapseButton"] {
 .block-container > div[data-testid="stElementContainer"]:has([data-testid="stPopover"]),
 [data-testid="stMainBlockContainer"] > div[data-testid="stElementContainer"]:has([data-testid="stPopover"]),
 div[data-testid="stElementContainer"]:has([data-testid="stPopover"]),
-div[data-testid="stElementContainer"]:has([data-testid="stPopoverButton"]) {
+div[data-testid="stElementContainer"]:has([data-testid="stPopoverButton"]),
+div[data-testid="stElementContainer"]:has(button[key="btn_download_modal"]),
+div[data-testid="stElementContainer"]:has(button[aria-label="Descargar"]),
+div[data-testid="stElementContainer"]:has(button:has(p:is(:contains("Descargar")))) {
     position: absolute !important;
     left: auto !important;
     right: 140px !important;
@@ -564,7 +567,9 @@ div[data-testid="stElementContainer"]:has([data-testid="stPopoverButton"]) {
 
 div[data-testid="stElementContainer"]:has([data-testid="stPopover"]) > div,
 [data-testid="stPopover"],
-[data-testid="stPopoverButton"] {
+[data-testid="stPopoverButton"],
+div[data-testid="stElementContainer"]:has(button[key="btn_download_modal"]) > div,
+div[data-testid="stElementContainer"]:has(button:has(p:is(:contains("Descargar")))) > div {
     position: relative !important;
     left: auto !important;
     right: auto !important;
@@ -573,7 +578,10 @@ div[data-testid="stElementContainer"]:has([data-testid="stPopover"]) > div,
 }
 
 [data-testid="stPopoverButton"],
-[data-testid="stDownloadButton"] button {
+[data-testid="stDownloadButton"] button,
+button[key="btn_download_modal"],
+button[aria-label="Descargar"],
+button:has(p:is(:contains("Descargar"))) {
     background-color: #02569e !important;
     color: #FFFFFF !important;
     border: none !important;
@@ -588,6 +596,22 @@ div[data-testid="stElementContainer"]:has([data-testid="stPopover"]) > div,
     align-items: center !important;
     gap: 6px !important;
     box-shadow: 0 2px 6px rgba(2, 86, 158, 0.3) !important;
+}
+[data-testid="stPopoverButton"] *,
+[data-testid="stDownloadButton"] button *,
+button[key="btn_download_modal"] *,
+button[aria-label="Descargar"] *,
+button:has(p:is(:contains("Descargar"))) * {
+    color: #FFFFFF !important;
+    fill: #FFFFFF !important;
+    stroke: #FFFFFF !important;
+}
+
+[data-testid="stDialog"] [data-testid="stModal"] {
+    background-color: var(--secondary-background-color, #1e293b) !important;
+    color: var(--text-color, #ffffff) !important;
+    border: 1px solid rgba(128, 128, 128, 0.2) !important;
+    border-radius: 14px !important;
 }
 [data-testid="stPopoverButton"] *,
 [data-testid="stDownloadButton"] button * {
@@ -2640,7 +2664,25 @@ if platform_key == "meta_organic":
     st.dataframe(df_table, width="stretch", hide_index=True)
 
 with download_slot.container():
-    with st.popover("Descargar", icon=":material/download:", width="content"):
+    @st.dialog("Descargar Reporte", width="small")
+    def _show_download_dialog(
+        export_name=export_name,
+        chart_bg=chart_bg,
+        csv_export_frame=csv_export_frame,
+        df_curr=df_curr,
+        df_prev=df_prev,
+        selected_platform_label=selected_platform_label,
+        account_disp=account_disp,
+        start_date=start_date,
+        end_date=end_date,
+        account_id=account_id,
+        platform_key=platform_key,
+        selected_platform_keys=selected_platform_keys,
+        client_id=client_id,
+        user_id=user_id,
+        api_key=api_key,
+        dashboard_user=dashboard_user,
+    ):
         st.html(
             segmented_pdf_download_html(export_name, chart_bg),
             unsafe_allow_javascript=True,
@@ -2757,3 +2799,6 @@ with download_slot.container():
             icon=":material/download:",
             width="stretch",
         )
+
+    if st.button("Descargar", icon=":material/download:", key="btn_download_modal", help="Opciones de descarga"):
+        _show_download_dialog()
