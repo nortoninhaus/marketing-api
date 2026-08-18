@@ -596,10 +596,21 @@ div[data-testid="stElementContainer"]:has([data-testid="stPopover"]) > div,
     stroke: #FFFFFF !important;
 }
 [data-testid="stPopoverBody"] {
-    background-color: #FFFFFF !important;
+    background-color: var(--secondary-background-color, #1e293b) !important;
+    color: var(--text-color, #ffffff) !important;
+    border: 1px solid rgba(128, 128, 128, 0.2) !important;
+    border-radius: 12px !important;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25) !important;
 }
 [data-testid="stPopoverBody"] > div {
-    background-color: #FFFFFF !important;
+    background-color: transparent !important;
+}
+[data-testid="stPopoverBody"] label,
+[data-testid="stPopoverBody"] label p,
+[data-testid="stPopoverBody"] label span,
+[data-testid="stPopoverBody"] p,
+[data-testid="stPopoverBody"] span {
+    color: var(--text-color, inherit) !important;
 }
 
 /* Sidebar Wrapper */
@@ -1132,8 +1143,18 @@ if theme_mode == "Claro":
     }
     
     /* Dropdown popover menu in light mode */
-    [data-baseweb="popover"] {
+    [data-baseweb="popover"],
+    [data-testid="stPopoverBody"] {
         background-color: #FFFFFF !important;
+        color: #0F172A !important;
+        border: 1px solid rgba(15,23,42,0.12) !important;
+    }
+    [data-testid="stPopoverBody"] label,
+    [data-testid="stPopoverBody"] label p,
+    [data-testid="stPopoverBody"] label span,
+    [data-testid="stPopoverBody"] p,
+    [data-testid="stPopoverBody"] span {
+        color: #0F172A !important;
     }
     [data-baseweb="menu"] {
         background-color: #FFFFFF !important;
