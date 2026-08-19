@@ -431,16 +431,33 @@ span[data-testid="stSidebarCollapseButton"] {
 }
 
 /* Sidebar collapse/expand toggle button styling & position */
-[data-testid="stHeader"] {
+header.stAppHeader,
+[data-testid="stHeader"],
+.stAppToolbar,
+[data-testid="stToolbar"] {
     background-color: transparent !important;
     box-shadow: none !important;
     height: 0px !important;
     min-height: 0px !important;
+    max-height: 0px !important;
+    padding: 0px !important;
+    margin: 0px !important;
+    border: none !important;
     overflow: visible !important;
     position: absolute !important;
-    top: 21px !important;
+    top: 14px !important;
     left: 16px !important;
     z-index: 9999 !important;
+}
+
+.stAppToolbar > div,
+[data-testid="stToolbar"] > div,
+.st-emotion-cache-1j22a0y {
+    height: 0px !important;
+    min-height: 0px !important;
+    max-height: 0px !important;
+    padding: 0px !important;
+    margin: 0px !important;
 }
 
 [data-testid="stHeader"] button,
@@ -571,10 +588,16 @@ div[data-testid="stElementContainer"]:has(style) {
 .header-live-badge {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: flex-start;
     white-space: nowrap !important;
     padding: 0px;
     margin: 0px;
+}
+
+[data-testid="stColumn"]:has(button[aria-label="Descargar reporte"]) {
+    display: flex !important;
+    justify-content: flex-end !important;
+    align-items: center !important;
 }
 
 button[aria-label="Descargar reporte"],
@@ -583,29 +606,31 @@ button[aria-label="Descargar reporte"],
 [data-testid="stDownloadButton"] button {
     background-color: #02569e !important;
     color: #FFFFFF !important;
-    border: none !important;
-    border-radius: 6px !important;
+    border: 1px solid rgba(255, 255, 255, 0.18) !important;
+    border-radius: 8px !important;
     padding: 0 !important;
-    font-size: 14px !important;
+    font-size: 16px !important;
     font-weight: 700 !important;
-    height: 28px !important;
-    min-height: 28px !important;
-    width: 28px !important;
-    min-width: 28px !important;
+    height: 32px !important;
+    min-height: 32px !important;
+    width: 32px !important;
+    min-width: 32px !important;
     line-height: 1 !important;
     display: inline-flex !important;
     align-items: center !important;
     justify-content: center !important;
     gap: 0 !important;
-    box-shadow: 0 2px 6px rgba(2, 86, 158, 0.3) !important;
+    box-shadow: 0 2px 6px rgba(2, 86, 158, 0.35) !important;
     cursor: pointer !important;
-    transition: background-color 0.2s ease, transform 0.1s ease !important;
+    transition: all 0.2s ease !important;
 }
 button[aria-label="Descargar reporte"]:hover,
 [data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"]:hover,
 [data-testid="stPopoverButton"]:hover {
     background-color: #0369a1 !important;
+    border-color: rgba(255, 255, 255, 0.35) !important;
     transform: translateY(-1px) !important;
+    box-shadow: 0 4px 10px rgba(2, 86, 158, 0.45) !important;
 }
 button[aria-label="Descargar reporte"] *,
 [data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"] *,
@@ -1618,9 +1643,9 @@ if st.sidebar.button("🔒 Cerrar Sesión", key="logout_button", use_container_w
     st.stop()
 
 # MAIN DISPLAY (Occupies full wide screen)
-header_left, header_right = st.columns([0.88, 0.12], vertical_alignment="center")
+header_left, header_right = st.columns([0.84, 0.16], vertical_alignment="center")
 with header_right:
-    col_dl, col_live = st.columns([0.28, 0.72], vertical_alignment="center")
+    col_dl, col_live = st.columns([0.30, 0.70], vertical_alignment="center", gap="small")
     with col_dl:
         download_slot = st.empty()
     with col_live:
