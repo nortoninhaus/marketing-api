@@ -553,10 +553,14 @@ span[data-testid="stSidebarCollapseButton"] {
     min-height: 28px !important;
 }
 
-/* Position download slot inline inside header next to API Directa */
+/* Position download slot inline inside header next to API Directa and eliminate vertical layout block */
+div[data-testid="stLayoutWrapper"]:has(button[aria-label="Descargar reporte"]),
+div[data-testid="stLayoutWrapper"]:has([data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"]),
+div[data-testid="stLayoutWrapper"]:has([data-testid="stPopoverButton"]),
 div[data-testid="stElementContainer"]:has(button[aria-label="Descargar reporte"]),
-div[data-testid="stElementContainer"]:has([data-testid="stPopover"]),
-div[data-testid="stElementContainer"]:has([data-testid="stPopoverButton"]) {
+div[data-testid="stElementContainer"]:has([data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"]),
+div[data-testid="stElementContainer"]:has([data-testid="stPopoverButton"]),
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] button[aria-label="Descargar reporte"]) {
     position: absolute !important;
     left: auto !important;
     right: 140px !important;
@@ -566,8 +570,15 @@ div[data-testid="stElementContainer"]:has([data-testid="stPopoverButton"]) {
     padding: 0 !important;
     width: auto !important;
     height: 0 !important;
+    min-height: 0 !important;
     display: flex !important;
     justify-content: flex-end !important;
+    pointer-events: none !important;
+}
+
+div[data-testid="stLayoutWrapper"]:has(button[aria-label="Descargar reporte"]) *,
+div[data-testid="stElementContainer"]:has(button[aria-label="Descargar reporte"]) * {
+    pointer-events: auto !important;
 }
 
 button[aria-label="Descargar reporte"],
@@ -1617,7 +1628,7 @@ if st.sidebar.button("🔒 Cerrar Sesión", key="logout_button", use_container_w
 download_slot = st.empty()
 
 # Header
-st.markdown("""
+st.html("""
 <div class="custom-header">
     <div class="agency">
         <img src="https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/69691ca0d848087449f86454.svg" alt="Inhaus">
@@ -1635,14 +1646,9 @@ st.markdown("""
         const slot = document.getElementById("download-header-slot");
         const btn = document.querySelector('button[aria-label="Descargar reporte"], [data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"]');
         if (slot && btn) {
-            const container = btn.closest('[data-testid="stElementContainer"]');
-            if (container && container !== slot.parentElement) {
-                container.style.position = "absolute";
-                container.style.height = "0px";
-                container.style.margin = "0px";
-                container.style.padding = "0px";
-                container.style.top = "0px";
-                container.style.pointerEvents = "none";
+            const wrapper = btn.closest('[data-testid="stLayoutWrapper"]');
+            if (wrapper) {
+                wrapper.style.display = "none";
             }
             if (!slot.contains(btn)) {
                 btn.style.pointerEvents = "auto";
@@ -1655,7 +1661,7 @@ st.markdown("""
     observer.observe(document.body, { childList: true, subtree: true });
 })();
 </script>
-""", unsafe_allow_html=True)
+""", unsafe_allow_javascript=True)
 
 if execute_query:
     log_query_execution(
