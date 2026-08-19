@@ -567,13 +567,22 @@ header.stAppHeader,
     padding-top: 0rem !important;
 }
 
-/* Hide empty style containers so they don't produce vertical gaps */
+/* Hide empty style/script/bridge containers from flexbox layout so they do NOT take gap space */
 div[data-testid="stElementContainer"]:empty,
-div[data-testid="stElementContainer"]:has(style) {
+div[data-testid="stElementContainer"]:has(style),
+div[data-testid="stElementContainer"]:has(script),
+div[data-testid="stElementContainer"]:has([data-testid="stHtml"]),
+div[data-testid="stElementContainer"]:has(iframe[style*="display: none"]),
+div[data-testid="stElementContainer"]:has(iframe[height="0"]),
+div[data-testid="stElementContainer"].element-container:has(style),
+div.element-container:has(style) {
     display: none !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    height: 0 !important;
+    position: absolute !important;
+    height: 0px !important;
+    max-height: 0px !important;
+    width: 0px !important;
+    margin: 0px !important;
+    padding: 0px !important;
 }
 
 /* Header layout styling */
@@ -594,10 +603,29 @@ div[data-testid="stElementContainer"]:has(style) {
     margin: 0px;
 }
 
+/* Header actions row: group download button and API Directa tightly together */
+[data-testid="stHorizontalBlock"]:has(button[aria-label="Descargar reporte"]) {
+    justify-content: flex-end !important;
+    align-items: center !important;
+    gap: 8px !important;
+}
+
 [data-testid="stColumn"]:has(button[aria-label="Descargar reporte"]) {
     display: flex !important;
     justify-content: flex-end !important;
     align-items: center !important;
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: auto !important;
+}
+
+[data-testid="stColumn"]:has(.header-live-badge) {
+    display: flex !important;
+    justify-content: flex-start !important;
+    align-items: center !important;
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: auto !important;
 }
 
 button[aria-label="Descargar reporte"],
@@ -606,21 +634,23 @@ button[aria-label="Descargar reporte"],
 [data-testid="stDownloadButton"] button {
     background-color: #02569e !important;
     color: #FFFFFF !important;
-    border: 1px solid rgba(255, 255, 255, 0.18) !important;
+    border: 1px solid rgba(255, 255, 255, 0.22) !important;
     border-radius: 8px !important;
     padding: 0 !important;
-    font-size: 16px !important;
+    font-size: 18px !important;
     font-weight: 700 !important;
-    height: 32px !important;
-    min-height: 32px !important;
-    width: 32px !important;
-    min-width: 32px !important;
+    height: 34px !important;
+    min-height: 34px !important;
+    max-height: 34px !important;
+    width: 34px !important;
+    min-width: 34px !important;
+    max-width: 34px !important;
     line-height: 1 !important;
     display: inline-flex !important;
     align-items: center !important;
     justify-content: center !important;
     gap: 0 !important;
-    box-shadow: 0 2px 6px rgba(2, 86, 158, 0.35) !important;
+    box-shadow: 0 2px 8px rgba(2, 86, 158, 0.4) !important;
     cursor: pointer !important;
     transition: all 0.2s ease !important;
 }
@@ -628,9 +658,16 @@ button[aria-label="Descargar reporte"]:hover,
 [data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"]:hover,
 [data-testid="stPopoverButton"]:hover {
     background-color: #0369a1 !important;
-    border-color: rgba(255, 255, 255, 0.35) !important;
+    border-color: rgba(255, 255, 255, 0.4) !important;
     transform: translateY(-1px) !important;
-    box-shadow: 0 4px 10px rgba(2, 86, 158, 0.45) !important;
+    box-shadow: 0 4px 12px rgba(2, 86, 158, 0.5) !important;
+}
+button[aria-label="Descargar reporte"] [data-testid="stIconMaterial"],
+button[aria-label="Descargar reporte"] span {
+    font-size: 18px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
 }
 button[aria-label="Descargar reporte"] *,
 [data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"] *,
