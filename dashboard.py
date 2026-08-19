@@ -544,46 +544,24 @@ span[data-testid="stSidebarCollapseButton"] {
     position: relative !important;
 }
 
-/* Download header slot inside custom-header-right */
-.download-header-slot {
-    display: inline-flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    height: 28px !important;
-    min-height: 28px !important;
+/* Header layout styling */
+.custom-header {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 8px 0px;
+    position: relative;
 }
-
-/* Position download slot inline inside header next to API Directa and eliminate vertical layout block */
-div[data-testid="stLayoutWrapper"]:has(button[aria-label="Descargar reporte"]),
-div[data-testid="stLayoutWrapper"]:has([data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"]),
-div[data-testid="stLayoutWrapper"]:has([data-testid="stPopoverButton"]),
-div[data-testid="stElementContainer"]:has(button[aria-label="Descargar reporte"]),
-div[data-testid="stElementContainer"]:has([data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"]),
-div[data-testid="stElementContainer"]:has([data-testid="stPopoverButton"]),
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] button[aria-label="Descargar reporte"]) {
-    position: absolute !important;
-    left: auto !important;
-    right: 140px !important;
-    top: 14px !important;
-    z-index: 9999 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    width: auto !important;
-    height: 0 !important;
-    min-height: 0 !important;
-    display: flex !important;
-    justify-content: flex-end !important;
-    pointer-events: none !important;
-}
-
-div[data-testid="stLayoutWrapper"]:has(button[aria-label="Descargar reporte"]) *,
-div[data-testid="stElementContainer"]:has(button[aria-label="Descargar reporte"]) * {
-    pointer-events: auto !important;
+.header-live-badge {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    white-space: nowrap !important;
+    padding: 8px 0px;
 }
 
 button[aria-label="Descargar reporte"],
 [data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"],
-.download-header-slot button,
 [data-testid="stPopoverButton"],
 [data-testid="stDownloadButton"] button {
     background-color: #02569e !important;
@@ -608,14 +586,12 @@ button[aria-label="Descargar reporte"],
 }
 button[aria-label="Descargar reporte"]:hover,
 [data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"]:hover,
-.download-header-slot button:hover,
 [data-testid="stPopoverButton"]:hover {
     background-color: #0369a1 !important;
     transform: translateY(-1px) !important;
 }
 button[aria-label="Descargar reporte"] *,
 [data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"] *,
-.download-header-slot button *,
 [data-testid="stPopoverButton"] *,
 [data-testid="stDownloadButton"] button * {
     color: #FFFFFF !important;
@@ -1625,43 +1601,23 @@ if st.sidebar.button("🔒 Cerrar Sesión", key="logout_button", use_container_w
     st.stop()
 
 # MAIN DISPLAY (Occupies full wide screen)
-download_slot = st.empty()
-
-# Header
-st.html("""
+header_left, header_right = st.columns([0.80, 0.20], vertical_alignment="center")
+with header_right:
+    col_dl, col_live = st.columns([0.35, 0.65], vertical_alignment="center")
+    with col_dl:
+        download_slot = st.empty()
+    with col_live:
+        st.markdown('<div class="header-live-badge"><span class="stamp"><span class="live"></span> API Directa</span></div>', unsafe_allow_html=True)
+with header_left:
+    st.markdown("""
 <div class="custom-header">
     <div class="agency">
         <img src="https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/69691ca0d848087449f86454.svg" alt="Inhaus">
         <span class="div-bar"></span>
         <span class="who">Dashboard de Pauta &middot; Conexión de API</span>
     </div>
-    <div class="custom-header-right">
-        <div id="download-header-slot" class="download-header-slot"></div>
-        <span class="stamp"><span class="live"></span> API Directa</span>
-    </div>
 </div>
-<script>
-(() => {
-    const relocate = () => {
-        const slot = document.getElementById("download-header-slot");
-        const btn = document.querySelector('button[aria-label="Descargar reporte"], [data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"]');
-        if (slot && btn) {
-            const wrapper = btn.closest('[data-testid="stLayoutWrapper"]');
-            if (wrapper) {
-                wrapper.style.display = "none";
-            }
-            if (!slot.contains(btn)) {
-                btn.style.pointerEvents = "auto";
-                slot.appendChild(btn);
-            }
-        }
-    };
-    relocate();
-    const observer = new MutationObserver(relocate);
-    observer.observe(document.body, { childList: true, subtree: true });
-})();
-</script>
-""", unsafe_allow_javascript=True)
+""", unsafe_allow_html=True)
 
 if execute_query:
     log_query_execution(
