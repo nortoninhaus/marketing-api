@@ -539,23 +539,20 @@ span[data-testid="stSidebarCollapseButton"] {
 /* Remove default Streamlit top padding and container margins */
 .block-container,
 [data-testid="stMainBlockContainer"] {
-    padding-top: 0.5rem !important;
+    padding-top: 0rem !important;
     padding-bottom: 2rem !important;
     position: relative !important;
 }
 
 /* Position download slot inline inside header next to API Directa */
-.block-container > div[data-testid="stElementContainer"]:has([data-testid="stPopover"]),
-[data-testid="stMainBlockContainer"] > div[data-testid="stElementContainer"]:has([data-testid="stPopover"]),
+[data-testid="stMainBlockContainer"] > div[data-testid="stElementContainer"]:first-child,
+.block-container > div[data-testid="stElementContainer"]:first-child,
 div[data-testid="stElementContainer"]:has([data-testid="stPopover"]),
-div[data-testid="stElementContainer"]:has([data-testid="stPopoverButton"]),
-div[data-testid="stElementContainer"]:has(button[key="btn_download_modal"]),
-div[data-testid="stElementContainer"]:has(button[aria-label="Descargar"]),
-div[data-testid="stElementContainer"]:has(button:has(p:is(:contains("Descargar")))) {
+div[data-testid="stElementContainer"]:has([data-testid="stPopoverButton"]) {
     position: absolute !important;
     left: auto !important;
     right: 140px !important;
-    top: 22px !important;
+    top: 14px !important;
     z-index: 9999 !important;
     margin: 0 !important;
     padding: 0 !important;
@@ -565,11 +562,9 @@ div[data-testid="stElementContainer"]:has(button:has(p:is(:contains("Descargar")
     justify-content: flex-end !important;
 }
 
-div[data-testid="stElementContainer"]:has([data-testid="stPopover"]) > div,
-[data-testid="stPopover"],
-[data-testid="stPopoverButton"],
-div[data-testid="stElementContainer"]:has(button[key="btn_download_modal"]) > div,
-div[data-testid="stElementContainer"]:has(button:has(p:is(:contains("Descargar")))) > div {
+[data-testid="stMainBlockContainer"] > div[data-testid="stElementContainer"]:first-child > div,
+.block-container > div[data-testid="stElementContainer"]:first-child > div,
+div[data-testid="stElementContainer"]:has([data-testid="stPopover"]) > div {
     position: relative !important;
     left: auto !important;
     right: auto !important;
@@ -579,29 +574,36 @@ div[data-testid="stElementContainer"]:has(button:has(p:is(:contains("Descargar")
 
 [data-testid="stPopoverButton"],
 [data-testid="stDownloadButton"] button,
-button[key="btn_download_modal"],
-button[aria-label="Descargar"],
-button:has(p:is(:contains("Descargar"))) {
+[data-testid="stMainBlockContainer"] > div[data-testid="stElementContainer"]:first-child button,
+.block-container > div[data-testid="stElementContainer"]:first-child button {
     background-color: #02569e !important;
     color: #FFFFFF !important;
     border: none !important;
     border-radius: 6px !important;
-    padding: 4px 12px !important;
-    font-size: 12px !important;
+    padding: 4px 6px !important;
+    font-size: 14px !important;
     font-weight: 700 !important;
     height: 28px !important;
     min-height: 28px !important;
+    width: 32px !important;
+    min-width: 32px !important;
     line-height: 1 !important;
     display: inline-flex !important;
     align-items: center !important;
-    gap: 6px !important;
+    justify-content: center !important;
+    gap: 0 !important;
     box-shadow: 0 2px 6px rgba(2, 86, 158, 0.3) !important;
+    transition: background-color 0.2s ease, transform 0.1s ease !important;
+}
+[data-testid="stPopoverButton"]:hover,
+[data-testid="stMainBlockContainer"] > div[data-testid="stElementContainer"]:first-child button:hover {
+    background-color: #0369a1 !important;
+    transform: translateY(-1px) !important;
 }
 [data-testid="stPopoverButton"] *,
 [data-testid="stDownloadButton"] button *,
-button[key="btn_download_modal"] *,
-button[aria-label="Descargar"] *,
-button:has(p:is(:contains("Descargar"))) * {
+[data-testid="stMainBlockContainer"] > div[data-testid="stElementContainer"]:first-child button *,
+.block-container > div[data-testid="stElementContainer"]:first-child button * {
     color: #FFFFFF !important;
     fill: #FFFFFF !important;
     stroke: #FFFFFF !important;
@@ -2808,5 +2810,5 @@ with download_slot.container():
             width="stretch",
         )
 
-    if st.button("Descargar", icon=":material/download:", key="btn_download_modal", help="Opciones de descarga"):
+    if st.button("", icon=":material/download:", key="btn_download_modal", help="Descargar reporte"):
         _show_download_dialog()
