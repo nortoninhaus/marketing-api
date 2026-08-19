@@ -544,9 +544,17 @@ span[data-testid="stSidebarCollapseButton"] {
     position: relative !important;
 }
 
+/* Download header slot inside custom-header-right */
+.download-header-slot {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    height: 28px !important;
+    min-height: 28px !important;
+}
+
 /* Position download slot inline inside header next to API Directa */
-[data-testid="stMainBlockContainer"] > div[data-testid="stElementContainer"]:first-child,
-.block-container > div[data-testid="stElementContainer"]:first-child,
+div[data-testid="stElementContainer"]:has(button[aria-label="Descargar reporte"]),
 div[data-testid="stElementContainer"]:has([data-testid="stPopover"]),
 div[data-testid="stElementContainer"]:has([data-testid="stPopoverButton"]) {
     position: absolute !important;
@@ -562,48 +570,43 @@ div[data-testid="stElementContainer"]:has([data-testid="stPopoverButton"]) {
     justify-content: flex-end !important;
 }
 
-[data-testid="stMainBlockContainer"] > div[data-testid="stElementContainer"]:first-child > div,
-.block-container > div[data-testid="stElementContainer"]:first-child > div,
-div[data-testid="stElementContainer"]:has([data-testid="stPopover"]) > div {
-    position: relative !important;
-    left: auto !important;
-    right: auto !important;
-    width: auto !important;
-    display: inline-flex !important;
-}
-
+button[aria-label="Descargar reporte"],
+[data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"],
+.download-header-slot button,
 [data-testid="stPopoverButton"],
-[data-testid="stDownloadButton"] button,
-[data-testid="stMainBlockContainer"] > div[data-testid="stElementContainer"]:first-child button,
-.block-container > div[data-testid="stElementContainer"]:first-child button {
+[data-testid="stDownloadButton"] button {
     background-color: #02569e !important;
     color: #FFFFFF !important;
     border: none !important;
     border-radius: 6px !important;
-    padding: 4px 6px !important;
+    padding: 0 !important;
     font-size: 14px !important;
     font-weight: 700 !important;
     height: 28px !important;
     min-height: 28px !important;
-    width: 32px !important;
-    min-width: 32px !important;
+    width: 28px !important;
+    min-width: 28px !important;
     line-height: 1 !important;
     display: inline-flex !important;
     align-items: center !important;
     justify-content: center !important;
     gap: 0 !important;
     box-shadow: 0 2px 6px rgba(2, 86, 158, 0.3) !important;
+    cursor: pointer !important;
     transition: background-color 0.2s ease, transform 0.1s ease !important;
 }
-[data-testid="stPopoverButton"]:hover,
-[data-testid="stMainBlockContainer"] > div[data-testid="stElementContainer"]:first-child button:hover {
+button[aria-label="Descargar reporte"]:hover,
+[data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"]:hover,
+.download-header-slot button:hover,
+[data-testid="stPopoverButton"]:hover {
     background-color: #0369a1 !important;
     transform: translateY(-1px) !important;
 }
+button[aria-label="Descargar reporte"] *,
+[data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"] *,
+.download-header-slot button *,
 [data-testid="stPopoverButton"] *,
-[data-testid="stDownloadButton"] button *,
-[data-testid="stMainBlockContainer"] > div[data-testid="stElementContainer"]:first-child button *,
-.block-container > div[data-testid="stElementContainer"]:first-child button * {
+[data-testid="stDownloadButton"] button * {
     color: #FFFFFF !important;
     fill: #FFFFFF !important;
     stroke: #FFFFFF !important;
@@ -1614,7 +1617,7 @@ if st.sidebar.button("🔒 Cerrar Sesión", key="logout_button", use_container_w
 download_slot = st.empty()
 
 # Header
-st.markdown(f"""
+st.markdown("""
 <div class="custom-header">
     <div class="agency">
         <img src="https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/69691ca0d848087449f86454.svg" alt="Inhaus">
@@ -1622,9 +1625,36 @@ st.markdown(f"""
         <span class="who">Dashboard de Pauta &middot; Conexión de API</span>
     </div>
     <div class="custom-header-right">
+        <div id="download-header-slot" class="download-header-slot"></div>
         <span class="stamp"><span class="live"></span> API Directa</span>
     </div>
 </div>
+<script>
+(() => {
+    const relocate = () => {
+        const slot = document.getElementById("download-header-slot");
+        const btn = document.querySelector('button[aria-label="Descargar reporte"], [data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"]');
+        if (slot && btn) {
+            const container = btn.closest('[data-testid="stElementContainer"]');
+            if (container && container !== slot.parentElement) {
+                container.style.position = "absolute";
+                container.style.height = "0px";
+                container.style.margin = "0px";
+                container.style.padding = "0px";
+                container.style.top = "0px";
+                container.style.pointerEvents = "none";
+            }
+            if (!slot.contains(btn)) {
+                btn.style.pointerEvents = "auto";
+                slot.appendChild(btn);
+            }
+        }
+    };
+    relocate();
+    const observer = new MutationObserver(relocate);
+    observer.observe(document.body, { childList: true, subtree: true });
+})();
+</script>
 """, unsafe_allow_html=True)
 
 if execute_query:
