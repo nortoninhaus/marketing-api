@@ -536,12 +536,27 @@ span[data-testid="stSidebarCollapseButton"] {
     font-family: 'Manrope', sans-serif !important;
 }
 
-/* Remove default Streamlit top padding and container margins */
+/* Remove default Streamlit top padding, container margins and style tags gap */
 .block-container,
-[data-testid="stMainBlockContainer"] {
+[data-testid="stMainBlockContainer"],
+.stMainBlockContainer {
     padding-top: 0rem !important;
     padding-bottom: 2rem !important;
+    margin-top: 0rem !important;
     position: relative !important;
+}
+
+[data-testid="stAppViewContainer"] > .main {
+    padding-top: 0rem !important;
+}
+
+/* Hide empty style containers so they don't produce vertical gaps */
+div[data-testid="stElementContainer"]:empty,
+div[data-testid="stElementContainer"]:has(style) {
+    display: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: 0 !important;
 }
 
 /* Header layout styling */
@@ -549,7 +564,8 @@ span[data-testid="stSidebarCollapseButton"] {
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    padding: 8px 0px;
+    padding: 0px;
+    margin: 0px;
     position: relative;
 }
 .header-live-badge {
@@ -557,7 +573,8 @@ span[data-testid="stSidebarCollapseButton"] {
     align-items: center;
     justify-content: flex-end;
     white-space: nowrap !important;
-    padding: 8px 0px;
+    padding: 0px;
+    margin: 0px;
 }
 
 button[aria-label="Descargar reporte"],
@@ -1601,9 +1618,9 @@ if st.sidebar.button("🔒 Cerrar Sesión", key="logout_button", use_container_w
     st.stop()
 
 # MAIN DISPLAY (Occupies full wide screen)
-header_left, header_right = st.columns([0.80, 0.20], vertical_alignment="center")
+header_left, header_right = st.columns([0.88, 0.12], vertical_alignment="center")
 with header_right:
-    col_dl, col_live = st.columns([0.35, 0.65], vertical_alignment="center")
+    col_dl, col_live = st.columns([0.28, 0.72], vertical_alignment="center")
     with col_dl:
         download_slot = st.empty()
     with col_live:
