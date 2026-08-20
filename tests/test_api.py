@@ -108,3 +108,43 @@ def test_comments_endpoint(mock_fetch, client, auth_headers):
     assert data["comments"][0]["author"] == "user_a"
     assert mock_fetch.call_args[0][0] == "thread_post_123"
 
+
+def test_meta_oauth_authorize_valid_scopes(client):
+    with patch("app.config.settings.meta_app_id", "test_meta_app_123"):
+        response = client.get("/api/v1/oauth/authorize?platform=meta_ads&client_id=test_client")
+        assert response.status_code == 200
+        data = response.json()
+        assert "authorization_url" in data
+        auth_url = data["authorization_url"]
+        assert "instagram_business_basic" not in auth_url
+        assert "instagram_business_manage_insights" not in auth_url
+        assert "v25.0" in auth_url
+
+        # Check all 21 Meta permissions
+        expected_scopes = [
+            "email",
+            "ads_management",
+            "ads_read",
+            "business_management",
+            "pages_manage_ads",
+            "pages_manage_engagement",
+            "pages_manage_metadata",
+            "pages_read_engagement",
+            "pages_read_user_content",
+            "pages_show_list",
+            "catalog_management",
+            "instagram_basic",
+            "instagram_branded_content_ads_brand",
+            "instagram_content_publish",
+            "instagram_manage_comments",
+            "instagram_manage_contents",
+            "instagram_manage_engagement",
+            "instagram_manage_insights",
+            "leads_retrieval",
+            "read_insights",
+            "threads_business_basic",
+        ]
+        for scope in expected_scopes:
+            assert scope in auth_url, f"Expected scope '{scope}' to be in authorization URL"
+
+

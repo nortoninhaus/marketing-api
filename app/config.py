@@ -28,7 +28,15 @@ class Settings(BaseSettings):
     meta_app_id: str = ""
     meta_app_secret: str = ""
     meta_oauth_redirect_uri: str = ""
-    meta_oauth_scopes: str = "ads_read,pages_show_list,pages_read_engagement,pages_read_user_content,instagram_business_basic,instagram_business_manage_insights"
+    meta_oauth_scopes: str = (
+        "email,ads_management,ads_read,business_management,"
+        "pages_manage_ads,pages_manage_engagement,pages_manage_metadata,"
+        "pages_read_engagement,pages_read_user_content,pages_show_list,"
+        "catalog_management,instagram_basic,instagram_branded_content_ads_brand,"
+        "instagram_content_publish,instagram_manage_comments,instagram_manage_contents,"
+        "instagram_manage_engagement,instagram_manage_insights,leads_retrieval,"
+        "read_insights,threads_business_basic"
+    )
 
     # --- Google Ads ---
     google_ads_developer_token: str = ""
@@ -97,7 +105,7 @@ class Settings(BaseSettings):
     ghl_location_id: str = ""
     ghl_client_id: str = ""
     ghl_client_secret: str = ""
-    ghl_oauth_scopes: str = "contacts.readonly opportunities.readonly locations.readonly"
+    ghl_oauth_scopes: str = "contacts.readonly opportunities.readonly locations.readonly conversations.readonly"
     ghl_oauth_redirect_uri: str = ""
 
     # --- BigQuery Sink ---
