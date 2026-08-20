@@ -61,7 +61,7 @@
   <main>
     <section class="report-panel active" id="summary-panel" hidden>
       <div class="panel-banner"><strong>Métricas consolidadas multicanal</strong><span>Vista global del rendimiento publicitario disponible.</span></div>
-      <div class="section-head"><div><div class="section-kicker accent-text">Vista global</div><h2 class="section-title">Resultados consolidados</h2></div><p class="section-desc">KPIs, distribución por red, tendencia diaria y lectura del período.</p></div>
+      <div class="section-head"><div><div class="section-kicker accent-text">VISTA PREVIA GLOBAL</div><h2 class="section-title">Resultados Consolidados</h2></div><p class="section-desc" id="summary-section-desc">Métricas maestras sumando Facebook e Instagram (Datos Oficiales Verificados).</p></div>
       <div class="grid stats-grid" id="summary-kpis"></div>
       
       <!-- DESGLOSE DE KPIS POR RED SOCIAL -->
@@ -147,8 +147,49 @@
     const number=value=>typeof value==="number"&&Number.isFinite(value),element=(tag,className,value)=>{const node=document.createElement(tag);if(className)node.className=className;if(value!==undefined&&value!==null)node.textContent=String(value);return node},show=(node,visible)=>{if(node)node.hidden=!visible;return visible},metricLabel=key=>labels[key]||key.replaceAll("_"," ").replace(/\b\w/g,letter=>letter.toUpperCase()),platformLabel=key=>key.replaceAll("_"," ").replace(/\b\w/g,letter=>letter.toUpperCase());
     const format=(key,value)=>{if(!number(value))return"";if(money.has(key))return new Intl.NumberFormat("es-EC",{style:"currency",currency:"USD",maximumFractionDigits:2}).format(value);if(percent.has(key)||key.startsWith("delta_"))return new Intl.NumberFormat("es-EC",{maximumFractionDigits:2}).format(value)+"%";return new Intl.NumberFormat("es-EC",{notation:Math.abs(value)>=10000000?"compact":"standard",maximumFractionDigits:0}).format(value)},formatDate=value=>{if(!value)return"";const parsed=new Date(value);return Number.isNaN(parsed.getTime())?String(value):new Intl.DateTimeFormat("es-EC",{day:"2-digit",month:"short",year:"numeric",timeZone:"UTC"}).format(parsed)},ordered=values=>{const keys=Object.entries(values||{}).filter(([,value])=>number(value)).map(([key])=>key);return[...new Set([...priority.filter(key=>keys.includes(key)),...keys.sort()])]},canonical=value=>{const source=String(value||"").toLowerCase();if(source.includes("instagram"))return"instagram";if(source.includes("facebook"))return"facebook";if(source.includes("tiktok"))return"tiktok";return source},isMeta=value=>{const source=String(value||"").toLowerCase();return source==="meta"||source.startsWith("meta_")||source.startsWith("meta ")},rowPlatform=row=>{const source=row.source_platform||row.platform||(row.source_metrics||{}).platform,publisher=row.publisher_platform||(row.source_metrics||{}).publisher_platform;return canonical(isMeta(source)?publisher||row.platform||source:row.platform||source)};
     const setPanel=(id,visible)=>{const node=document.getElementById(id);if(node){show(node,visible);if(!visible)node.classList.remove('active')}const navBtn=document.querySelector('.tab-btn[data-target="'+id+'"]');if(navBtn)show(navBtn,visible);['general','redes','optimizacion'].forEach(mainId=>{const subNav=document.getElementById('subnav-'+mainId),mainBtn=document.querySelector('.main-tab-btn[data-main-tab="'+mainId+'"]');if(subNav&&mainBtn){const hasVisible=[...subNav.querySelectorAll('.tab-btn')].some(b=>!b.hidden);show(mainBtn,hasVisible)}})};
+    const summaryAllowedKeys=["spend","impressions","reach","engagement","post_engagement","followers","video_views","views"];
+    const summaryCustomLabels={
+      spend:"INVERSIÓN EJECUTADA",
+      impressions:"IMPRESIONES",
+      reach:"ALCANCE",
+      engagement:"INTERACCIONES",
+      post_engagement:"INTERACCIONES",
+      followers:"SEGUIDORES",
+      views:"VIS. DE VIDEO",
+      video_views:"VIS. DE VIDEO"
+    };
+
+    const renderKpis=(id,values,withDeltas=false,allowedKeys=null)=>{
+      const container=document.getElementById(id);
+      container.replaceChildren();
+      let keys=ordered(values);
+      if(allowedKeys){
+        const present=new Set(keys);
+        keys=allowedKeys.filter(k=>present.has(k)||number(values[k]));
+        if(keys.includes("video_views")&&keys.includes("views")){
+          keys=keys.filter(k=>k!=="views");
+        }
+        if(keys.includes("engagement")&&keys.includes("post_engagement")){
+          keys=keys.filter(k=>k!=="post_engagement");
+        }
+      }
+      keys.forEach(key=>{
+        const card=element("article","card stat-card");
+        card.dataset.family="kpi";
+        card.dataset.metric=key;
+        const lbl=(id==="summary-kpis"&&summaryCustomLabels[key])?summaryCustomLabels[key]:metricLabel(key);
+        card.append(element("div","stat-label",lbl),element("div","stat-value",format(key,values[key])));
+        const delta=deltas[key];
+        if(withDeltas&&number(delta)){
+          const deltaSuffix=id==="summary-kpis"?" vs Mes Ant.":" vs. período anterior";
+          card.append(element("div","stat-delta "+(delta>0?"up":delta<0?"down":"neutral"),(delta>0?"↑ ":delta<0?"↓ ":"")+format("delta_"+key,Math.abs(delta))+deltaSuffix));
+        }
+        container.append(card);
+      });
+      return keys.length;
+    };
+
     const company=meta.company_name||"Cuenta seleccionada",period=meta.period||{},periodText=[formatDate(period.start),formatDate(period.end)].filter(Boolean).join(" — ");document.getElementById("company-name").textContent=company;document.getElementById("report-period").textContent=periodText;document.getElementById("generated-at").textContent=formatDate(meta.generated_at);document.getElementById("footer-company").textContent=company;document.getElementById("footer-period").textContent=periodText;(Array.isArray(meta.platforms)?meta.platforms:[]).forEach(value=>document.getElementById("hero-platforms").append(element("span","chip",platformLabel(String(value)))));
-    const renderKpis=(id,values,withDeltas=false)=>{const container=document.getElementById(id),keys=ordered(values);keys.forEach(key=>{const card=element("article","card stat-card");card.dataset.family="kpi";card.dataset.metric=key;card.append(element("div","stat-label",metricLabel(key)),element("div","stat-value",format(key,values[key])));const delta=deltas[key];if(withDeltas&&number(delta))card.append(element("div","stat-delta "+(delta>0?"up":delta<0?"down":"neutral"),(delta>0?"↑ ":delta<0?"↓ ":"")+format("delta_"+key,Math.abs(delta))+" vs. período anterior"));container.append(card)});return keys.length};
 
     const platformEntries=Object.entries(byPlatform).filter(([,metrics])=>metrics&&typeof metrics==="object");
     const platformSpend=platformEntries.reduce((total,[,metrics])=>total+(number(metrics.spend)?metrics.spend:0),0);
@@ -578,7 +619,7 @@
     );
 
     const renderTrend=(prefix,items)=>{const candidates=ordered(Object.assign({},...items.map(item=>item.metrics||{}))),metric=["impressions","reach","views","video_views","spend","engagement","clicks"].find(key=>candidates.includes(key))||candidates[0];if(!metric)return false;const daily=new Map;items.forEach(item=>{const value=(item.metrics||{})[metric];if(number(value))daily.set(item.date,(daily.get(item.date)||0)+value)});const points=[...daily.entries()].sort(([a],[b])=>a.localeCompare(b));if(!points.length)return false;const svg=document.getElementById(prefix+"-chart"),width=900,height=245,left=50,right=20,top=22,bottom=52,max=Math.max(...points.map(([,value])=>value),1),x=index=>left+(points.length===1?(width-left-right)/2:index*(width-left-right)/(points.length-1)),y=value=>top+(height-top-bottom)*(1-value/max),ns="http:"+"//www.w3.org/2000/svg";svg.setAttribute("viewBox","0 0 "+width+" "+height);const axis=document.createElementNS(ns,"line");for(const[key,value]of Object.entries({class:"chart-axis",x1:left,x2:width-right,y1:height-bottom,y2:height-bottom}))axis.setAttribute(key,value);svg.append(axis);const coords=points.map(([,value],index)=>x(index)+","+y(value)),area=document.createElementNS(ns,"polygon");area.setAttribute("class","chart-area");area.setAttribute("points",left+","+(height-bottom)+" "+coords.join(" ")+" "+(width-right)+","+(height-bottom));svg.append(area);const line=document.createElementNS(ns,"polyline");line.setAttribute("class","chart-line");line.setAttribute("points",coords.join(" "));svg.append(line);const every=Math.max(1,Math.ceil(points.length/7));points.forEach(([day,value],index)=>{const dot=document.createElementNS(ns,"circle");dot.setAttribute("class","chart-dot");dot.setAttribute("cx",x(index));dot.setAttribute("cy",y(value));dot.setAttribute("r",4);const title=document.createElementNS(ns,"title");title.textContent=formatDate(day)+": "+format(metric,value);dot.append(title);svg.append(dot);if(index%every===0||index===points.length-1){const label=document.createElementNS(ns,"text");label.setAttribute("class","chart-label");label.setAttribute("data-trend-tick","true");label.setAttribute("x",x(index));label.setAttribute("y",height-17);label.setAttribute("text-anchor","end");label.setAttribute("transform","rotate(-28 "+x(index)+" "+(height-17)+")");label.textContent=formatDate(day);svg.append(label)}});document.getElementById(prefix+"-trend-label").textContent=metricLabel(metric);const body=document.getElementById(prefix+"-trend-body");points.forEach(([day,value])=>{const row=element("tr");row.append(element("td","",formatDate(day)),element("td","",format(metric,value)));body.append(row)});return true};
-    const generalNarratives=narratives.filter(item=>typeof item==="string"||(item&&!item.platform));generalNarratives.map(item=>typeof item==="string"?item:item.text||item.summary||item.value).filter(Boolean).forEach(value=>{const node=element("p","narrative",value);node.dataset.family="narrative";document.getElementById("summary-narratives").append(node)});const summaryKpis=renderKpis("summary-kpis",summary,true),hasSummaryTrend=renderTrend("summary",series);show(document.getElementById("summary-trend"),hasSummaryTrend);setPanel("summary-panel",summaryKpis>0||hasSummaryTable||hasSummaryTrend||generalNarratives.length>0);
+    const generalNarratives=narratives.filter(item=>typeof item==="string"||(item&&!item.platform));generalNarratives.map(item=>typeof item==="string"?item:item.text||item.summary||item.value).filter(Boolean).forEach(value=>{const node=element("p","narrative",value);node.dataset.family="narrative";document.getElementById("summary-narratives").append(node)});const summaryKpis=renderKpis("summary-kpis",summary,true,summaryAllowedKeys),hasSummaryTrend=renderTrend("summary",series);show(document.getElementById("summary-trend"),hasSummaryTrend);setPanel("summary-panel",summaryKpis>0||hasSummaryTable||hasSummaryTrend||generalNarratives.length>0);
 
     const competition=Array.isArray(breakdowns.competition)?breakdowns.competition.filter(item=>item&&typeof item==="object"):[],competitionMetrics=competition.length?Object.keys(competition[0]).filter(key=>key!=="label"&&key!=="name"&&competition.every(item=>number(item[key]))):[];if(competition.length&&competitionMetrics.length){const head=document.getElementById("competition-head");head.append(element("th","","Cuenta"));competitionMetrics.forEach(key=>head.append(element("th","",metricLabel(key))));competition.forEach(item=>{const row=element("tr");row.append(element("td","",item.label||item.name||"Cuenta"));competitionMetrics.forEach(key=>row.append(element("td","",format(key,item[key]))));document.getElementById("competition-body").append(row)})}setPanel("competition-panel",document.getElementById("competition-body").children.length>0);
 
