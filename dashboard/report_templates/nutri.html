@@ -153,7 +153,6 @@
     const platformEntries=Object.entries(byPlatform).filter(([,metrics])=>metrics&&typeof metrics==="object");
     const platformSpend=platformEntries.reduce((total,[,metrics])=>total+(number(metrics.spend)?metrics.spend:0),0);
     const contentRows=[...(Array.isArray(rows.current)?rows.current:[]),...(Array.isArray(rows.supplemental)?rows.supplemental:[])];
-    const publisherRows=Object.fromEntries(["facebook","instagram"].map(name=>[name,contentRows.filter(item=>isMeta(item.source_platform)&&rowPlatform(item)===name)]));
     const tiktokRows=contentRows.filter(item=>rowPlatform(item)==="tiktok");
     const hasMetaPublisherIdentity=contentRows.some(item=>isMeta(item.source_platform)&&!isMeta(rowPlatform(item)));
     const hasDirectMetaChannels=platformEntries.some(([key])=>["facebook","instagram"].includes(canonical(key)));
@@ -166,18 +165,45 @@
     const sharedMeta=Boolean(metaEntry&&!hasMetaPublisherIdentity&&!hasDirectMetaChannels);
     const metaSeries=series.filter(item=>isMeta(item.platform));
 
-    // ── DESGLOSE DE KPIS POR RED SOCIAL (Facebook, Instagram, TikTok) ──
-    const networkConfigs=[
-      {key:"facebook",label:"Facebook",color:"#1877F2"},
-      {key:"instagram",label:"Instagram",color:"#E1306C"},
-      {key:"tiktok",label:"TikTok",color:"#000000"}
-    ];
+    const publisherLabels={
+      facebook:"Facebook",
+      instagram:"Instagram",
+      tiktok:"TikTok",
+      audience_network:"Audience Network",
+      messenger:"Messenger",
+      google_ads:"Google Ads"
+    };
+
+    const publisherColors={
+      facebook:"#1877F2",
+      instagram:"#E1306C",
+      tiktok:"#000000",
+      audience_network:"#5865F2",
+      messenger:"#00B2FF",
+      google_ads:"#4285F4"
+    };
+
+    const publisherRows={};
+    contentRows.forEach(item=>{
+      if(isMeta(item.source_platform)){
+        const pub=rowPlatform(item);
+        if(pub){
+          if(!publisherRows[pub])publisherRows[pub]=[];
+          publisherRows[pub].push(item);
+        }
+      }
+    });
+
+    const detectedPubKeys=Object.keys(publisherRows);
+    const orderedKeys=Array.from(new Set(["facebook","instagram","tiktok","audience_network","messenger",...detectedPubKeys,...platformEntries.map(([k])=>canonical(k))]));
+
+    // ── DESGLOSE DE KPIS POR RED SOCIAL (Plataformas y Publishers Detectados) ──
     const networkRows=[];
     let totalSpendGlobal=0,totalImpressionsGlobal=0,totalReachGlobal=0;
 
-    networkConfigs.forEach(cfg=>{
-      const pRows=cfg.key==="tiktok"?tiktokRows:(publisherRows[cfg.key]||[]);
-      const direct=platformEntries.find(([k])=>canonical(k)===cfg.key)?.[1];
+    orderedKeys.forEach(key=>{
+      const pRows=key==="tiktok"?tiktokRows:(publisherRows[key]||[]);
+      const direct=platformEntries.find(([k])=>canonical(k)===key)?.[1];
       let netMetrics=null;
       if(pRows.length>0){
         netMetrics=aggregateRows(pRows);
@@ -192,9 +218,9 @@
         totalImpressionsGlobal+=imp;
         if(rch!==null)totalReachGlobal+=rch;
         networkRows.push({
-          key:cfg.key,
-          label:cfg.label,
-          color:cfg.color,
+          key,
+          label:publisherLabels[key]||platformLabel(key),
+          color:publisherColors[key]||"#154095",
           spend:sp,
           impressions:imp,
           reach:rch
@@ -212,7 +238,7 @@
         totalImpressionsGlobal+=imp;
         if(rch!==null)totalReachGlobal+=rch;
         const netKey=canonical(name);
-        const col=networkConfigs.find(c=>c.key===netKey)?.color||"#154095";
+        const col=publisherColors[netKey]||"#154095";
         networkRows.push({
           key:netKey,
           label:platformLabel(name),
@@ -226,6 +252,10 @@
 
     const summaryBody=document.getElementById("summary-platform-body");
     const summaryFoot=document.getElementById("summary-platform-foot");
+    const effectiveTotalSpend=number(summary.spend)?summary.spend:totalSpendGlobal;
+    const effectiveTotalImp=number(summary.impressions)?summary.impressions:totalImpressionsGlobal;
+    const effectiveTotalReach=number(summary.reach)?summary.reach:totalReachGlobal;
+
     if(networkRows.length>0){
       networkRows.forEach(net=>{
         const tr=document.createElement("tr");
@@ -245,7 +275,7 @@
         tdReach.textContent=net.reach!==null?format("reach",net.reach):"-";
 
         const tdShare=document.createElement("td");
-        tdShare.textContent=totalSpendGlobal>0?format("share",net.spend/totalSpendGlobal*100):"0%";
+        tdShare.textContent=effectiveTotalSpend>0?format("share",net.spend/effectiveTotalSpend*100):"0%";
 
         tr.append(tdName,tdSpend,tdImp,tdReach,tdShare);
         summaryBody.append(tr);
@@ -256,11 +286,11 @@
       const tdFootName=document.createElement("td");
       tdFootName.textContent="Total Sumado Global";
       const tdFootSpend=document.createElement("td");
-      tdFootSpend.textContent=format("spend",totalSpendGlobal);
+      tdFootSpend.textContent=format("spend",effectiveTotalSpend);
       const tdFootImp=document.createElement("td");
-      tdFootImp.textContent=format("impressions",totalImpressionsGlobal);
+      tdFootImp.textContent=format("impressions",effectiveTotalImp);
       const tdFootReach=document.createElement("td");
-      tdFootReach.textContent=format("reach",totalReachGlobal);
+      tdFootReach.textContent=format("reach",effectiveTotalReach);
       const tdFootShare=document.createElement("td");
       tdFootShare.textContent="100%";
       trFoot.append(tdFootName,tdFootSpend,tdFootImp,tdFootReach,tdFootShare);
@@ -268,14 +298,9 @@
     }
     const hasSummaryTable=show(document.getElementById("summary-platform-table"),networkRows.length>0);
 
-    // ── CHARTS: EVOLUCIÓN & SHARE DE IMPRESIONES Y ALCANCE (Facebook, Instagram, TikTok) ──
+    // ── CHARTS: EVOLUCIÓN & SHARE DE IMPRESIONES Y ALCANCE (Plataformas Activas) ──
     const evolutionData=breakdowns.monthly_evolution||null;
-    const hasTikTok=networkRows.some(net=>net.key==="tiktok")||Boolean(evolutionData?.networks?.tiktok);
-    const chartNetworks=[
-      {key:"facebook",label:"Facebook",color:"#1877F2"},
-      {key:"instagram",label:"Instagram",color:"#E1306C"},
-      ...(hasTikTok?[{key:"tiktok",label:"TikTok",color:"#000000"}]:[])
-    ];
+    const chartNetworks=networkRows.map(net=>({key:net.key,label:net.label,color:net.color}));
 
     let tooltipNode=document.getElementById("chart-floating-tooltip");
     if(!tooltipNode){
