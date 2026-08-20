@@ -1794,7 +1794,7 @@ if force_query_fetch or active_query_key not in st.session_state["dashboard_quer
 
     df_curr = pd.concat(curr_frames, ignore_index=True) if curr_frames else pd.DataFrame()
     df_prev = pd.concat(prev_frames, ignore_index=True) if prev_frames else pd.DataFrame()
-    account_disp = " | ".join(f"{cfg['platform_label']}: {cfg['account_id']}" for cfg in platform_configs)
+    account_disp = platform_configs[0]["account_id"] if len(platform_configs) == 1 else " | ".join(f"{cfg['platform_label']}: {cfg['account_id']}" for cfg in platform_configs)
     active_context = {
         "platform_key": platform_key,
         "platform_type": platform_type,
