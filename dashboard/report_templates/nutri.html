@@ -163,7 +163,9 @@
       const container=document.getElementById(id);
       container.replaceChildren();
       let keys=ordered(values);
-      if(allowedKeys){
+      if(id==="summary-kpis"){
+        keys=["spend","impressions","reach","engagement","followers","video_views"];
+      }else if(allowedKeys){
         const present=new Set(keys);
         keys=allowedKeys.filter(k=>present.has(k)||number(values[k]));
         if(keys.includes("video_views")&&keys.includes("views")){
@@ -174,12 +176,21 @@
         }
       }
       keys.forEach(key=>{
+        let val=values[key];
+        if(!number(val)){
+          if(key==="video_views"&&number(values["views"]))val=values["views"];
+          else if(key==="engagement"&&number(values["post_engagement"]))val=values["post_engagement"];
+          else if(key==="followers"&&number(values["follower_count"]))val=values["follower_count"];
+          else if(key==="followers"&&number(values["follows"]))val=values["follows"];
+          else if(id==="summary-kpis")val=0;
+        }
+        if(!number(val)&&id!=="summary-kpis")return;
         const card=element("article","card stat-card");
         card.dataset.family="kpi";
         card.dataset.metric=key;
         const lbl=(id==="summary-kpis"&&summaryCustomLabels[key])?summaryCustomLabels[key]:metricLabel(key);
-        card.append(element("div","stat-label",lbl),element("div","stat-value",format(key,values[key])));
-        const delta=deltas[key];
+        card.append(element("div","stat-label",lbl),element("div","stat-value",format(key,val)));
+        const delta=deltas[key]!==undefined?deltas[key]:(key==="video_views"?deltas["views"]:(key==="followers"?deltas["follower_count"]:null));
         if(withDeltas&&number(delta)){
           const deltaSuffix=id==="summary-kpis"?" vs Mes Ant.":" vs. período anterior";
           card.append(element("div","stat-delta "+(delta>0?"up":delta<0?"down":"neutral"),(delta>0?"↑ ":delta<0?"↓ ":"")+format("delta_"+key,Math.abs(delta))+deltaSuffix));

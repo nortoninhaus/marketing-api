@@ -1763,7 +1763,11 @@ for cfg in platform_configs:
     dimension_names = [x["name"] for x in cfg["dimensions_list"]]
     request_metrics = list(cfg["selected_metrics"])
     if cfg["platform_type"] == "ads":
-        standard_metrics = ["impressions", "clicks", "spend", "conversions", "lead", "reach", "post_engagement", "__results__", "cost_per_result"]
+        standard_metrics = [
+            "impressions", "clicks", "spend", "conversions", "lead", "reach",
+            "post_engagement", "engagement", "__results__", "cost_per_result",
+            "video_play_actions", "video_views", "views", "followers", "follows",
+        ]
     elif cfg["platform_type"] == "analytics":
         standard_metrics = ["sessions", "users", "pageviews", "bounce_rate"]
     elif cfg["platform_type"] == "app_store":

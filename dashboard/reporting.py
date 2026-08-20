@@ -33,12 +33,15 @@ _CANONICAL_ALIASES = {
     "clicks": {"clicks", "unique_clicks"},
     "conversions": {"actions", "add_to_cart", "conversions", "lead", "purchase"},
     "engagement": {"accounts_engaged", "comments", "engagement", "likes", "saved", "shares", "total_interactions"},
+    "followers": {"fan_count", "follower_count", "followers", "follows", "page_fans", "page_follows"},
     "impressions": {"impressions", "reach", "views"},
     "likes": {"like_count", "likes"},
     "comments": {"comment_count", "comments"},
     "reach": {"impressions", "reach", "views"},
     "results": {"__results__", "results"},
     "spend": {"cost", "social_spend", "spend"},
+    "video_views": {"page_media_view", "plays", "video_play_actions", "video_views", "video_watched_2s", "video_watched_6s", "view_count", "views"},
+    "views": {"page_media_view", "plays", "video_play_actions", "video_views", "video_watched_2s", "video_watched_6s", "view_count", "views"},
 }
 
 
