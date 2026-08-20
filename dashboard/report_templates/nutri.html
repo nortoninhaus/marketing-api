@@ -277,6 +277,47 @@
       ...(hasTikTok?[{key:"tiktok",label:"TikTok",color:"#000000"}]:[])
     ];
 
+    let tooltipNode=document.getElementById("chart-floating-tooltip");
+    if(!tooltipNode){
+      tooltipNode=document.createElement("div");
+      tooltipNode.id="chart-floating-tooltip";
+      tooltipNode.style.cssText="position:fixed;display:none;pointer-events:none;background:#262b33;color:#ffffff;border-radius:6px;padding:8px 12px;font-size:12px;line-height:1.4;box-shadow:0 6px 18px rgba(0,0,0,0.32);z-index:99999;font-family:var(--sans);";
+      document.body.append(tooltipNode);
+    }
+
+    const showChartTooltip=(e,title,value,color,unit,extra="")=>{
+      tooltipNode.replaceChildren();
+      const titleEl=document.createElement("div");
+      titleEl.style.cssText="font-weight:800;font-size:12px;margin-bottom:3px;color:#ffffff;";
+      titleEl.textContent=title;
+
+      const rowEl=document.createElement("div");
+      rowEl.style.cssText="display:flex;align-items:center;gap:7px;color:#ffffff;font-size:12px;font-weight:600;";
+
+      const swatch=document.createElement("span");
+      swatch.style.cssText="display:inline-block;width:9px;height:9px;border-radius:2px;flex-shrink:0;background:"+color+";";
+
+      const textEl=document.createElement("span");
+      textEl.textContent=new Intl.NumberFormat("es-EC").format(value)+" "+unit+extra;
+
+      rowEl.append(swatch,textEl);
+      tooltipNode.append(titleEl,rowEl);
+      tooltipNode.style.display="block";
+      positionChartTooltip(e);
+    };
+
+    const positionChartTooltip=(e)=>{
+      if(!tooltipNode||tooltipNode.style.display==="none")return;
+      const x=e.clientX+12;
+      const y=e.clientY-46;
+      tooltipNode.style.left=Math.max(8,Math.min(window.innerWidth-200,x))+"px";
+      tooltipNode.style.top=Math.max(8,y)+"px";
+    };
+
+    const hideChartTooltip=()=>{
+      if(tooltipNode)tooltipNode.style.display="none";
+    };
+
     const renderMetricEvolutionAndShare=(metricKey,gridId,legendId,chartId,donutId,donutLegendId,colors)=>{
       const chartGrid=document.getElementById(gridId);
       if(!chartGrid)return false;
@@ -398,6 +439,21 @@
           rect.setAttribute("height",barH);
           rect.setAttribute("rx","3");
           rect.setAttribute("fill",colors[bIdx%colors.length]);
+          rect.style.cursor="pointer";
+          rect.style.transition="opacity 0.15s ease";
+
+          rect.addEventListener("pointerenter",(e)=>{
+            rect.style.opacity="0.82";
+            showChartTooltip(e, g.label, v, colors[bIdx%colors.length], metricLabel(metricKey));
+          });
+          rect.addEventListener("pointermove",(e)=>{
+            positionChartTooltip(e);
+          });
+          rect.addEventListener("pointerleave",()=>{
+            rect.style.opacity="1";
+            hideChartTooltip();
+          });
+
           const tip=document.createElementNS(ns,"title");
           tip.textContent=g.label+" ("+effectiveMonths[bIdx].label+"): "+new Intl.NumberFormat("es-EC").format(v)+" "+metricLabel(metricKey).toLowerCase();
           rect.append(tip);
@@ -435,6 +491,22 @@
         const d=["M",x1,y1,"A",r,r,0,largeArc,1,x2,y2,"L",ix1,iy1,"A",innerR,innerR,0,largeArc,0,ix2,iy2,"Z"].join(" ");
         path.setAttribute("d",d);
         path.setAttribute("fill",net.color);
+        path.style.cursor="pointer";
+        path.style.transition="opacity 0.15s ease";
+
+        path.addEventListener("pointerenter",(e)=>{
+          path.style.opacity="0.82";
+          const percentStr=" ("+(slice*100).toFixed(1)+"%)";
+          showChartTooltip(e, net.label, net.currentVal, net.color, metricLabel(metricKey), percentStr);
+        });
+        path.addEventListener("pointermove",(e)=>{
+          positionChartTooltip(e);
+        });
+        path.addEventListener("pointerleave",()=>{
+          path.style.opacity="1";
+          hideChartTooltip();
+        });
+
         const tip=document.createElementNS(ns,"title");
         tip.textContent=net.label+": "+new Intl.NumberFormat("es-EC").format(net.currentVal)+" ("+(slice*100).toFixed(1)+"%)";
         path.append(tip);
