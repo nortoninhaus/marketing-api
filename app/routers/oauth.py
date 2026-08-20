@@ -54,6 +54,9 @@ async def tiktok_site_verification():
 
 # ─── Google OAuth Scopes ───────────────────────────────────────────
 GOOGLE_SCOPES = {
+    "openid": "openid",
+    "email": "https://www.googleapis.com/auth/userinfo.email",
+    "profile": "https://www.googleapis.com/auth/userinfo.profile",
     "google_ads": "https://www.googleapis.com/auth/adwords",
     "ga4": "https://www.googleapis.com/auth/analytics.readonly",
     "youtube": " ".join([
@@ -152,7 +155,7 @@ async def get_authorize_url(
                 detail="Meta App ID is not configured on the backend. Please set META_APP_ID."
             )
         backend_redirect_uri = _build_threads_redirect_uri(request)
-        scopes = "threads_basic,threads_manage_insights"
+        scopes = "threads_basic,threads_content_publish,threads_read_replies,threads_manage_replies,threads_manage_insights,threads_business_basic"
         auth_url = (
             f"https://threads.net/oauth/authorize"
             f"?client_id={settings.meta_app_id}"
@@ -227,7 +230,7 @@ async def get_authorize_url(
             f"{base_url}?"
             + urlencode({
                 "client_key": tiktok_client_id,
-                "scope": "user.info.basic,video.list",
+                "scope": "user.info.basic,user.info.profile,user.info.stats,video.list,video.insights",
                 "response_type": "code",
                 "state": state,
                 "redirect_uri": backend_redirect_uri,
