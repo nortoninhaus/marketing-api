@@ -629,9 +629,7 @@ div.element-container:has(style) {
 }
 
 button[aria-label="Descargar reporte"],
-[data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"],
-[data-testid="stPopoverButton"],
-[data-testid="stDownloadButton"] button {
+[data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"] {
     background-color: #02569e !important;
     color: #FFFFFF !important;
     border: 1px solid rgba(255, 255, 255, 0.22) !important;
@@ -655,8 +653,7 @@ button[aria-label="Descargar reporte"],
     transition: all 0.2s ease !important;
 }
 button[aria-label="Descargar reporte"]:hover,
-[data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"]:hover,
-[data-testid="stPopoverButton"]:hover {
+[data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"]:hover {
     background-color: #0369a1 !important;
     border-color: rgba(255, 255, 255, 0.4) !important;
     transform: translateY(-1px) !important;
@@ -670,9 +667,51 @@ button[aria-label="Descargar reporte"] span {
     justify-content: center !important;
 }
 button[aria-label="Descargar reporte"] *,
-[data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"] *,
-[data-testid="stPopoverButton"] *,
+[data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"] * {
+    color: #FFFFFF !important;
+    fill: #FFFFFF !important;
+    stroke: #FFFFFF !important;
+}
+
+/* Download buttons inside modal dialog */
+[data-testid="stDownloadButton"] {
+    width: 100% !important;
+}
+[data-testid="stDownloadButton"] button {
+    background-color: #02569e !important;
+    color: #FFFFFF !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    border-radius: 8px !important;
+    padding: 8px 16px !important;
+    font-size: 14px !important;
+    font-weight: 700 !important;
+    height: 40px !important;
+    min-height: 40px !important;
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    box-shadow: 0 2px 6px rgba(2, 86, 158, 0.3) !important;
+    white-space: nowrap !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+}
+[data-testid="stDownloadButton"] button:hover {
+    background-color: #0369a1 !important;
+    border-color: rgba(255, 255, 255, 0.3) !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 10px rgba(2, 86, 158, 0.4) !important;
+}
 [data-testid="stDownloadButton"] button * {
+    color: #FFFFFF !important;
+    fill: #FFFFFF !important;
+    stroke: #FFFFFF !important;
+}
+
+[data-testid="stPopoverButton"] * {
     color: #FFFFFF !important;
     fill: #FFFFFF !important;
     stroke: #FFFFFF !important;
@@ -683,12 +722,7 @@ button[aria-label="Descargar reporte"] *,
     color: var(--text-color, #ffffff) !important;
     border: 1px solid rgba(128, 128, 128, 0.2) !important;
     border-radius: 14px !important;
-}
-[data-testid="stPopoverButton"] *,
-[data-testid="stDownloadButton"] button * {
-    color: #FFFFFF !important;
-    fill: #FFFFFF !important;
-    stroke: #FFFFFF !important;
+    padding: 24px !important;
 }
 [data-testid="stPopoverBody"] {
     background-color: var(--secondary-background-color, #1e293b) !important;
