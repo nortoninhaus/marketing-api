@@ -13,6 +13,7 @@ import hashlib
 import hmac
 import time
 import altair as alt
+from typing import Any, Optional
 from datetime import datetime, date, timedelta
 from dotenv import load_dotenv
 import jwt
@@ -2865,6 +2866,82 @@ with download_slot.container():
                 "platform": str(ctx.get("platform", "meta_ads")),
             }]
             platforms_list = [str(ctx.get("platform", "meta_ads"))]
+            df_tt = None
+
+            # Calculate 3 calendar months for real historical evolution
+            p1_start, p1_end = get_prior_month_range(s_date)
+            p2_start, p2_end = get_prior_month_range(p1_start)
+            spanish_months = {
+                1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
+                5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
+                9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
+            }
+            monthly_evolution = {
+                "months": [
+                    {"key": "m2", "label": spanish_months[p2_start.month], "year": p2_start.year},
+                    {"key": "m1", "label": spanish_months[p1_start.month], "year": p1_start.year},
+                    {"key": "m0", "label": spanish_months[s_date.month], "year": s_date.year},
+                ],
+                "networks": {
+                    "facebook": {
+                        "impressions": {"m2": 0.0, "m1": 0.0, "m0": 0.0},
+                        "reach": {"m2": 0.0, "m1": 0.0, "m0": 0.0},
+                    },
+                    "instagram": {
+                        "impressions": {"m2": 0.0, "m1": 0.0, "m0": 0.0},
+                        "reach": {"m2": 0.0, "m1": 0.0, "m0": 0.0},
+                    },
+                }
+            }
+
+            # Fetch Meta history for M-1 and M-2 with publisher_platform
+            meta_acc_id = str(ctx.get("account_id", ""))
+            meta_platform = str(ctx.get("platform", "meta_ads"))
+            if meta_platform == "meta_ads" and meta_acc_id:
+                try:
+                    if isinstance(curr_df, pd.DataFrame) and not curr_df.empty:
+                        for pub in ("facebook", "instagram"):
+                            pub_df = curr_df[curr_df["publisher_platform"].astype(str).str.lower() == pub] if "publisher_platform" in curr_df.columns else pd.DataFrame()
+                            if not pub_df.empty:
+                                if "impressions" in pub_df.columns:
+                                    monthly_evolution["networks"][pub]["impressions"]["m0"] = float(pub_df["impressions"].sum())
+                                if "reach" in pub_df.columns:
+                                    monthly_evolution["networks"][pub]["reach"]["m0"] = float(pub_df["reach"].sum())
+
+                    m1_rows = fetch_campaign_data_from_api(
+                        "meta_ads", c_id, u_id, meta_acc_id,
+                        p1_start, p1_end, ["impressions", "reach", "spend"], ["publisher_platform"],
+                        {}, False, key, show_errors=False
+                    )
+                    if m1_rows:
+                        m1_df = process_api_response(m1_rows, "meta_ads", c_id, u_id)
+                        if isinstance(m1_df, pd.DataFrame) and not m1_df.empty and "publisher_platform" in m1_df.columns:
+                            for pub in ("facebook", "instagram"):
+                                pub_df = m1_df[m1_df["publisher_platform"].astype(str).str.lower() == pub]
+                                if not pub_df.empty:
+                                    if "impressions" in pub_df.columns:
+                                        monthly_evolution["networks"][pub]["impressions"]["m1"] = float(pub_df["impressions"].sum())
+                                    if "reach" in pub_df.columns:
+                                        monthly_evolution["networks"][pub]["reach"]["m1"] = float(pub_df["reach"].sum())
+
+                    m2_rows = fetch_campaign_data_from_api(
+                        "meta_ads", c_id, u_id, meta_acc_id,
+                        p2_start, p2_end, ["impressions", "reach", "spend"], ["publisher_platform"],
+                        {}, False, key, show_errors=False
+                    )
+                    if m2_rows:
+                        m2_df = process_api_response(m2_rows, "meta_ads", c_id, u_id)
+                        if isinstance(m2_df, pd.DataFrame) and not m2_df.empty and "publisher_platform" in m2_df.columns:
+                            for pub in ("facebook", "instagram"):
+                                pub_df = m2_df[m2_df["publisher_platform"].astype(str).str.lower() == pub]
+                                if not pub_df.empty:
+                                    if "impressions" in pub_df.columns:
+                                        monthly_evolution["networks"][pub]["impressions"]["m2"] = float(pub_df["impressions"].sum())
+                                    if "reach" in pub_df.columns:
+                                        monthly_evolution["networks"][pub]["reach"]["m2"] = float(pub_df["reach"].sum())
+                except Exception as ex:
+                    print(f"Error fetching Meta historical evolution: {ex}")
+
             if add_tt and tt_acc_id:
                 try:
                     tt_metrics = [
@@ -2893,6 +2970,43 @@ with download_slot.container():
                         "platform": "tiktok_ads",
                     })
                     platforms_list.append("tiktok_ads")
+
+                    # TikTok historical evolution for M-0, M-1, M-2
+                    monthly_evolution["networks"]["tiktok"] = {
+                        "impressions": {"m2": 0.0, "m1": 0.0, "m0": 0.0},
+                        "reach": {"m2": 0.0, "m1": 0.0, "m0": 0.0},
+                    }
+                    if isinstance(df_tt, pd.DataFrame) and not df_tt.empty:
+                        if "impressions" in df_tt.columns:
+                            monthly_evolution["networks"]["tiktok"]["impressions"]["m0"] = float(df_tt["impressions"].sum())
+                        if "reach" in df_tt.columns:
+                            monthly_evolution["networks"]["tiktok"]["reach"]["m0"] = float(df_tt["reach"].sum())
+
+                    tt_m1_rows = fetch_campaign_data_from_api(
+                        "tiktok_ads", c_id, u_id, str(tt_acc_id),
+                        p1_start, p1_end, ["impressions", "reach", "spend"], [],
+                        {}, False, key, show_errors=False
+                    )
+                    if tt_m1_rows:
+                        tt_m1_df = process_api_response(tt_m1_rows, "tiktok_ads", c_id, u_id)
+                        if isinstance(tt_m1_df, pd.DataFrame) and not tt_m1_df.empty:
+                            if "impressions" in tt_m1_df.columns:
+                                monthly_evolution["networks"]["tiktok"]["impressions"]["m1"] = float(tt_m1_df["impressions"].sum())
+                            if "reach" in tt_m1_df.columns:
+                                monthly_evolution["networks"]["tiktok"]["reach"]["m1"] = float(tt_m1_df["reach"].sum())
+
+                    tt_m2_rows = fetch_campaign_data_from_api(
+                        "tiktok_ads", c_id, u_id, str(tt_acc_id),
+                        p2_start, p2_end, ["impressions", "reach", "spend"], [],
+                        {}, False, key, show_errors=False
+                    )
+                    if tt_m2_rows:
+                        tt_m2_df = process_api_response(tt_m2_rows, "tiktok_ads", c_id, u_id)
+                        if isinstance(tt_m2_df, pd.DataFrame) and not tt_m2_df.empty:
+                            if "impressions" in tt_m2_df.columns:
+                                monthly_evolution["networks"]["tiktok"]["impressions"]["m2"] = float(tt_m2_df["impressions"].sum())
+                            if "reach" in tt_m2_df.columns:
+                                monthly_evolution["networks"]["tiktok"]["reach"]["m2"] = float(tt_m2_df["reach"].sum())
                 except Exception as ex:
                     print(f"Error fetching TikTok Ads for export: {ex}")
             final_ctx["connections"] = final_connections
@@ -2903,6 +3017,7 @@ with download_slot.container():
                 final_ctx,
                 previous_frame=prev_df,
                 export_table=exp_df["frame"],
+                optional={"breakdowns": {"monthly_evolution": monthly_evolution}},
             ).encode("utf-8")
 
         st.download_button(
