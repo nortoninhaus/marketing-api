@@ -115,6 +115,10 @@ app.include_router(sota_router)
 from app.routers.clients import router as clients_router
 app.include_router(clients_router)
 
+# Register Benchmarking router
+from app.routers.benchmarking import router as benchmarking_router
+app.include_router(benchmarking_router)
+
 # Mount FastMCP server and protect it with middleware
 from fastapi import Request
 from fastapi.responses import JSONResponse
