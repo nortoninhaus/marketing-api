@@ -107,7 +107,7 @@ from dashboard.reporting import (
     render_report,
 )
 
-DASHBOARD_CACHE_VERSION = 4
+DASHBOARD_CACHE_VERSION = 5
 
 
 if os.getenv("DASHBOARD_AUTH_SELF_CHECK") == "1":

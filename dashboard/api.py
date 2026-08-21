@@ -76,6 +76,17 @@ def fetch_schema_from_api(platform_key, api_key):
                 else:
                     norm_dimensions.append({"name": str(d), "description": ""})
 
+            # Ensure core metrics are available in schema
+            extra_known_metrics = {
+                "meta_ads": ["followers", "follows", "video_views", "views", "video_play_actions"],
+                "tiktok_ads": ["video_views", "video_play_actions", "followers", "follows"],
+                "google_ads": ["video_views"],
+            }
+            existing_names = {m["name"] for m in norm_metrics}
+            for extra in extra_known_metrics.get(platform_key, []):
+                if extra not in existing_names:
+                    norm_metrics.append({"name": extra, "description": ""})
+
             return {"metrics": norm_metrics, "dimensions": norm_dimensions}
         return {"metrics": [], "dimensions": []}
     except Exception:
