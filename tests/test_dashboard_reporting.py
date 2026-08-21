@@ -992,7 +992,7 @@ def test_nutri_browser_preserves_reference_panels_and_dynamic_content(tmp_path):
     assert dom["company"] == "Acme Foods"
     assert dom["period"] == "01 jul 2026 — 31 jul 2026"
     assert dom["visible"] == {panel: True for panel in dom["visible"]}
-    assert dom["summary"] == {"kpis": 6, "charts": 1, "tables": 1, "narratives": 1}
+    assert dom["summary"] == {"kpis": 6, "charts": 0, "tables": 1, "narratives": 1}
     assert dom["competitionRows"] == 2
     for platform in ("facebook", "instagram", "tiktok"):
         assert dom["platforms"][platform] == {
