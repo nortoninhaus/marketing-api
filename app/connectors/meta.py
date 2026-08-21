@@ -155,7 +155,14 @@ class MetaAdsConnector(BaseConnector):
                 "video_views": "video_play_actions",
                 "views": "video_play_actions",
             }.get(m, m)
-            if m_mapped in ("conversions", "purchase", "lead", "add_to_cart", "initiate_checkout", "followers", "follows", "page_likes", "post_engagement", "engagement") or m_mapped not in STANDARD_META_FIELDS:
+            if m in ("video_views", "views", "video_play_actions"):
+                if "video_play_actions" not in fields:
+                    fields.append("video_play_actions")
+                if "video_30_sec_watched_actions" not in fields:
+                    fields.append("video_30_sec_watched_actions")
+                if "actions" not in fields:
+                    fields.append("actions")
+            elif m_mapped in ("conversions", "purchase", "lead", "add_to_cart", "initiate_checkout", "followers", "follows", "page_likes", "post_engagement", "engagement") or m_mapped not in STANDARD_META_FIELDS:
                 has_actions = True
                 if m_mapped not in STANDARD_META_FIELDS:
                     has_action_values = True
@@ -351,17 +358,30 @@ class MetaAdsConnector(BaseConnector):
                         if v_sum == 0:
                             actions = i.get("actions", [])
                             for action in actions:
-                                if action.get("action_type") in ("video_view", "video_play", "post_video_view"):
+                                act_t = str(action.get("action_type", "")).lower()
+                                if "video_view" in act_t or "video_play" in act_t or "post_video" in act_t or act_t == "video_view":
                                     try:
                                         v_sum += int(float(action.get("value", 0)))
                                     except Exception:
                                         pass
+                        if v_sum == 0:
+                            for alt_field in ("video_30_sec_watched_actions", "video_p25_watched_actions", "video_p50_watched_actions"):
+                                alt_list = i.get(alt_field, [])
+                                if isinstance(alt_list, list):
+                                    for alt_item in alt_list:
+                                        try:
+                                            v_sum += int(float(alt_item.get("value", 0)))
+                                        except Exception:
+                                            pass
+                                if v_sum > 0:
+                                    break
                         metrics_dict[m] = v_sum
                     elif m in ("followers", "follows", "page_likes"):
                         actions = i.get("actions", [])
                         f_sum = 0
                         for action in actions:
-                            if action.get("action_type") in ("like", "page_like", "follow", "page_engagement"):
+                            act_t = str(action.get("action_type", "")).lower()
+                            if act_t in ("like", "page_like", "follow", "page_engagement", "onsite_conversion.messaging_conversation_started_7d", "profile_engagement") or "follow" in act_t or "like" in act_t:
                                 try:
                                     f_sum += int(float(action.get("value", 0)))
                                 except Exception:
@@ -469,14 +489,17 @@ class MetaAdsConnector(BaseConnector):
     def get_schema(self) -> Dict[str, Any]:
         return {
             "metrics": [
-                "impressions", 
-                "clicks", 
                 "spend",
+                "impressions",
                 "reach",
+                "post_engagement",
+                "video_views",
+                "followers",
+                "clicks",
                 "conversions",
                 "__results__",
                 "cost_per_result",
-                "cpc",
+                "cpc", 
                 "cpm", 
                 "ctr", 
                 "frequency", 
@@ -484,22 +507,19 @@ class MetaAdsConnector(BaseConnector):
                 "purchase_roas",
                 "purchase",
                 "lead",
-                "post_engagement",
                 "add_to_cart",
                 "initiate_checkout",
                 "roas",
                 "unique_clicks",
                 "inline_link_clicks",
                 "unique_inline_link_clicks",
+                "video_play_actions",
+                "views",
+                "follows",
                 "video_p25_watched_actions",
                 "video_p50_watched_actions",
                 "video_p75_watched_actions",
                 "video_p100_watched_actions",
-                "video_play_actions",
-                "video_views",
-                "views",
-                "followers",
-                "follows",
                 "video_30_sec_watched_actions",
                 "video_avg_time_watched_actions",
                 "social_spend",

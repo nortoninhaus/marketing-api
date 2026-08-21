@@ -1625,8 +1625,21 @@ for selected_platform_key in selected_platform_keys:
         dimensions_list = schema_data.get("dimensions", [])
         metrics_key = f"selected_metrics_{selected_platform_key}"
         dimensions_key = f"selected_dimensions_{selected_platform_key}"
+        platform_preferred_metrics = {
+            "meta_ads": ["spend", "impressions", "reach", "post_engagement", "video_views", "followers", "clicks", "conversions", "__results__", "cost_per_result"],
+            "tiktok_ads": ["spend", "impressions", "clicks", "reach", "conversion", "video_play_actions", "video_watched_2s", "video_watched_6s"],
+            "google_ads": ["spend", "impressions", "clicks", "conversions", "video_views", "cost_per_conversion"],
+        }
+        avail_metric_names = [m["name"] for m in metrics_list]
+        pref = platform_preferred_metrics.get(selected_platform_key, [])
+        smart_defaults = [m for m in pref if m in avail_metric_names] or ([m["name"] for m in metrics_list[:10]] if metrics_list else ["impressions"])
+
         if metrics_key not in st.session_state or not st.session_state[metrics_key]:
-            st.session_state[metrics_key] = [m["name"] for m in metrics_list[:8]] if metrics_list else ["impressions"]
+            st.session_state[metrics_key] = smart_defaults
+        else:
+            for essential in ("spend", "impressions", "reach", "post_engagement", "video_views", "followers"):
+                if essential in avail_metric_names and essential not in st.session_state[metrics_key]:
+                    st.session_state[metrics_key].append(essential)
         if dimensions_key not in st.session_state:
             st.session_state[dimensions_key] = []
 
