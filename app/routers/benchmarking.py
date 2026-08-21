@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/v1/benchmarking", tags=["Benchmarking"])
 
 
 @router.post("", response_model=BenchmarkingResponse, dependencies=[Depends(verify_api_key)])
-def get_benchmarking(request: BenchmarkingRequest):
+async def get_benchmarking(request: BenchmarkingRequest):
     """
     Run competitive benchmarking across Instagram and Facebook competitors.
     Returns sorted competitors by followers descending, with engagement rates and ad counts.
@@ -23,4 +23,4 @@ def get_benchmarking(request: BenchmarkingRequest):
         f"Benchmarking requested for {len(request.instagram_competitors)} IG and "
         f"{len(request.facebook_competitors)} FB competitors"
     )
-    return benchmarking_service.run_benchmarking(request)
+    return await benchmarking_service.run_benchmarking(request)

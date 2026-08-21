@@ -19,24 +19,34 @@ class BenchmarkingService:
     def __init__(self):
         self.organic_connector = MetaOrganicConnector()
 
-    def get_token(self, request: BenchmarkingRequest) -> str:
+    async def get_token(self, request: BenchmarkingRequest) -> str:
         if request.access_token:
             return request.access_token
+
+        # 1. Try resolving from credential_store across candidate client IDs
         try:
-            from app.models.requests import DataRequest
-            mock_req = DataRequest(
-                platform="meta_organic",
-                client_id=request.client_id or "",
-                user_id=request.user_id or "",
-                account_id=request.account_id or "",
-                metrics=["followers"],
-            )
-            creds = self.organic_connector.get_credentials(mock_req)
-            token = creds.get("access_token")
-            if token:
-                return token
+            from app.services.credential_store import credential_store
+            candidate_clients = [c for c in [request.client_id, "client_1", request.user_id, "default"] if c]
+            for c_id in candidate_clients:
+                for plat in ["meta_ads", "meta_organic"]:
+                    if request.account_id:
+                        try:
+                            creds = await credential_store.resolve_credentials(c_id, plat, request.account_id)
+                            if creds and creds.get("access_token"):
+                                return creds["access_token"]
+                        except Exception as e:
+                            logger.warning(f"Error resolving credentials for {c_id}/{plat}/{request.account_id}: {e}")
+                    try:
+                        conns = await credential_store.list_oauth_connections(c_id, plat)
+                        for conn in conns:
+                            if conn.get("access_token"):
+                                return conn["access_token"]
+                    except Exception as e:
+                        logger.warning(f"Error listing oauth connections for {c_id}/{plat}: {e}")
         except Exception as e:
-            logger.warning(f"Could not load credentials from connector: {e}")
+            logger.warning(f"Could not check credential_store: {e}")
+
+        # 2. Fallback to settings
         return settings.meta_access_token or ""
 
     def get_connected_ig_user_id(self, token: str, account_id: Optional[str] = None) -> Optional[str]:
@@ -190,8 +200,8 @@ class BenchmarkingService:
 
         return comp
 
-    def run_benchmarking(self, request: BenchmarkingRequest) -> BenchmarkingResponse:
-        token = self.get_token(request)
+    async def run_benchmarking(self, request: BenchmarkingRequest) -> BenchmarkingResponse:
+        token = await self.get_token(request)
         if not token:
             return BenchmarkingResponse(
                 status="warning",

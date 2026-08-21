@@ -47,7 +47,8 @@ def test_benchmarking_models():
     assert fb_data.active_ads_count == 12
 
 
-def test_benchmarking_service_sorts_by_followers_desc():
+@pytest.mark.asyncio
+async def test_benchmarking_service_sorts_by_followers_desc():
     service = BenchmarkingService()
 
     # Mock analyze methods
@@ -89,7 +90,7 @@ def test_benchmarking_service_sorts_by_followers_desc():
             instagram_competitors=["small_brand", "big_brand", "mid_brand"],
             facebook_competitors=["fb_small", "fb_big", "fb_mid"],
         )
-        res = service.run_benchmarking(req)
+        res = await service.run_benchmarking(req)
 
         assert res.status == "success"
         # Must be sorted by followers descending

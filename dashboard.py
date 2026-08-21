@@ -3044,16 +3044,17 @@ with download_slot.container():
                 except Exception as ex:
                     print(f"Error fetching TikTok Ads for export: {ex}")
             breakdowns_opt = {"monthly_evolution": monthly_evolution}
-            ig_raw = str(st.session_state.get("benchmark_ig_input", ""))
-            fb_raw = str(st.session_state.get("benchmark_fb_input", ""))
+            ig_raw = str(st.session_state.get("benchmark_ig_input") or "parmalatecuador, toniec, lalecheraec, vita_ecuador")
+            fb_raw = str(st.session_state.get("benchmark_fb_input") or "parmalatecuador, ToniLacteosEc, LaLecheraEcuador, VitaEcuador")
             ig_comps = [u.strip().lstrip("@") for u in re.split(r"[,\n]+", ig_raw) if u.strip()]
             fb_comps = [p.strip() for p in re.split(r"[,\n]+", fb_raw) if p.strip()]
-            if (ig_comps or fb_comps) and c_id:
+            effective_client_id = c_id or client_id or "client_1"
+            if ig_comps or fb_comps:
                 try:
                     bench_res = fetch_benchmarking_from_api(
-                        c_id, u_id, str(ctx.get("account_id", "")), ig_comps, fb_comps, key, show_errors=False
+                        effective_client_id, u_id, str(ctx.get("account_id", "")), ig_comps, fb_comps, key, show_errors=False
                     )
-                    if bench_res and bench_res.get("status") == "success":
+                    if bench_res and isinstance(bench_res, dict) and (bench_res.get("instagram") or bench_res.get("facebook")):
                         breakdowns_opt["benchmarking"] = bench_res
                         breakdowns_opt["competition"] = bench_res
                 except Exception as ex:
