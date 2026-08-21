@@ -296,10 +296,32 @@ def _select_scoped_summaries(
 
 
 def _deltas(current: dict[str, Number], previous: dict[str, Number]) -> dict[str, float | None]:
-    return {
-        metric: None if previous.get(metric) in (None, 0) else round((value - previous[metric]) / previous[metric] * 100, 4)
-        for metric, value in current.items()
-    }
+    deltas: dict[str, float | None] = {}
+    for metric, value in current.items():
+        prev_val = previous.get(metric)
+        if prev_val in (None, 0):
+            for alias in _CANONICAL_ALIASES.get(metric, set()):
+                if previous.get(alias) not in (None, 0):
+                    prev_val = previous[alias]
+                    break
+        deltas[metric] = None if prev_val in (None, 0) else round((value - prev_val) / prev_val * 100, 4)
+    for canonical, aliases in _CANONICAL_ALIASES.items():
+        if canonical not in deltas:
+            curr_val = current.get(canonical)
+            if curr_val is None:
+                for alias in aliases:
+                    if current.get(alias) is not None:
+                        curr_val = current[alias]
+                        break
+            prev_val = previous.get(canonical)
+            if prev_val is None:
+                for alias in aliases:
+                    if previous.get(alias) is not None:
+                        prev_val = previous[alias]
+                        break
+            if curr_val is not None and prev_val not in (None, 0):
+                deltas[canonical] = round((curr_val - prev_val) / prev_val * 100, 4)
+    return deltas
 
 
 def _rate(numerator: Number | None, denominator: Number | None, factor: int = 1) -> float | None:

@@ -190,7 +190,18 @@
         card.dataset.metric=key;
         const lbl=(id==="summary-kpis"&&summaryCustomLabels[key])?summaryCustomLabels[key]:metricLabel(key);
         card.append(element("div","stat-label",lbl),element("div","stat-value",format(key,val)));
-        const delta=deltas[key]!==undefined?deltas[key]:(key==="video_views"?deltas["views"]:(key==="followers"?deltas["follower_count"]:null));
+        const deltaAliases={
+          engagement:["engagement","post_engagement","total_interactions","accounts_engaged"],
+          post_engagement:["post_engagement","engagement","total_interactions"],
+          video_views:["video_views","views","video_play_actions","plays"],
+          views:["views","video_views","video_play_actions","plays"],
+          followers:["followers","follower_count","follows","page_fans","page_follows"],
+          spend:["spend","social_spend","cost"],
+          clicks:["clicks","unique_clicks"],
+          conversions:["conversions","actions","purchase","lead"]
+        };
+        const resolvedDeltaKey=(deltaAliases[key]||[key]).find(k=>number(deltas[k]));
+        const delta=resolvedDeltaKey?deltas[resolvedDeltaKey]:(number(deltas[key])?deltas[key]:null);
         if(withDeltas&&number(delta)){
           const deltaSuffix=id==="summary-kpis"?" vs Mes Ant.":" vs. período anterior";
           card.append(element("div","stat-delta "+(delta>0?"up":delta<0?"down":"neutral"),(delta>0?"↑ ":delta<0?"↓ ":"")+format("delta_"+key,Math.abs(delta))+deltaSuffix));
