@@ -17,10 +17,10 @@ from dashboard.api import fetch_campaign_data_from_api, process_api_response
 
 _TEMPLATE_DIR = Path(__file__).with_name("report_templates")
 _TEMPLATE_FILES = {
-    "nutri": "nutri.html",
-    "adriana_hoyos": "adriana_hoyos.html",
-    "artz": "artz.html",
-    "shamuna": "shamuna.html",
+    "nutri": "nutri",
+    "adriana_hoyos": "adriana_hoyos",
+    "artz": "artz",
+    "shamuna": "shamuna",
 }
 _DATA_MARKER = "<!-- REPORT_DATA -->"
 _REFERENCE_IDENTITIES = ("nutri", "adriana hoyos", "artz", "shamuna")
@@ -117,14 +117,70 @@ def _safe_json(payload: dict[str, Any]) -> str:
 
 
 def _load_template(template_name: str) -> str:
-    filename = _TEMPLATE_FILES.get(template_name)
+    filename = _TEMPLATE_FILES.get(template_name, template_name)
     if not filename:
         raise ValueError(f"Unknown report template: {template_name}")
     base = _TEMPLATE_DIR.resolve()
     path = (_TEMPLATE_DIR / filename).resolve()
-    if path.parent != base:
+    try:
+        path.relative_to(base)
+    except ValueError:
         raise ValueError("Report template path is outside the allowlisted directory")
-    source = path.read_text(encoding="utf-8")
+
+    if path.is_dir():
+        html_file = None
+        for candidate in ("template.html", f"{template_name}.html", "index.html"):
+            candidate_path = path / candidate
+            if candidate_path.is_file():
+                html_file = candidate_path
+                break
+        if not html_file:
+            raise ValueError(f"Report template directory missing HTML file: {template_name}")
+        source = html_file.read_text(encoding="utf-8")
+
+        css_file = None
+        for candidate in ("style.css", f"{template_name}.css"):
+            candidate_path = path / candidate
+            if candidate_path.is_file():
+                css_file = candidate_path
+                break
+        if css_file:
+            css_content = css_file.read_text(encoding="utf-8")
+            if '<link rel="stylesheet" href="style.css">' in source:
+                source = source.replace('<link rel="stylesheet" href="style.css">', f"<style>\n{css_content}\n</style>")
+            elif "</head>" in source:
+                source = source.replace("</head>", f"  <style>\n{css_content}\n  </style>\n</head>")
+            else:
+                source = f"<style>\n{css_content}\n</style>\n" + source
+
+        js_file = None
+        for candidate in ("script.js", f"{template_name}.js"):
+            candidate_path = path / candidate
+            if candidate_path.is_file():
+                js_file = candidate_path
+                break
+        if js_file:
+            js_content = js_file.read_text(encoding="utf-8")
+            if '<script src="script.js"></script>' in source:
+                source = source.replace('<script src="script.js"></script>', f"<script>\n{js_content}\n</script>")
+            elif "</body>" in source:
+                source = source.replace("</body>", f"  <script>\n{js_content}\n  </script>\n</body>")
+            else:
+                source = source + f"\n<script>\n{js_content}\n</script>"
+    elif path.is_file():
+        source = path.read_text(encoding="utf-8")
+    else:
+        # Fallback if filename has extension .html
+        html_path = (_TEMPLATE_DIR / f"{filename}.html").resolve()
+        if html_path.is_file():
+            try:
+                html_path.relative_to(base)
+                source = html_path.read_text(encoding="utf-8")
+            except ValueError:
+                raise ValueError("Report template path is outside the allowlisted directory")
+        else:
+            raise ValueError(f"Unknown report template: {template_name}")
+
     if source.count(_DATA_MARKER) != 1:
         raise ValueError("Report template must contain exactly one data marker")
     lowered = source.casefold()
