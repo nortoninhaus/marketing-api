@@ -132,7 +132,36 @@ def fetch_campaign_data_from_api(platform_key, client_id, user_id, account_id, s
     except Exception as e:
         if show_errors:
             st.error(f"Error de conexión con la API: {e}")
-        return []
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_benchmarking_from_api(client_id, user_id, account_id, ig_competitors, fb_competitors, api_key, limit_media=25, show_errors=False, timeout=40):
+    url = f"{DEFAULT_API_URL}/api/v1/benchmarking"
+    headers = {
+        "accept": "*/*",
+        "content-type": "application/json",
+        "x-api-key": api_key,
+        "origin": "https://inhaus-marketing-api.web.app",
+        "referer": "https://inhaus-marketing-api.web.app/"
+    }
+    payload = {
+        "client_id": client_id,
+        "user_id": user_id,
+        "account_id": account_id,
+        "instagram_competitors": ig_competitors,
+        "facebook_competitors": fb_competitors,
+        "limit_media": limit_media
+    }
+    try:
+        res = requests.post(url, headers=headers, json=payload, timeout=timeout)
+        if res.status_code == 200:
+            return res.json()
+        else:
+            if show_errors:
+                st.error(f"Error de Benchmarking API ({res.status_code}): {res.text}")
+            return {}
+    except Exception as e:
+        if show_errors:
+            st.error(f"Error de conexión con Benchmarking API: {e}")
+        return {}
 
 
 def _meta_proxy_get(client_id, account_id, api_key, path, params, timeout=30):

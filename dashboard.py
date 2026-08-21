@@ -62,6 +62,7 @@ from dashboard.api import (
     fetch_connections_from_api,
     fetch_schema_from_api,
     fetch_campaign_data_from_api,
+    fetch_benchmarking_from_api,
     fetch_meta_aggregate_insights,
     fetch_meta_ad_previews,
     fetch_meta_filter_rows,
@@ -1718,6 +1719,22 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
 else:
     start_date, end_date = default_start, today
 
+# Benchmarking / Competitors Section
+with st.sidebar.expander("🔍 Competidores (Benchmarking)", expanded=False):
+    st.caption("Escribe los usernames de Instagram y nombres de página de Facebook para analizar competidores.")
+    st.text_area(
+        "Competidores Instagram (@usernames)",
+        value=st.session_state.get("benchmark_ig_input", "parmalatecuador, toniec, lalecheraec, vita_ecuador"),
+        help="Usernames de Instagram separados por coma o salto de línea",
+        key="benchmark_ig_input",
+    )
+    st.text_area(
+        "Competidores Facebook (Páginas/Usernames)",
+        value=st.session_state.get("benchmark_fb_input", "parmalatecuador, ToniLacteosEc, LaLecheraEcuador, VitaEcuador"),
+        help="Usernames o nombres de página de Facebook separados por coma o salto de línea",
+        key="benchmark_fb_input",
+    )
+
 # Execute Button in Sidebar to prevent auto-loading until clicked
 execute_query = st.sidebar.button("🚀 Consultar API", use_container_width=True)
 
@@ -3026,15 +3043,29 @@ with download_slot.container():
                                 monthly_evolution["networks"]["tiktok"]["reach"]["m2"] = float(tt_m2_df["reach"].sum())
                 except Exception as ex:
                     print(f"Error fetching TikTok Ads for export: {ex}")
-            final_ctx["connections"] = final_connections
-            final_ctx["platforms"] = list(dict.fromkeys(platforms_list))
+            breakdowns_opt = {"monthly_evolution": monthly_evolution}
+            ig_raw = str(st.session_state.get("benchmark_ig_input", ""))
+            fb_raw = str(st.session_state.get("benchmark_fb_input", ""))
+            ig_comps = [u.strip().lstrip("@") for u in re.split(r"[,\n]+", ig_raw) if u.strip()]
+            fb_comps = [p.strip() for p in re.split(r"[,\n]+", fb_raw) if p.strip()]
+            if (ig_comps or fb_comps) and c_id:
+                try:
+                    bench_res = fetch_benchmarking_from_api(
+                        c_id, u_id, str(ctx.get("account_id", "")), ig_comps, fb_comps, key, show_errors=False
+                    )
+                    if bench_res and bench_res.get("status") == "success":
+                        breakdowns_opt["benchmarking"] = bench_res
+                        breakdowns_opt["competition"] = bench_res
+                except Exception as ex:
+                    print(f"Error fetching benchmarking data: {ex}")
+
             return template_report_html(
                 final_df,
                 tpl,
                 final_ctx,
                 previous_frame=prev_df,
                 export_table=exp_df["frame"],
-                optional={"breakdowns": {"monthly_evolution": monthly_evolution}},
+                optional={"breakdowns": breakdowns_opt},
             ).encode("utf-8")
 
         st.download_button(

@@ -501,7 +501,69 @@
       const renderTrend = (prefix, items) => { const candidates = ordered(Object.assign({}, ...items.map(item => item.metrics || {}))), metric = ["impressions", "reach", "views", "video_views", "spend", "engagement", "clicks"].find(key => candidates.includes(key)) || candidates[0]; if (!metric) return false; const daily = new Map; items.forEach(item => { const value = (item.metrics || {})[metric]; if (number(value)) daily.set(item.date, (daily.get(item.date) || 0) + value) }); const points = [...daily.entries()].sort(([a], [b]) => a.localeCompare(b)); if (!points.length) return false; const svg = document.getElementById(prefix + "-chart"), width = 900, height = 245, left = 50, right = 20, top = 22, bottom = 52, max = Math.max(...points.map(([, value]) => value), 1), x = index => left + (points.length === 1 ? (width - left - right) / 2 : index * (width - left - right) / (points.length - 1)), y = value => top + (height - top - bottom) * (1 - value / max), ns = "http:" + "//www.w3.org/2000/svg"; svg.setAttribute("viewBox", "0 0 " + width + " " + height); const axis = document.createElementNS(ns, "line"); for (const [key, value] of Object.entries({ class: "chart-axis", x1: left, x2: width - right, y1: height - bottom, y2: height - bottom })) axis.setAttribute(key, value); svg.append(axis); const coords = points.map(([, value], index) => x(index) + "," + y(value)), area = document.createElementNS(ns, "polygon"); area.setAttribute("class", "chart-area"); area.setAttribute("points", left + "," + (height - bottom) + " " + coords.join(" ") + " " + (width - right) + "," + (height - bottom)); svg.append(area); const line = document.createElementNS(ns, "polyline"); line.setAttribute("class", "chart-line"); line.setAttribute("points", coords.join(" ")); svg.append(line); const every = Math.max(1, Math.ceil(points.length / 7)); points.forEach(([day, value], index) => { const dot = document.createElementNS(ns, "circle"); dot.setAttribute("class", "chart-dot"); dot.setAttribute("cx", x(index)); dot.setAttribute("cy", y(value)); dot.setAttribute("r", 4); const title = document.createElementNS(ns, "title"); title.textContent = formatDate(day) + ": " + format(metric, value); dot.append(title); svg.append(dot); if (index % every === 0 || index === points.length - 1) { const label = document.createElementNS(ns, "text"); label.setAttribute("class", "chart-label"); label.setAttribute("data-trend-tick", "true"); label.setAttribute("x", x(index)); label.setAttribute("y", height - 17); label.setAttribute("text-anchor", "end"); label.setAttribute("transform", "rotate(-28 " + x(index) + " " + (height - 17) + ")"); label.textContent = formatDate(day); svg.append(label) } }); document.getElementById(prefix + "-trend-label").textContent = metricLabel(metric); const body = document.getElementById(prefix + "-trend-body"); points.forEach(([day, value]) => { const row = element("tr"); row.append(element("td", "", formatDate(day)), element("td", "", format(metric, value))); body.append(row) }); return true };
       const generalNarratives = narratives.filter(item => typeof item === "string" || (item && !item.platform)); generalNarratives.map(item => typeof item === "string" ? item : item.text || item.summary || item.value).filter(Boolean).forEach(value => { const node = element("p", "narrative", value); node.dataset.family = "narrative"; document.getElementById("summary-narratives").append(node) }); const summaryKpis = renderKpis("summary-kpis", summary, true, summaryAllowedKeys); setPanel("summary-panel", summaryKpis > 0 || hasSummaryTable || generalNarratives.length > 0);
 
-      const competition = Array.isArray(breakdowns.competition) ? breakdowns.competition.filter(item => item && typeof item === "object") : [], competitionMetrics = competition.length ? Object.keys(competition[0]).filter(key => key !== "label" && key !== "name" && competition.every(item => number(item[key]))) : []; if (competition.length && competitionMetrics.length) { const head = document.getElementById("competition-head"); head.append(element("th", "", "Cuenta")); competitionMetrics.forEach(key => head.append(element("th", "", metricLabel(key)))); competition.forEach(item => { const row = element("tr"); row.append(element("td", "", item.label || item.name || "Cuenta")); competitionMetrics.forEach(key => row.append(element("td", "", format(key, item[key])))); document.getElementById("competition-body").append(row) }) } setPanel("competition-panel", document.getElementById("competition-body").children.length > 0);
+      const compData = breakdowns.benchmarking || (typeof breakdowns.competition === "object" && !Array.isArray(breakdowns.competition) ? breakdowns.competition : null);
+      const genericCompList = Array.isArray(breakdowns.competition) ? breakdowns.competition.filter(item => item && typeof item === "object") : [];
+      let hasCompetition = false;
+
+      if (compData && (Array.isArray(compData.instagram) || Array.isArray(compData.facebook))) {
+        const igList = Array.isArray(compData.instagram) ? compData.instagram : [];
+        const fbList = Array.isArray(compData.facebook) ? compData.facebook : [];
+
+        if (igList.length > 0) {
+          const igBody = document.getElementById("competition-ig-body");
+          igList.forEach(item => {
+            const row = element("tr");
+            row.append(
+              element("td", "td-name", (item.name || item.username) + (item.username ? " (@" + item.username + ")" : "")),
+              element("td", "td-num", format("followers", item.followers)),
+              element("td", "td-num", format("posts", item.posts_count || item.media_count)),
+              element("td", "td-num", format("reels", item.reels_count)),
+              element("td", "td-num", format("likes", item.avg_likes || item.total_likes)),
+              element("td", "td-num", format("comments", item.avg_comments || item.total_comments)),
+              element("td", "td-num", (item.engagement_rate || 0) + "%")
+            );
+            igBody.append(row);
+          });
+          show(document.getElementById("competition-ig-card"), true);
+          hasCompetition = true;
+        }
+
+        if (fbList.length > 0) {
+          const fbBody = document.getElementById("competition-fb-body");
+          fbList.forEach(item => {
+            const row = element("tr");
+            row.append(
+              element("td", "td-name", item.name || item.page_id_or_username),
+              element("td", "td-num", format("followers", item.followers)),
+              element("td", "td-num", format("fan_count", item.fan_count)),
+              element("td", "td-num", format("talking_about_count", item.talking_about_count)),
+              element("td", "td-num", format("active_ads", item.active_ads_count))
+            );
+            fbBody.append(row);
+          });
+          show(document.getElementById("competition-fb-card"), true);
+          hasCompetition = true;
+        }
+      }
+
+      if (!hasCompetition && genericCompList.length > 0) {
+        const competitionMetrics = Object.keys(genericCompList[0]).filter(key => key !== "label" && key !== "name" && genericCompList.every(item => number(item[key])));
+        if (competitionMetrics.length) {
+          const head = document.getElementById("competition-head");
+          head.append(element("th", "", "Cuenta"));
+          competitionMetrics.forEach(key => head.append(element("th", "", metricLabel(key))));
+          genericCompList.forEach(item => {
+            const row = element("tr");
+            row.append(element("td", "", item.label || item.name || "Cuenta"));
+            competitionMetrics.forEach(key => row.append(element("td", "", format(key, item[key]))));
+            document.getElementById("competition-body").append(row);
+          });
+          show(document.getElementById("competition-generic-card"), true);
+          hasCompetition = true;
+        }
+      }
+
+      setPanel("competition-panel", hasCompetition);
 
       const renderContent = (name, items) => { const excludedMetrics = new Set(["video_views", "views", "video_play_actions", "plays"]); const normalized = items.map(item => ({ item, values: rowMetrics(item) })), metrics = normalized.length ? ordered(normalized[0].values).filter(key => !excludedMetrics.has(key) && normalized.every(entry => number(entry.values[key])) && normalized.some(entry => Number(entry.values[key]) > 0)).slice(0, 6) : []; if (!normalized.length || !metrics.length) return false; const head = document.getElementById(name + "-content-head"); head.append(element("th", "", "Campaña o contenido")); metrics.forEach(key => head.append(element("th", "", metricLabel(key)))); normalized.sort((a, b) => b.values[metrics[0]] - a.values[metrics[0]]).slice(0, 12).forEach(({ item, values }) => { const row = element("tr"); row.append(element("td", "", item.campaign_name || item.ad_name || item.content_name || item.name || "Contenido")); metrics.forEach(key => row.append(element("td", "", format(key, values[key])))); document.getElementById(name + "-content-body").append(row) }); return true }, renderDemographics = name => { const target = document.getElementById(name + "-breakdowns"); Object.entries(platformBreakdowns(name)).forEach(([group, value]) => { const items = normalizeBreakdown(group, value); if (!items.length) return; const card = element("div", "card"), list = element("div", "breakdown-list"), max = Math.max(...items.map(item => item.value), 1); card.append(element("h4", "card-title", metricLabel(group))); items.sort((a, b) => b.value - a.value).slice(0, 10).forEach(item => { const row = element("div", "breakdown-row"), metaRow = element("div", "breakdown-meta"), bar = element("div", "breakdown-bar"), fill = element("div", "breakdown-fill"); metaRow.append(element("span", "breakdown-name", item.label), element("span", "breakdown-value", format(group.includes("share") || group.includes("percent") ? "share" : "value", item.value))); fill.style.width = Math.max(2, item.value / max * 100) + "%"; bar.append(fill); row.append(metaRow, bar); list.append(row) }); card.append(list); target.append(card) }); return target.children.length > 0 };
       const normalizeBreakdown = (key, value) => { if (Array.isArray(value)) return value.map(item => item && typeof item === "object" ? { label: item.label ?? item.name ?? item[key] ?? item.dimension, value: item.value ?? item.count ?? item.impressions ?? item.reach ?? item.percentage ?? item.share } : null).filter(item => item && item.label !== undefined && number(item.value)); if (value && typeof value === "object") return Object.entries(value).filter(([, amount]) => number(amount)).map(([label, amount]) => ({ label, value: amount })); return [] };
