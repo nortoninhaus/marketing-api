@@ -132,6 +132,9 @@ def fetch_campaign_data_from_api(platform_key, client_id, user_id, account_id, s
     except Exception as e:
         if show_errors:
             st.error(f"Error de conexión con la API: {e}")
+        return []
+
+
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_benchmarking_from_api(client_id, user_id, account_id, ig_competitors, fb_competitors, api_key, limit_media=25, show_errors=False, timeout=40):
     url = f"{DEFAULT_API_URL}/api/v1/benchmarking"
