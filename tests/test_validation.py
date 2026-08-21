@@ -578,7 +578,7 @@ def test_linkedin_rest_api():
             assert "rest/adAnalytics" in args[0]
             assert "pivot=CREATIVE" in args[0]
             assert "accounts=List(urn:li:sponsoredAdAccount:123)" in args[0]
-            assert kwargs.get("headers", {}).get("LinkedIn-Version") == "202405"
+            assert kwargs.get("headers", {}).get("LinkedIn-Version") == "202501"
             
             assert len(res) == 1
             assert res[0].campaign_name == "urn:li:sponsoredCreative:888"

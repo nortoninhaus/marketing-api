@@ -231,9 +231,9 @@ async def health_check(deep: bool = False):
     )
 
 PLATFORM_API_VERSIONS = {
-    "meta_ads": "v19.0",
-    "meta_organic": "v19.0",
-    "google_ads": "v16",
+    "meta_ads": "v25.0",
+    "meta_organic": "v25.0",
+    "google_ads": "v18",
     "ga4": "v1beta",
     "tiktok_ads": "v1.3",
     "tiktok_organic": "v1.3",
@@ -965,12 +965,12 @@ async def _execute_generic_proxy(
 @app.post("/api/v1/meta-proxy")
 async def meta_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
     """Proxy for Meta Ads / Organic (Graph API)."""
-    return await _execute_generic_proxy("meta_ads", request, "https://graph.facebook.com/v19.0", "bearer", settings.meta_access_token)
+    return await _execute_generic_proxy("meta_ads", request, "https://graph.facebook.com/v25.0", "bearer", settings.meta_access_token)
 
 @app.post("/api/v1/google-ads-proxy")
 async def google_ads_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
     """Proxy for Google Ads REST API."""
-    return await _execute_generic_proxy("google_ads", request, "https://googleads.googleapis.com/v16", "google_ads", settings.google_ads_refresh_token)
+    return await _execute_generic_proxy("google_ads", request, "https://googleads.googleapis.com/v18", "google_ads", settings.google_ads_refresh_token)
 
 @app.post("/api/v1/ga4-proxy")
 async def ga4_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):

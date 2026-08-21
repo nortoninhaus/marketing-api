@@ -56,7 +56,7 @@ class LinkedInAdsConnector(BaseConnector):
         
         headers = {
             "Authorization": f"Bearer {access_token}",
-            "LinkedIn-Version": "202405",
+            "LinkedIn-Version": "202501",
             "X-Restli-Protocol-Version": "2.0.0"
         }
         
@@ -140,7 +140,7 @@ class LinkedInAdsConnector(BaseConnector):
             url = f"https://api.linkedin.com/rest/adAccountsV2/{account_urn.split(':')[-1]}"
             headers = {
                 "Authorization": f"Bearer {creds['access_token']}",
-                "LinkedIn-Version": "202405",
+                "LinkedIn-Version": "202501",
                 "X-Restli-Protocol-Version": "2.0.0"
             }
             response = requests.get(url, headers=headers, timeout=10)
@@ -171,7 +171,7 @@ class LinkedInOrganicConnector(BaseConnector):
         
         headers = {
             "Authorization": f"Bearer {access_token}",
-            "LinkedIn-Version": "202405",
+            "LinkedIn-Version": "202501",
             "X-Restli-Protocol-Version": "2.0.0"
         }
         
@@ -236,7 +236,7 @@ class LinkedInOrganicConnector(BaseConnector):
             url = f"https://api.linkedin.com/rest/organizations/{org_urn.split(':')[-1]}"
             headers = {
                 "Authorization": f"Bearer {creds['access_token']}",
-                "LinkedIn-Version": "202405",
+                "LinkedIn-Version": "202501",
                 "X-Restli-Protocol-Version": "2.0.0"
             }
             response = requests.get(url, headers=headers, timeout=10)

@@ -54,7 +54,7 @@ class ShopifyConnector(BaseConnector):
         created_at_max = request.end_date.strftime("%Y-%m-%dT23:59:59-00:00")
 
         orders = []
-        url = f"https://{shop_domain}/admin/api/2024-04/orders.json"
+        url = f"https://{shop_domain}/admin/api/2025-01/orders.json"
         params = {
             "created_at_min": created_at_min,
             "created_at_max": created_at_max,
@@ -168,7 +168,7 @@ class ShopifyConnector(BaseConnector):
             if "." not in shop_domain:
                 shop_domain = f"{shop_domain}.myshopify.com"
             
-            url = f"https://{shop_domain}/admin/api/2024-04/shop.json"
+            url = f"https://{shop_domain}/admin/api/2025-01/shop.json"
             headers = {"X-Shopify-Access-Token": access_token}
             response = requests.get(url, headers=headers, timeout=10)
             return response.status_code == 200
