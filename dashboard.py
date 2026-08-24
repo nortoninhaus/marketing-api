@@ -2933,9 +2933,19 @@ with download_slot.container():
             meta_platform = str(ctx.get("platform", "meta_ads"))
             if meta_platform == "meta_ads" and meta_acc_id:
                 try:
+                    def _filter_meta_pub(df: pd.DataFrame, target: str) -> pd.DataFrame:
+                        if not isinstance(df, pd.DataFrame) or df.empty or "publisher_platform" not in df.columns:
+                            return pd.DataFrame()
+                        pubs = df["publisher_platform"].astype(str).str.lower().str.strip()
+                        if target == "instagram":
+                            return df[pubs.isin(["instagram", "threads"])]
+                        elif target == "facebook":
+                            return df[~pubs.isin(["instagram", "threads"])]
+                        return df[pubs == target]
+
                     if isinstance(curr_df, pd.DataFrame) and not curr_df.empty:
                         for pub in ("facebook", "instagram"):
-                            pub_df = curr_df[curr_df["publisher_platform"].astype(str).str.lower() == pub] if "publisher_platform" in curr_df.columns else pd.DataFrame()
+                            pub_df = _filter_meta_pub(curr_df, pub)
                             if not pub_df.empty:
                                 if "impressions" in pub_df.columns:
                                     monthly_evolution["networks"][pub]["impressions"]["m0"] = float(pub_df["impressions"].sum())
@@ -2949,9 +2959,9 @@ with download_slot.container():
                     )
                     if m1_rows:
                         m1_df = process_api_response(m1_rows, "meta_ads", c_id, u_id)
-                        if isinstance(m1_df, pd.DataFrame) and not m1_df.empty and "publisher_platform" in m1_df.columns:
+                        if isinstance(m1_df, pd.DataFrame) and not m1_df.empty:
                             for pub in ("facebook", "instagram"):
-                                pub_df = m1_df[m1_df["publisher_platform"].astype(str).str.lower() == pub]
+                                pub_df = _filter_meta_pub(m1_df, pub)
                                 if not pub_df.empty:
                                     if "impressions" in pub_df.columns:
                                         monthly_evolution["networks"][pub]["impressions"]["m1"] = float(pub_df["impressions"].sum())
@@ -2965,9 +2975,9 @@ with download_slot.container():
                     )
                     if m2_rows:
                         m2_df = process_api_response(m2_rows, "meta_ads", c_id, u_id)
-                        if isinstance(m2_df, pd.DataFrame) and not m2_df.empty and "publisher_platform" in m2_df.columns:
+                        if isinstance(m2_df, pd.DataFrame) and not m2_df.empty:
                             for pub in ("facebook", "instagram"):
-                                pub_df = m2_df[m2_df["publisher_platform"].astype(str).str.lower() == pub]
+                                pub_df = _filter_meta_pub(m2_df, pub)
                                 if not pub_df.empty:
                                     if "impressions" in pub_df.columns:
                                         monthly_evolution["networks"][pub]["impressions"]["m2"] = float(pub_df["impressions"].sum())

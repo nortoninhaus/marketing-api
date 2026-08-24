@@ -3,7 +3,7 @@
       const data = window.REPORT_DATA || {}, meta = data.meta || {}, summary = data.summary || {}, rates = data.rates || {}, deltas = data.deltas || {}, byPlatform = data.by_platform || {}, series = Array.isArray(data.daily_series) ? data.daily_series : [], rows = data.rows || {}, breakdowns = data.breakdowns || {}, narratives = Array.isArray(data.narratives) ? data.narratives : [];
       const labels = { spend: "Inversión", impressions: "Impresiones", reach: "Alcance", clicks: "Clics", conversions: "Conversiones", results: "Resultados", lead: "Clientes potenciales", engagement: "Interacciones", post_engagement: "Interacciones con publicaciones", followers: "Seguidores", views: "Visualizaciones", video_views: "Vistas de video", likes: "Me gusta", comments: "Comentarios", shares: "Veces compartido", ctr: "CTR", cpc: "CPC", cpm: "CPM", cpa: "CPA", conversion_rate: "Tasa de conversión" }, money = new Set(["spend", "cpc", "cpm", "cpa", "cost", "cost_per_result"]), percent = new Set(["ctr", "conversion_rate", "share"]), priority = ["spend", "impressions", "reach", "engagement", "followers", "views", "video_views", "clicks", "conversions", "likes", "comments", "shares"];
       const number = value => typeof value === "number" && Number.isFinite(value), element = (tag, className, value) => { const node = document.createElement(tag); if (className) node.className = className; if (value !== undefined && value !== null) node.textContent = String(value); return node }, show = (node, visible) => { if (node) node.hidden = !visible; return visible }, metricLabel = key => labels[key] || key.replaceAll("_", " ").replace(/\b\w/g, letter => letter.toUpperCase()), platformLabel = key => key.replaceAll("_", " ").replace(/\b\w/g, letter => letter.toUpperCase());
-      const format = (key, value) => { if (!number(value)) return ""; if (money.has(key)) return new Intl.NumberFormat("es-EC", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(value); if (percent.has(key) || key.startsWith("delta_")) return new Intl.NumberFormat("es-EC", { maximumFractionDigits: 2 }).format(value) + "%"; return new Intl.NumberFormat("es-EC", { notation: Math.abs(value) >= 10000000 ? "compact" : "standard", maximumFractionDigits: 0 }).format(value) }, formatDate = value => { if (!value) return ""; const parsed = new Date(value); return Number.isNaN(parsed.getTime()) ? String(value) : new Intl.DateTimeFormat("es-EC", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(parsed) }, ordered = values => { const keys = Object.entries(values || {}).filter(([, value]) => number(value)).map(([key]) => key); return [...new Set([...priority.filter(key => keys.includes(key)), ...keys.sort()])] }, canonical = value => { const source = String(value || "").toLowerCase(); if (source.includes("instagram")) return "instagram"; if (source.includes("facebook")) return "facebook"; if (source.includes("tiktok")) return "tiktok"; return source }, isMeta = value => { const source = String(value || "").toLowerCase(); return source === "meta" || source.startsWith("meta_") || source.startsWith("meta ") }, rowPlatform = row => { const source = row.source_platform || row.platform || (row.source_metrics || {}).platform, publisher = row.publisher_platform || (row.source_metrics || {}).publisher_platform; return canonical(isMeta(source) ? publisher || row.platform || source : row.platform || source) };
+      const format = (key, value) => { if (!number(value)) return ""; if (money.has(key)) return new Intl.NumberFormat("es-EC", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(value); if (percent.has(key) || key.startsWith("delta_")) return new Intl.NumberFormat("es-EC", { maximumFractionDigits: 2 }).format(value) + "%"; return new Intl.NumberFormat("es-EC", { notation: Math.abs(value) >= 10000000 ? "compact" : "standard", maximumFractionDigits: 0 }).format(value) }, formatDate = value => { if (!value) return ""; const parsed = new Date(value); return Number.isNaN(parsed.getTime()) ? String(value) : new Intl.DateTimeFormat("es-EC", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(parsed) }, ordered = values => { const keys = Object.entries(values || {}).filter(([, value]) => number(value)).map(([key]) => key); return [...new Set([...priority.filter(key => keys.includes(key)), ...keys.sort()])] }, canonical = value => { const source = String(value || "").toLowerCase().trim(); if (source.includes("instagram") || source === "threads") return "instagram"; if (source.includes("facebook") || source === "whatsapp" || source === "unknown") return "facebook"; if (source.includes("tiktok")) return "tiktok"; return source }, isMeta = value => { const source = String(value || "").toLowerCase(); return source === "meta" || source.startsWith("meta_") || source.startsWith("meta ") }, rowPlatform = row => { const source = row.source_platform || row.platform || (row.source_metrics || {}).platform, publisher = row.publisher_platform || (row.source_metrics || {}).publisher_platform; return canonical(isMeta(source) ? publisher || row.platform || source : row.platform || source) };
       const setPanel = (id, visible) => { const node = document.getElementById(id); if (node) { show(node, visible); if (!visible) node.classList.remove('active') } const navBtn = document.querySelector('.tab-btn[data-target="' + id + '"]'); if (navBtn) show(navBtn, visible);['general', 'redes', 'optimizacion'].forEach(mainId => { const subNav = document.getElementById('subnav-' + mainId), mainBtn = document.querySelector('.main-tab-btn[data-main-tab="' + mainId + '"]'); if (subNav && mainBtn) { const hasVisible = [...subNav.querySelectorAll('.tab-btn')].some(b => !b.hidden); show(mainBtn, hasVisible) } }) };
       const summaryAllowedKeys = ["spend", "impressions", "reach", "engagement", "post_engagement", "followers", "video_views", "views"];
       const summaryCustomLabels = {
@@ -104,25 +104,28 @@
         google_ads: "#4285F4"
       };
 
-      const publisherRows = {};
+      const publisherRows = { facebook: [], instagram: [] };
       contentRows.forEach(item => {
         if (isMeta(item.source_platform)) {
           const pub = rowPlatform(item);
-          if (pub) {
-            if (!publisherRows[pub]) publisherRows[pub] = [];
-            publisherRows[pub].push(item);
+          if (pub === "instagram") {
+            publisherRows.instagram.push(item);
+          } else if (pub === "facebook") {
+            publisherRows.facebook.push(item);
           }
         }
       });
 
-      const detectedPubKeys = Object.keys(publisherRows);
-      const orderedKeys = Array.from(new Set(["facebook", "instagram", "tiktok", "audience_network", "messenger", ...detectedPubKeys, ...platformEntries.map(([k]) => canonical(k))]));
-
-      // ── DESGLOSE DE KPIS POR RED SOCIAL (Plataformas y Publishers Detectados) ──
+      // ── DESGLOSE DE KPIS POR RED SOCIAL (Consolida Threads en IG, Whatsapp/Unknown en FB) ──
       const networkRows = [];
       let totalSpendGlobal = 0, totalImpressionsGlobal = 0, totalReachGlobal = 0;
 
-      orderedKeys.forEach(key => {
+      const allowedNetworks = ["facebook", "instagram"];
+      if (tiktokRows.length || platformEntries.some(([k]) => canonical(k) === "tiktok")) {
+        allowedNetworks.push("tiktok");
+      }
+
+      allowedNetworks.forEach(key => {
         const pRows = key === "tiktok" ? tiktokRows : (publisherRows[key] || []);
         const direct = platformEntries.find(([k]) => canonical(k) === key)?.[1];
         let netMetrics = null;
@@ -149,9 +152,9 @@
         }
       });
 
-      // Fallback to platformEntries if no network separation found
+      // Fallback only if no network rows could be formed
       if (!networkRows.length && platformEntries.length) {
-        platformEntries.forEach(([name, metrics]) => {
+        platformEntries.filter(([name]) => !isMeta(name)).forEach(([name, metrics]) => {
           const sp = number(metrics.spend) ? metrics.spend : 0;
           const imp = number(metrics.impressions) ? metrics.impressions : 0;
           const rch = number(metrics.reach) ? metrics.reach : null;
