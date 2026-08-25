@@ -1,0 +1,1 @@
+revisa porque el PDF no se descargaba correctamente, el codigo estaba comentado, usa [$context7-mcp](/Users/inhaus/.agents/skills/context7-mcp/SKILL.md) para ver si puedes encontrar algo, pero lo que pasaba era que se estaba descargando pero eran unas capturas vacias, sin nada
