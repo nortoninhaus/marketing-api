@@ -1,0 +1,1 @@
+pero es que en resultados hay diferentes textos, no solo eso, eso quiero que recuperes y la metrica que le corresponde
