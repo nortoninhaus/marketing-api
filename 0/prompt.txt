@@ -1,0 +1,1 @@
+asegurate que el csv este descargando la misma data
