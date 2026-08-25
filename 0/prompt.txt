@@ -1,0 +1,1 @@
+en [dashboard.py](dashboard.py) porque pierdes todo el contexto cuando presiono el boton de cambiar tema, por ejemplo estaba ya con una vista generada y solo presiono en cambiar tema y se reinicio todo a 0
