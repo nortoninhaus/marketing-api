@@ -1,0 +1,1 @@
+puedes crear este archivo para que sea un ejecutable tipo deploy_dashboard.py?, pide que ingrese el docuemnte (username) y el password y genera el sha256 y ahi si guardalo
