@@ -1,0 +1,1 @@
+agrega que se pueda descargar esto como un PDF tal cual como esta la pagina y otro como un csv de los datos, un boton arriba de todo y que me deje elegir el tipo de descarga
