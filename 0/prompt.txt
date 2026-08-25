@@ -1,0 +1,1 @@
+agrega un filtro en la tabla, en al columna de **Tipo de resultado permite filtrar las diferentes opciones**
