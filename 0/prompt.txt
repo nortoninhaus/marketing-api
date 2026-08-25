@@ -1,0 +1,1 @@
+el problema a corregir es en ese template, no en dashboard
