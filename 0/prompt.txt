@@ -1,0 +1,10 @@
+# Files mentioned by the user:
+
+## codex-clipboard-e027fdf7-b8c0-456e-8e19-b4fd92a823b3.png: /var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-e027fdf7-b8c0-456e-8e19-b4fd92a823b3.png
+
+## My request for Codex:
+change the CPA card with alcance total
+
+<image name=[Image #1] path="/var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-e027fdf7-b8c0-456e-8e19-b4fd92a823b3.png">
+
+</image>
