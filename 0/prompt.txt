@@ -1,0 +1,1 @@
+coloca en la esquina superior derecha el mimso boton de switch theme, y claor que mantenga el theme seleccionado cuando inicie sesion, no cambies nada mas, manten la misma transicion solo coloca el mimso boton
