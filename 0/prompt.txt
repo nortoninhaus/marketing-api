@@ -1,0 +1,1 @@
+si pero primero haz comiit, pull de main y de ahi sube el backend con [deploy.sh](deploy.sh)
