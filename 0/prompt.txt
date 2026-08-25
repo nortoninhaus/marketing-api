@@ -1,0 +1,10 @@
+# Files mentioned by the user:
+
+## codex-clipboard-d0e48843-9a02-4b1d-ab7d-1d70cffd9208.png: /var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-d0e48843-9a02-4b1d-ab7d-1d70cffd9208.png
+
+## My request for Codex:
+agrega al final de la tabla una fila extra que sea total, y muestra la suma total y/o promedio segun corresponda
+
+<image name=[Image #1] path="/var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-d0e48843-9a02-4b1d-ab7d-1d70cffd9208.png">
+
+</image>
