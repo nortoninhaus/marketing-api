@@ -1,0 +1,22 @@
+# Files mentioned by the user:
+
+## codex-clipboard-213cf8b9-5575-4019-b921-90b6363e50f3.png: /var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-213cf8b9-5575-4019-b921-90b6363e50f3.png
+
+## codex-clipboard-202a5cc2-7958-4d33-93e2-8d7a70df4111.png: /var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-202a5cc2-7958-4d33-93e2-8d7a70df4111.png
+
+## My request for Codex:
+Muestrame solamente las campañas que tengan impresiones >0, tanto en la tabla, como en el filtro, osea quiza eso filtrar desde antes de hacer la consulta
+el dato de esta card esta mal, no es el valor correcto:
+**Alcance Total**
+**5,736,572**
+**Usuarios únicos alcanzados**
+Agrega a esta card  (o al lado) estos dos datos: Costo por resultado- importe gastado (imagen 1)
+en la imagen dos el top de cada uno esta bien por campaña, pero muestra el mejor anuncio de cada seccion que estamos analizando, no estas mostrando el mejor
+
+<image name=[Image #1] path="/var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-213cf8b9-5575-4019-b921-90b6363e50f3.png">
+
+</image>
+
+<image name=[Image #2] path="/var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-202a5cc2-7958-4d33-93e2-8d7a70df4111.png">
+
+</image>
