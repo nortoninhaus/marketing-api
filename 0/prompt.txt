@@ -1,0 +1,1 @@
+no, pero tu solamente estas creando la tabla, quiero el reporte total y completo y no solo la tabla, que sea un tipo template de cada uno, osea quiero lo mimso, solo cambiado los datos (todos) en cada template, y los textos de cada empresa que elija, osea el nombre de la empresa, seria de la cuenta que elija, usa [$sdd-init](/Users/inhaus/.codex/skills/sdd-init/SKILL.md)
