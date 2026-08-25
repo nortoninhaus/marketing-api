@@ -1,0 +1,1 @@
+el costo por resultado no es el valor correcto, ademas agrega la columna de presupuesto al lado de inversion y cambia el nombre de esta ultima por importe gastado
