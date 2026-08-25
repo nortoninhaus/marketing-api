@@ -1,0 +1,10 @@
+# Files mentioned by the user:
+
+## codex-clipboard-83b9f9f3-b06a-40ed-8301-5431ec5d39de.png: /var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-83b9f9f3-b06a-40ed-8301-5431ec5d39de.png
+
+## My request for Codex:
+tengo esto
+
+<image name=[Image #1] path="/var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-83b9f9f3-b06a-40ed-8301-5431ec5d39de.png">
+
+</image>
