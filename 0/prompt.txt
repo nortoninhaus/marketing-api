@@ -1,0 +1,10 @@
+# Files mentioned by the user:
+
+## codex-clipboard-db6be487-31c6-4b2c-8a1d-460f7ee49e31.png: /var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-db6be487-31c6-4b2c-8a1d-460f7ee49e31.png
+
+## My request for Codex:
+habia una forma de crear un user para que funcione el login creando un usuario en firebase, crea uno con estos mismos parametros (dame el comando para crear el password hash)
+
+<image name=[Image #1] path="/var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-db6be487-31c6-4b2c-8a1d-460f7ee49e31.png">
+
+</image>
