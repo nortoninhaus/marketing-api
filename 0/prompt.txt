@@ -1,0 +1,24 @@
+tengo esta configuracoin de firebase analytics
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "REDACTED",
+  authDomain: "inhaus-marketing-api.firebaseapp.com",
+  projectId: "inhaus-marketing-api",
+  storageBucket: "inhaus-marketing-api.firebasestorage.app",
+  messagingSenderId: "779713083183",
+  appId: "1:779713083183:web:8cd094c0c0601b71da93da",
+  measurementId: "G-KEYBRJQSWF"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+
+los cambios estoy subiendo, el front en [deploy_dashboard.sh](deploy_dashboard.sh) y el back en [deploy.sh](deploy.sh)
