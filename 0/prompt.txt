@@ -1,0 +1,13 @@
+# Files mentioned by the user:
+
+## codex-clipboard-0ef70d07-00c6-4820-8aaf-307a735a57a6.png: /var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-0ef70d07-00c6-4820-8aaf-307a735a57a6.png
+
+## My request for Codex:
+haz 3 rankings DIFERENTES, todos tienen que tener solamente los 3 top posts bajo estos parametros (cada parametro muestralo en primera posicion):
+1. Clientes potenciales
+2. Alcance
+3. Interaccion
+
+<image name=[Image #1] path="/var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-0ef70d07-00c6-4820-8aaf-307a735a57a6.png">
+
+</image>
