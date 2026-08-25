@@ -1,0 +1,17 @@
+# Files mentioned by the user:
+
+## codex-clipboard-c4420aae-c225-4f68-b796-4a3ce26ea3c5.png: /var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-c4420aae-c225-4f68-b796-4a3ce26ea3c5.png
+
+## codex-clipboard-5e1f3037-615e-44ca-9656-47759004b15d.png: /var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-5e1f3037-615e-44ca-9656-47759004b15d.png
+
+## My request for Codex:
+el costo por resultado sigue siendo 0 si reach y resultados son lo mismo elimina uno (imagen 1), por ejemplo en meta ads veo que si una campaña el resultado es alcance te muestra el texto de que es el reultado, por ejemplo en otros te dice clientes potenciales, pero es dentro de resultados, lo que cambia es el texto.
+muestrame todas las campañas y el nombre completo de la campaña y aqui en **Ranking: top campañas por resultados (Meta) agrega un parametro en la card que sean los leads y muestrame ordenado por leads, cambiarias el titulo, aun no subas dejalo en local, solo sube el back si haces cambios, el dashboard no**
+
+<image name=[Image #1] path="/var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-c4420aae-c225-4f68-b796-4a3ce26ea3c5.png">
+
+</image>
+
+<image name=[Image #2] path="/var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-5e1f3037-615e-44ca-9656-47759004b15d.png">
+
+</image>
