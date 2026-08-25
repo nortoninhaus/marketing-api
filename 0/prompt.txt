@@ -1,0 +1,40 @@
+📋 Changelog — Integración de Analytics en Dashboard
+🌿 Rama de trabajo
+feature/dashboard-analytics (actualizada a partir del main más reciente).
+1. 📊 Módulo de Analíticas (dashboard/analytics.py)
+Creación de dashboard/analytics.py:
+Función principal log_analytics_event() diseñada para ser completamente fail-safe (try/except silencioso): si la red o las cuotas fallan, registra un warning sin interrumpir la experiencia del usuario ni bloquear el dashboard.
+Estrategia Doble de Almacenamiento:
+Firestore Database: Persiste los eventos en tiempo real (0 segundos de retraso) en la colección dashboard_analytics_events de Firebase.
+Firebase / Google Analytics 4 (GA4): Envía los eventos mediante el protocolo GA4 Measurement Protocol y el tag frontend gtag.js usando el GA_MEASUREMENT_ID = "G-KEYBRJQSWF".
+2. 🎯 Captura de los 4 Eventos Requeridos
+🔑 login:
+Ubicación: dashboard/auth.py
+Trigger: Al validar con éxito las credenciales en el formulario de inicio de sesión.
+Payload: {"auth_method": "form", "user_id": username}.
+🚀 ejecutar_consulta:
+Ubicación: dashboard.py
+Trigger: Al presionar el botón 🚀 Consultar API.
+Payload: {"platform_key": platform_key, "account_id": account_id, "start_date": start_date, "end_date": end_date, "write_to_bq": write_to_bq}.
+🎛️ aplicar_filtros:
+Ubicación: dashboard.py
+Trigger: Al presionar el botón Aplicar filtros.
+Payload: {"campaign_filter": campaign_filter, "adset_filter": adset_filter, "ad_filter": ad_filter}.
+📊 pulsar_demograficos:
+Ubicación: dashboard.py
+Trigger: Al activar el checkbox Cargar datos demográficos.
+Payload: {"enabled": True, "platform_key": platform_key, "account_id": account_id}.
+3. ⚙️ Ajustes de Configuración y Despliegue (Cloud Run)
+Variables de Entorno (dashboard/config.py y .env.example):
+Se añadieron GA_MEASUREMENT_ID, FIREBASE_PROJECT_ID, FIREBASE_API_KEY, FIREBASE_APP_ID cargados desde las variables de entorno sin hardcodear secrets.
+Script de Despliegue (deploy_dashboard.sh):
+Se configuró PROJECT_ID="inhaus-marketing-api".
+Se actualizó IMAGE_URL="gcr.io/inhaus-marketing-api/inhaus-marketing-dashboard:latest" para evitar conflictos de permisos de descarga entre diferentes proyectos GCP.
+Configuración de Streamlit para Cloud Run (.streamlit/config.toml & Dockerfile.dashboard):
+Se agregaron las directivas enableCORS = false, enableXsrfProtection = false y enableWebsocketCompression = false para garantizar estabilidad de WebSockets.
+Corrección de la inyección de gtag.js con verificación segura de objetos DOM para evitar pantallas en blanco o loops de refresco en el navegador.
+este es un changlog de lo que se trabajo aqui,
+
+pero esto es lo que esta pasadno ahora:
+https://inhaus-marketing-dashboard-779713083183.us-central1.run.app/
+ya no se abre la pagina, osea carga pero desaparece enseguida, no veo nada en el log
