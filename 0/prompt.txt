@@ -1,0 +1,10 @@
+# Files mentioned by the user:
+
+## codex-clipboard-529e650a-e090-4fea-a57f-10d3778ab74a.png: /var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-529e650a-e090-4fea-a57f-10d3778ab74a.png
+
+## My request for Codex:
+que descargar csv se vea arriba y el cuadro de descargar no se vea tan grande
+
+<image name=[Image #1] path="/var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-529e650a-e090-4fea-a57f-10d3778ab74a.png">
+
+</image>
