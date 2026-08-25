@@ -1,0 +1,1 @@
+comenta el boton de descargar pdf por ahora, no me esta funcionando, y haz que se vea bien pero
