@@ -1,0 +1,18 @@
+# Files mentioned by the user:
+
+## codex-clipboard-67fd1b25-1810-45ce-9be4-01d2621c17f5.png: /var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-67fd1b25-1810-45ce-9be4-01d2621c17f5.png
+
+## codex-clipboard-edfe41e4-4dd1-4096-b720-6c1dcfa72e24.png: /var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-edfe41e4-4dd1-4096-b720-6c1dcfa72e24.png
+
+## My request for Codex:
+en campañas ya no separes por red social, muestra una sola (img 1), en los conjuntos de anuncios dejame escoger 0 a N 
+de igual forma en **Desempeño de campañas destacadas** ya no separes por plataforma (elimina) y el tipo de resultado mantenlo uno solo ya que es la misma campaña
+y al ultimo si no hay hasthags quita el texto de no se encontraron y no muestres nada
+
+<image name=[Image #1] path="/var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-67fd1b25-1810-45ce-9be4-01d2621c17f5.png">
+
+</image>
+
+<image name=[Image #2] path="/var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-edfe41e4-4dd1-4096-b720-6c1dcfa72e24.png">
+
+</image>
