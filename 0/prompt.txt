@@ -1,0 +1,1 @@
+ok, hazlo a firestore safe, y no subaes, pero avisame cuando esta para subir el dashboard
