@@ -1,0 +1,10 @@
+# Files mentioned by the user:
+
+## codex-clipboard-92e670cf-3d4f-4e99-aaf2-85d70c62a283.png: /var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-92e670cf-3d4f-4e99-aaf2-85d70c62a283.png
+
+## My request for Codex:
+pero ahora el boton de descargar csv se ve pequeño
+
+<image name=[Image #1] path="/var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-92e670cf-3d4f-4e99-aaf2-85d70c62a283.png">
+
+</image>
