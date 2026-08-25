@@ -1,0 +1,15 @@
+KeyError: 'campaign_name'
+
+File "/Users/inhaus/Documents/GitHub/marketing-api/.venv/lib/python3.14/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 129, in exec_func_with_error_handling
+    result = func()
+File "/Users/inhaus/Documents/GitHub/marketing-api/.venv/lib/python3.14/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 789, in code_to_exec
+    exec(code, module.**dict**)  # noqa: S102
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^
+File "/Users/inhaus/Documents/GitHub/marketing-api/dashboard.py", line 1406, in <module>
+    df_curr["campaign_name"].astype(str).apply(meta_base_campaign_name).isin(eligible_campaigns)
+    ~~~~~~~^^^^^^^^^^^^^^^^^
+File "/Users/inhaus/Documents/GitHub/marketing-api/.venv/lib/python3.14/site-packages/pandas/core/frame.py", line 4378, in **getitem**
+    indexer = self.columns.get_loc(key)
+File "/Users/inhaus/Documents/GitHub/marketing-api/.venv/lib/python3.14/site-packages/pandas/core/indexes/base.py", line 3648, in get_loc
+    raise KeyError(key) from err
+me da este error
