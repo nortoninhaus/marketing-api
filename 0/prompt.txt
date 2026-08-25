@@ -1,0 +1,1 @@
+ocultarlas, pero ten en cuenta que podemos usar directamente el API si no tenemos esos datos y/o los datos con los que ya construimos la tabla o con los que construimos el CSV
