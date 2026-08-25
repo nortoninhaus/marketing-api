@@ -1,0 +1,47 @@
+# Files mentioned by the user:
+
+## codex-clipboard-aebc5ea6-211f-4811-95a1-d3a889fb84fb.png: /var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-aebc5ea6-211f-4811-95a1-d3a889fb84fb.png
+
+## My request for Codex:
+1. ya hice deploy del back y tengo este error:
+KeyError: "Label(s) ['post_engagement'] do not exist"
+
+File "/Users/inhaus/Documents/GitHub/marketing-api/.venv/lib/python3.14/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 129, in exec_func_with_error_handling
+    result = func()
+File "/Users/inhaus/Documents/GitHub/marketing-api/.venv/lib/python3.14/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 789, in code_to_exec
+    exec(code, module.**dict**)  # noqa: S102
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^
+File "/Users/inhaus/Documents/GitHub/marketing-api/dashboard.py", line 1683, in <module>
+    .agg(
+     ~~~^
+        platform=("platform", lambda values: " / ".join(dict.fromkeys(values))),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+        conversions=("conversions", "sum"),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+File "/Users/inhaus/Documents/GitHub/marketing-api/.venv/lib/python3.14/site-packages/pandas/core/groupby/generic.py", line 2291, in aggregate
+    result = op.agg()
+File "/Users/inhaus/Documents/GitHub/marketing-api/.venv/lib/python3.14/site-packages/pandas/core/apply.py", line 294, in agg
+    return self.agg_dict_like()
+           ~~~~~~~~~~~~~~~~~~^^
+File "/Users/inhaus/Documents/GitHub/marketing-api/.venv/lib/python3.14/site-packages/pandas/core/apply.py", line 511, in agg_dict_like
+    return self.agg_or_apply_dict_like(op_name="agg")
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+File "/Users/inhaus/Documents/GitHub/marketing-api/.venv/lib/python3.14/site-packages/pandas/core/apply.py", line 1677, in agg_or_apply_dict_like
+    result_index, result_data = self.compute_dict_like(
+                                ~~~~~~~~~~~~~~~~~~~~~~^
+        op_name, selected_obj, selection, kwargs
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+File "/Users/inhaus/Documents/GitHub/marketing-api/.venv/lib/python3.14/site-packages/pandas/core/apply.py", line 550, in compute_dict_like
+    func = self.normalize_dictlike_arg(op_name, selected_obj, func)
+File "/Users/inhaus/Documents/GitHub/marketing-api/.venv/lib/python3.14/site-packages/pandas/core/apply.py", line 762, in normalize_dictlike_arg
+    raise KeyError(f"Label(s) {list(cols)} do not exist")
+2. en la imagen enviada aun se ven en el selector de campañas que hay varias con el mismo nombre
+
+<image name=[Image #1] path="/var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-aebc5ea6-211f-4811-95a1-d3a889fb84fb.png">
+
+</image>
