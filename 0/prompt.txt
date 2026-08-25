@@ -1,0 +1,10 @@
+# Files mentioned by the user:
+
+## codex-clipboard-b058737d-cd2e-42cc-bef6-2358c294fff9.png: /var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-b058737d-cd2e-42cc-bef6-2358c294fff9.png
+
+## My request for Codex:
+cuando en el filtro elijo una campaña que en la tabla se vean los conjuntos de anuncios de esa campaña, con la respectiva data y si elijo uno o varios conjuntos de anuncios que se carguen los anuncios de cada conjnto elegido
+
+<image name=[Image #1] path="/var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-b058737d-cd2e-42cc-bef6-2358c294fff9.png">
+
+</image>
