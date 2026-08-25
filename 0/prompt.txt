@@ -1,0 +1,10 @@
+# Files mentioned by the user:
+
+## codex-clipboard-30a30ffc-58d3-46d4-9c8f-ea8c5f9eda7d.png: /var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-30a30ffc-58d3-46d4-9c8f-ea8c5f9eda7d.png
+
+## My request for Codex:
+quita esos dos cuadros (solo comentalo en el codigo)
+
+<image name=[Image #1] path="/var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-30a30ffc-58d3-46d4-9c8f-ea8c5f9eda7d.png">
+
+</image>
