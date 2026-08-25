@@ -1,0 +1,1 @@
+este ya es otro branch, este va ser el branch integrador a main, no olvides ir haciendo commit de cada cosa que hagas
