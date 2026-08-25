@@ -1,0 +1,1 @@
+no, cuando no tenga por campaña pon "se administra a nivel de conjuntos" y cuando no tenga en conjuntos por "se administra a nivel campaña"
