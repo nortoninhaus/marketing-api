@@ -1,0 +1,10 @@
+# Files mentioned by the user:
+
+## codex-clipboard-fab26efd-8b5a-4ef2-a7dc-d8f9e81b1b77.png: /var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-fab26efd-8b5a-4ef2-a7dc-d8f9e81b1b77.png
+
+## My request for Codex:
+el texto de conjunto de anuncios deberia ser negro y decir Todos, como en anuncios, el fondo ese negro de los botones de descargar, debe ser blanco, el texto de descargar deberia ser blanco para que se vea
+
+<image name=[Image #1] path="/var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-fab26efd-8b5a-4ef2-a7dc-d8f9e81b1b77.png">
+
+</image>
