@@ -1,0 +1,10 @@
+# Files mentioned by the user:
+
+## codex-clipboard-97fc8c35-c216-450a-862b-808362a21c77.png: /var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-97fc8c35-c216-450a-862b-808362a21c77.png
+
+## My request for Codex:
+el boton de logout me cierra y vuelve a entrar, no deberia pasar eso
+
+<image name=[Image #1] path="/var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-97fc8c35-c216-450a-862b-808362a21c77.png">
+
+</image>
