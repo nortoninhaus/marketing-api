@@ -1,0 +1,1 @@
+ok, para que le archivo principal no se haga tan grande, si cada template puede ser un nuevo archivo y ahi vas leyendo la data que te manda el dashboard principal, bacan, solo eso que tomes en cuenta, continua con lo que sigue
