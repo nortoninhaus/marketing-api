@@ -1,0 +1,16 @@
+# Files mentioned by the user:
+
+## codex-clipboard-a8470d80-7261-4996-9817-4d417303b595.png: /var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-a8470d80-7261-4996-9817-4d417303b595.png
+
+## codex-clipboard-67a53b83-0920-4903-8abc-35c807a0dc2c.png: /var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-67a53b83-0920-4903-8abc-35c807a0dc2c.png
+
+## My request for Codex:
+no se ve mas info que los usuarios activos
+
+<image name=[Image #1] path="/var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-a8470d80-7261-4996-9817-4d417303b595.png">
+
+</image>
+
+<image name=[Image #2] path="/var/folders/g4/4twvffj15p3006dz6544lrqm0000gn/T/codex-clipboard-67a53b83-0920-4903-8abc-35c807a0dc2c.png">
+
+</image>
