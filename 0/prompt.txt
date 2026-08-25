@@ -1,0 +1,36 @@
+me da este error en la tabla 
+KeyError: "Label(s) ['results'] do not exist"
+
+File "/Users/inhaus/Documents/GitHub/marketing-api/.venv/lib/python3.14/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 129, in exec_func_with_error_handling
+    result = func()
+File "/Users/inhaus/Documents/GitHub/marketing-api/.venv/lib/python3.14/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 789, in code_to_exec
+    exec(code, module.**dict**)  # noqa: S102
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^
+File "/Users/inhaus/Documents/GitHub/marketing-api/dashboard.py", line 1592, in <module>
+    df_table = df_table.groupby(group_keys).agg({
+               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+        "spend": "sum", "impressions": "sum", "clicks": "sum", "conversions": "sum",
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        "reach": "sum", "results": "sum",
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }).reset_index()
+    ^^
+File "/Users/inhaus/Documents/GitHub/marketing-api/.venv/lib/python3.14/site-packages/pandas/core/groupby/generic.py", line 2291, in aggregate
+    result = op.agg()
+File "/Users/inhaus/Documents/GitHub/marketing-api/.venv/lib/python3.14/site-packages/pandas/core/apply.py", line 294, in agg
+    return self.agg_dict_like()
+           ~~~~~~~~~~~~~~~~~~^^
+File "/Users/inhaus/Documents/GitHub/marketing-api/.venv/lib/python3.14/site-packages/pandas/core/apply.py", line 511, in agg_dict_like
+    return self.agg_or_apply_dict_like(op_name="agg")
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+File "/Users/inhaus/Documents/GitHub/marketing-api/.venv/lib/python3.14/site-packages/pandas/core/apply.py", line 1677, in agg_or_apply_dict_like
+    result_index, result_data = self.compute_dict_like(
+                                ~~~~~~~~~~~~~~~~~~~~~~^
+        op_name, selected_obj, selection, kwargs
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+File "/Users/inhaus/Documents/GitHub/marketing-api/.venv/lib/python3.14/site-packages/pandas/core/apply.py", line 550, in compute_dict_like
+    func = self.normalize_dictlike_arg(op_name, selected_obj, func)
+File "/Users/inhaus/Documents/GitHub/marketing-api/.venv/lib/python3.14/site-packages/pandas/core/apply.py", line 762, in normalize_dictlike_arg
+    raise KeyError(f"Label(s) {list(cols)} do not exist")
