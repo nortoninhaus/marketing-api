@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     tiktok_client_secret: str = ""
     tiktok_organic_sandbox_client_key: str = ""
     tiktok_organic_sandbox_secret: str = ""
-    tiktok_oauth_scopes: str = "user.info.basic,user.info.profile,user.info.stats,video.list,video.insights"
+    tiktok_oauth_scopes: str = "user.info.basic,user.info.profile,user.info.stats,video.list"
 
     # --- LinkedIn ---
     linkedin_access_token: str = ""

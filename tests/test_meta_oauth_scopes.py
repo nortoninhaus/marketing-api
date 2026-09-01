@@ -78,7 +78,6 @@ def test_tiktok_organic_oauth_authorize_url(client):
             assert "user.info.profile" in auth_url
             assert "user.info.stats" in auth_url
             assert "video.list" in auth_url
-            assert "video.insights" in auth_url
 
 
 def test_meta_graph_api_version_is_v25():
