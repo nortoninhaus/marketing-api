@@ -226,11 +226,12 @@ async def get_authorize_url(
             )
         backend_redirect_uri = _build_meta_redirect_uri(request)
         base_url = "https://open-sandbox.tiktokapis.com/v2/auth/authorize/" if settings.use_tiktok_sandbox else "https://www.tiktok.com/v2/auth/authorize/"
+        scopes = settings.tiktok_oauth_scopes or "user.info.basic,user.info.profile,user.info.stats,video.list,video.insights"
         auth_url = (
             f"{base_url}?"
             + urlencode({
                 "client_key": tiktok_client_id,
-                "scope": "user.info.basic,user.info.profile,user.info.stats,video.list,video.insights",
+                "scope": scopes,
                 "response_type": "code",
                 "state": state,
                 "redirect_uri": backend_redirect_uri,
