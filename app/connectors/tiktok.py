@@ -177,7 +177,6 @@ class TikTokAdsConnector(BaseConnector):
                                 item_dims["campaign_type"] = camp_meta["campaign_type"]
                             if camp_meta.get("objective_type"):
                                 item_dims["objective_type"] = camp_meta["objective_type"]
-                                item_dims["Tipo de Campaña"] = camp_meta["objective_type"]
                             if camp_meta.get("status"):
                                 item_dims["status"] = camp_meta["status"]
 
