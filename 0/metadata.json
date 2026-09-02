@@ -1,0 +1,103 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "01M1HNJ7068SY6R8YAB6JDGZJK",
+  "session_id": "ses_f9cab3599ffef8eO6Nd7agqA33",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-02T18:19:39.655781Z",
+  "branch": "feat/add-templates",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    ".gitignore",
+    "app/connectors/tiktok.py",
+    "dashboard.py",
+    "dashboard/api.py",
+    "dashboard/config.py",
+    "dashboard/report_templates/adriana_hoyos/template.html",
+    "dashboard/report_templates/artz/script.js",
+    "dashboard/report_templates/artz/template.html",
+    "dashboard/report_templates/nutri/script.js",
+    "dashboard/report_templates/nutri/style.css",
+    "dashboard/report_templates/nutri/template.html",
+    "dashboard/report_templates/shamuna/script.js",
+    "dashboard/report_templates/shamuna/template.html",
+    "dashboard/reporting.py",
+    "dashboard/utils.py",
+    "manage_dashboard_users.py",
+    "tests/test_dashboard_exports.py",
+    "tests/test_dashboard_reporting.py",
+    "tests/test_dashboard_ui.py"
+  ],
+  "agent": "OpenCode",
+  "model": "gemini-3.6-flash",
+  "turn_id": "6b4508c72520",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 183190,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 496936,
+    "output_tokens": 277,
+    "api_call_count": 12
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-02T18:19:39.639514Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 1620,
+    "total_committed": 0,
+    "total_lines_changed": 1620,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 5194,
+      "user_lines_removed": 1620,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".codex/hooks.json": 88,
+        ".gemini/settings.json": 141,
+        ".gitignore": 1,
+        ".opencode/plugins/entire.ts": 269,
+        "dashboard.py": 1609,
+        "dashboard/api.py": 98,
+        "dashboard/config.py": 42,
+        "dashboard/report_templates/adriana_hoyos/template.html": 60,
+        "dashboard/report_templates/artz/script.js": 2,
+        "dashboard/report_templates/artz/template.html": 25,
+        "dashboard/report_templates/nutri/script.js": 1351,
+        "dashboard/report_templates/nutri/style.css": 137,
+        "dashboard/report_templates/nutri/template.html": 434,
+        "dashboard/report_templates/shamuna/script.js": 2,
+        "dashboard/report_templates/shamuna/template.html": 201,
+        "dashboard/reporting.py": 7,
+        "dashboard/utils.py": 43,
+        "manage_dashboard_users.py": 87,
+        "tests/test_dashboard_exports.py": 8,
+        "tests/test_dashboard_reporting.py": 363,
+        "tests/test_dashboard_ui.py": 226
+      },
+      "user_removed_per_file": {
+        ".gitignore": 1,
+        "app/connectors/tiktok.py": 1,
+        "dashboard.py": 1066,
+        "dashboard/api.py": 12,
+        "dashboard/report_templates/artz/script.js": 2,
+        "dashboard/report_templates/nutri/script.js": 508,
+        "dashboard/report_templates/shamuna/script.js": 2,
+        "dashboard/reporting.py": 1,
+        "dashboard/utils.py": 2,
+        "tests/test_dashboard_exports.py": 2,
+        "tests/test_dashboard_reporting.py": 4,
+        "tests/test_dashboard_ui.py": 19
+      }
+    }
+  ]
+}
