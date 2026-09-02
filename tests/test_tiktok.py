@@ -356,7 +356,7 @@ def test_tiktok_ads_connector_fetch_data():
             def get_side_effect(url, params, headers, timeout):
                 resp = MagicMock()
                 resp.status_code = 200
-                if params["data_level"] == "AUCTION_CAMPAIGN":
+                if params.get("data_level") == "AUCTION_CAMPAIGN":
                     resp.json.return_value = {
                         "code": 0,
                         "data": {
@@ -368,19 +368,24 @@ def test_tiktok_ads_connector_fetch_data():
                             ]
                         }
                     }
-                else:
+                elif params.get("data_level") == "RESERVATION_CAMPAIGN":
                     resp.json.return_value = {
                         "code": 40002,
                         "message": "Unsupported data_level for auction report: RESERVATION_CAMPAIGN."
                     }
+                else:
+                    resp.json.return_value = {
+                        "code": 0,
+                        "data": {"list": [], "page_info": {"total_page": 1}}
+                    }
                 return resp
-            
-            mock_get.side_effect = get_side_effect
-            res = connector.fetch_data(req)
-            assert len(res) == 1
-            assert res[0].campaign_name == "Camp 1"
-            assert res[0].metrics["spend"] == 10.5
-            assert mock_get.call_count == 2
+    
+                mock_get.side_effect = get_side_effect
+                res = connector.fetch_data(req)
+                assert len(res) == 1
+                assert res[0].campaign_name == "Camp 1"
+                assert res[0].metrics["spend"] == 10.5
+                assert mock_get.call_count == 3
 
     # Scenario 2: Both levels fail, raises ValueError
     with patch.object(connector, "get_credentials", return_value={

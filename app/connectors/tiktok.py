@@ -40,8 +40,99 @@ class TikTokAdsConnector(BaseConnector):
         import json
         success_count = 0
         errors = []
-        
-        for data_level in ["AUCTION_CAMPAIGN", "RESERVATION_CAMPAIGN"]:
+
+        # Build campaign ID -> metadata mapping
+        campaign_map = {}
+        try:
+            camp_url = "https://business-api.tiktok.com/open_api/v1.3/campaign/get/"
+            c_page = 1
+            while True:
+                camp_params = {
+                    "advertiser_id": advertiser_id,
+                    "page": c_page,
+                    "page_size": 1000,
+                    "fields": json.dumps(["campaign_id", "campaign_name", "campaign_type", "objective_type", "operation_status", "secondary_status"])
+                }
+                camp_resp = requests.get(camp_url, params=camp_params, headers=headers, timeout=20)
+                if camp_resp.status_code == 200:
+                    camp_data = camp_resp.json()
+                    if camp_data.get("code") == 0:
+                        c_list = camp_data.get("data", {}).get("list", [])
+                        for c in c_list:
+                            cid = str(c.get("campaign_id"))
+                            campaign_map[cid] = {
+                                "campaign_name": c.get("campaign_name", cid),
+                                "campaign_type": c.get("campaign_type", ""),
+                                "objective_type": c.get("objective_type", ""),
+                                "status": c.get("operation_status", ""),
+                            }
+                        page_info = camp_data.get("data", {}).get("page_info", {})
+                        if c_page >= page_info.get("total_page", 1) or not c_list:
+                            break
+                        c_page += 1
+                    else:
+                        break
+                else:
+                    break
+        except Exception as e:
+            logger.warning(f"Failed to fetch TikTok campaign details mapping: {e}")
+
+        requested_dims = list(request.dimensions) if request.dimensions else []
+        report_dims = ["campaign_id", "stat_time_day"]
+        for d in requested_dims:
+            if d in ["adgroup_id", "ad_id"] and d not in report_dims:
+                report_dims.append(d)
+
+        adgroup_map = {}
+        if "adgroup_id" in report_dims:
+            try:
+                ag_url = "https://business-api.tiktok.com/open_api/v1.3/adgroup/get/"
+                ag_resp = requests.get(ag_url, params={"advertiser_id": advertiser_id, "page_size": 1000}, headers=headers, timeout=20)
+                if ag_resp.status_code == 200:
+                    ag_data = ag_resp.json()
+                    if ag_data.get("code") == 0:
+                        for ag in ag_data.get("data", {}).get("list", []):
+                            adgroup_map[str(ag.get("adgroup_id"))] = ag.get("adgroup_name", "")
+            except Exception as e:
+                logger.warning(f"Failed to fetch TikTok adgroup mapping: {e}")
+
+        ad_map = {}
+        if "ad_id" in report_dims:
+            try:
+                ad_url = "https://business-api.tiktok.com/open_api/v1.3/ad/get/"
+                ad_resp = requests.get(ad_url, params={"advertiser_id": advertiser_id, "page_size": 1000}, headers=headers, timeout=20)
+                if ad_resp.status_code == 200:
+                    ad_data = ad_resp.json()
+                    if ad_data.get("code") == 0:
+                        for a in ad_data.get("data", {}).get("list", []):
+                            ad_map[str(a.get("ad_id"))] = a.get("ad_name", "")
+            except Exception as e:
+                logger.warning(f"Failed to fetch TikTok ad mapping: {e}")
+
+        if "ad_id" in report_dims:
+            data_levels = ["AUCTION_AD", "RESERVATION_AD"]
+        elif "adgroup_id" in report_dims:
+            data_levels = ["AUCTION_ADGROUP", "RESERVATION_ADGROUP"]
+        else:
+            data_levels = ["AUCTION_CAMPAIGN", "RESERVATION_CAMPAIGN"]
+
+        # Map common metric aliases and filter out metrics unsupported by TikTok Ads API
+        metric_alias_map = {
+            "video_views": "video_play_actions",
+            "views": "video_play_actions",
+            "conversions": "conversion",
+            "followers": "follows",
+        }
+        allowed_tiktok_metrics = set(self.get_schema()["metrics"])
+        cleaned_metrics = []
+        for m in request.metrics:
+            target_m = metric_alias_map.get(m, m)
+            if target_m in allowed_tiktok_metrics and target_m not in cleaned_metrics:
+                cleaned_metrics.append(target_m)
+        if not cleaned_metrics:
+            cleaned_metrics = ["spend", "impressions", "clicks"]
+
+        for data_level in data_levels:
             page = 1
             page_size = 1000
             while True:
@@ -49,8 +140,8 @@ class TikTokAdsConnector(BaseConnector):
                     "advertiser_id": advertiser_id,
                     "report_type": "BASIC",
                     "data_level": data_level,
-                    "dimensions": '["campaign_id", "stat_time_day"]',
-                    "metrics": json.dumps(request.metrics),
+                    "dimensions": json.dumps(report_dims),
+                    "metrics": json.dumps(cleaned_metrics),
                     "start_date": request.start_date.strftime("%Y-%m-%d"),
                     "end_date": request.end_date.strftime("%Y-%m-%d"),
                     "page": page,
@@ -77,10 +168,33 @@ class TikTokAdsConnector(BaseConnector):
                         success_count += 1
                         page_items = data.get("data", {}).get("list", [])
                         for item in page_items:
+                            item_dims = dict(item.get("dimensions", {}))
+                            cid = str(item_dims.get("campaign_id", ""))
+                            camp_meta = campaign_map.get(cid, {})
+                            camp_name = camp_meta.get("campaign_name") or item.get("metrics", {}).get("campaign_name") or (f"Campaña {cid}" if cid else "TikTok Campaign")
+                            
+                            if camp_meta.get("campaign_type"):
+                                item_dims["campaign_type"] = camp_meta["campaign_type"]
+                            if camp_meta.get("objective_type"):
+                                item_dims["objective_type"] = camp_meta["objective_type"]
+                                item_dims["Tipo de Campaña"] = camp_meta["objective_type"]
+                            if camp_meta.get("status"):
+                                item_dims["status"] = camp_meta["status"]
+
+                            if "adgroup_id" in item_dims:
+                                ag_id = str(item_dims["adgroup_id"])
+                                if ag_id in adgroup_map:
+                                    item_dims["ad_group_name"] = adgroup_map[ag_id]
+                            if "ad_id" in item_dims:
+                                aid = str(item_dims["ad_id"])
+                                if aid in ad_map:
+                                    item_dims["ad_name"] = ad_map[aid]
+
                             results.append(CampaignData(
-                                campaign_name=item.get("metrics", {}).get("campaign_name", item.get("dimensions", {}).get("campaign_id")),
-                                date=item.get("dimensions", {}).get("stat_time_day"),
-                                metrics=item.get("metrics", {})
+                                campaign_name=camp_name,
+                                date=item_dims.get("stat_time_day", request.start_date.strftime("%Y-%m-%d")),
+                                metrics=item.get("metrics", {}),
+                                dimensions=item_dims
                             ))
                         # Check if there are more pages
                         page_info = data.get("data", {}).get("page_info", {})
@@ -112,13 +226,20 @@ class TikTokAdsConnector(BaseConnector):
                 "cpc",
                 "cpm",
                 "frequency",
+                "follows",
+                "profile_visits",
+                "likes",
+                "comments",
+                "shares",
                 "video_play_actions",
                 "video_watched_2s",
                 "video_watched_6s",
                 "video_views_p25",
                 "video_views_p50",
                 "video_views_p75",
-                "video_views_p100"
+                "video_views_p100",
+                "average_video_play",
+                "average_video_play_per_user"
             ],
             "dimensions": ["campaign_id", "stat_time_day", "adgroup_id", "ad_id"]
         }
