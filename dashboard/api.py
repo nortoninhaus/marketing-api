@@ -1,5 +1,6 @@
 import re
 import json
+from copy import deepcopy
 import requests
 import pandas as pd
 import streamlit as st
@@ -75,6 +76,17 @@ def fetch_schema_from_api(platform_key, api_key):
                 else:
                     norm_dimensions.append({"name": str(d), "description": ""})
 
+            # Ensure core metrics are available in schema
+            extra_known_metrics = {
+                "meta_ads": ["followers", "follows", "video_views", "views", "video_play_actions"],
+                "tiktok_ads": ["video_views", "video_play_actions", "followers", "follows"],
+                "google_ads": ["video_views"],
+            }
+            existing_names = {m["name"] for m in norm_metrics}
+            for extra in extra_known_metrics.get(platform_key, []):
+                if extra not in existing_names:
+                    norm_metrics.append({"name": extra, "description": ""})
+
             return {"metrics": norm_metrics, "dimensions": norm_dimensions}
         return {"metrics": [], "dimensions": []}
     except Exception:
@@ -121,6 +133,38 @@ def fetch_campaign_data_from_api(platform_key, client_id, user_id, account_id, s
         if show_errors:
             st.error(f"Error de conexión con la API: {e}")
         return []
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_benchmarking_from_api(client_id, user_id, account_id, ig_competitors, fb_competitors, api_key, limit_media=25, show_errors=False, timeout=40):
+    url = f"{DEFAULT_API_URL}/api/v1/benchmarking"
+    headers = {
+        "accept": "*/*",
+        "content-type": "application/json",
+        "x-api-key": api_key,
+        "origin": "https://inhaus-marketing-api.web.app",
+        "referer": "https://inhaus-marketing-api.web.app/"
+    }
+    payload = {
+        "client_id": client_id,
+        "user_id": user_id,
+        "account_id": account_id,
+        "instagram_competitors": ig_competitors,
+        "facebook_competitors": fb_competitors,
+        "limit_media": limit_media
+    }
+    try:
+        res = requests.post(url, headers=headers, json=payload, timeout=timeout)
+        if res.status_code == 200:
+            return res.json()
+        else:
+            if show_errors:
+                st.error(f"Error de Benchmarking API ({res.status_code}): {res.text}")
+            return {}
+    except Exception as e:
+        if show_errors:
+            st.error(f"Error de conexión con Benchmarking API: {e}")
+        return {}
 
 
 def _meta_proxy_get(client_id, account_id, api_key, path, params, timeout=30):
@@ -470,6 +514,8 @@ def process_api_response(api_data, platform_key, client_id, user_id):
         # Include dynamic fields from dimensions if present
         row = {
             "platform": platform_key,
+            "source_platform": platform_key,
+            "source_metrics": deepcopy(metrics),
             "client_id": client_id,
             "user_id": user_id,
             "campaign_name": item.get("campaign_name", "N/A"),
@@ -496,11 +542,13 @@ def process_api_response(api_data, platform_key, client_id, user_id):
             "comments": int(comments),
         }
         # Add dimensions to the row dict dynamically
+        protected_source_fields = {"source_platform", "source_metrics"}
         for key, val in item.get("dimensions", {}).items():
-            row[key] = translate_dimension_value(key, val)
+            if key not in protected_source_fields:
+                row[key] = translate_dimension_value(key, val)
 
         for key, val in item.items():
-            if key not in ["metrics", "dimensions", "platform", "client_id", "user_id"]:
+            if key not in {"metrics", "dimensions", "platform", "client_id", "user_id", *protected_source_fields}:
                 row[key] = translate_dimension_value(key, val)
 
         if platform_key == "meta_ads":
@@ -516,7 +564,7 @@ def process_api_response(api_data, platform_key, client_id, user_id):
     df = pd.DataFrame(flat_rows)
     if df.empty:
         return pd.DataFrame(columns=[
-            "platform", "client_id", "user_id", "campaign_name", "date", "spend", "impressions", "clicks", "conversions", "lead", "results", "cost_per_result", "result_indicator",
+            "platform", "source_platform", "source_metrics", "client_id", "user_id", "campaign_name", "date", "spend", "impressions", "clicks", "conversions", "lead", "results", "cost_per_result", "result_indicator",
             "sessions", "users", "pageviews", "bounce_rate", "downloads", "ratings", "engagement", "post_engagement", "followers", "reach", "likes", "comments"
         ])
     return df

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [5.2.0] - 2026-09-02
+
+### Added
+- **TikTok Ads Multi-Level Reporting & Metadata Mapping**: Automated campaign metadata fetching via `/v1.3/campaign/get/`, adgroup resolution via `/v1.3/adgroup/get/`, and ad name mapping via `/v1.3/ad/get/`. Dynamically selects reporting data level (`AUCTION_AD`, `AUCTION_ADGROUP`, or `AUCTION_CAMPAIGN`) according to requested dimensions.
+- **TikTok Ads Metrics & Alias Normalization**: Added support and schema definitions for engagement metrics (`follows`, `profile_visits`, `likes`, `comments`, `shares`, `average_video_play`, `average_video_play_per_user`) with metric aliasing for video views and conversions.
+- **Google Ads Extended Metrics & Dimensions**: Added support for interaction rates, video view quartiles, conversion values, and active view metrics. Extracted campaign channel type, status, and bidding strategy dimensions into `CampaignData.dimensions`.
+
 ## [5.1.0] - 2026-07-21
 
 ### Added

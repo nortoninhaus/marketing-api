@@ -142,11 +142,27 @@ class MetaAdsConnector(BaseConnector):
         has_action_values = False
         STANDARD_META_FIELDS = {
             "impressions", "clicks", "spend", "reach", "conversions", "cpc", "cpm", "ctr", "frequency",
-            "results", "cost_per_result", "purchase_roas", "purchase", "lead", "add_to_cart", "initiate_checkout", "roas"
+            "results", "cost_per_result", "purchase_roas", "purchase", "lead", "add_to_cart", "initiate_checkout", "roas",
+            "video_play_actions", "video_p25_watched_actions", "video_p50_watched_actions", "video_p75_watched_actions",
+            "video_p100_watched_actions", "video_30_sec_watched_actions", "video_avg_time_watched_actions",
+            "unique_clicks", "inline_link_clicks", "unique_inline_link_clicks", "social_spend",
+            "cost_per_unique_click", "cost_per_inline_link_click", "cost_per_conversion"
         }
         for m in request.metrics:
-            m_mapped = {"roas": "purchase_roas", "__results__": "results"}.get(m, m)
-            if m_mapped in ("conversions", "purchase", "lead", "add_to_cart", "initiate_checkout") or m_mapped not in STANDARD_META_FIELDS:
+            m_mapped = {
+                "roas": "purchase_roas",
+                "__results__": "results",
+                "video_views": "video_play_actions",
+                "views": "video_play_actions",
+            }.get(m, m)
+            if m in ("video_views", "views", "video_play_actions"):
+                if "video_play_actions" not in fields:
+                    fields.append("video_play_actions")
+                if "video_30_sec_watched_actions" not in fields:
+                    fields.append("video_30_sec_watched_actions")
+                if "actions" not in fields:
+                    fields.append("actions")
+            elif m_mapped in ("conversions", "purchase", "lead", "add_to_cart", "initiate_checkout", "followers", "follows", "page_likes", "post_engagement", "engagement") or m_mapped not in STANDARD_META_FIELDS:
                 has_actions = True
                 if m_mapped not in STANDARD_META_FIELDS:
                     has_action_values = True
@@ -328,6 +344,49 @@ class MetaAdsConnector(BaseConnector):
                                 except Exception:
                                     pass
                         metrics_dict[m] = val_sum
+                    elif m in ("video_views", "views", "video_play_actions", "plays"):
+                        v_field = i.get("video_play_actions", [])
+                        v_sum = 0
+                        if isinstance(v_field, list):
+                            for v_item in v_field:
+                                try:
+                                    v_sum += int(float(v_item.get("value", 0)))
+                                except Exception:
+                                    pass
+                        elif isinstance(v_field, (int, float)):
+                            v_sum = int(float(v_field))
+                        if v_sum == 0:
+                            actions = i.get("actions", [])
+                            for action in actions:
+                                act_t = str(action.get("action_type", "")).lower()
+                                if "video_view" in act_t or "video_play" in act_t or "post_video" in act_t or act_t == "video_view":
+                                    try:
+                                        v_sum += int(float(action.get("value", 0)))
+                                    except Exception:
+                                        pass
+                        if v_sum == 0:
+                            for alt_field in ("video_30_sec_watched_actions", "video_p25_watched_actions", "video_p50_watched_actions"):
+                                alt_list = i.get(alt_field, [])
+                                if isinstance(alt_list, list):
+                                    for alt_item in alt_list:
+                                        try:
+                                            v_sum += int(float(alt_item.get("value", 0)))
+                                        except Exception:
+                                            pass
+                                if v_sum > 0:
+                                    break
+                        metrics_dict[m] = v_sum
+                    elif m in ("followers", "follows", "page_likes"):
+                        actions = i.get("actions", [])
+                        f_sum = 0
+                        for action in actions:
+                            act_t = str(action.get("action_type", "")).lower()
+                            if act_t in ("like", "page_like", "follow", "page_engagement", "onsite_conversion.messaging_conversation_started_7d", "profile_engagement") or "follow" in act_t or "like" in act_t:
+                                try:
+                                    f_sum += int(float(action.get("value", 0)))
+                                except Exception:
+                                    pass
+                        metrics_dict[m] = f_sum
                     elif m_mapped not in STANDARD_META_FIELDS:
                         # Personalized/custom metric (e.g. custom conversion or custom pixel event)
                         is_val = m_mapped.endswith("_value")
@@ -430,14 +489,17 @@ class MetaAdsConnector(BaseConnector):
     def get_schema(self) -> Dict[str, Any]:
         return {
             "metrics": [
-                "impressions", 
-                "clicks", 
                 "spend",
+                "impressions",
                 "reach",
+                "post_engagement",
+                "video_views",
+                "followers",
+                "clicks",
                 "conversions",
                 "__results__",
                 "cost_per_result",
-                "cpc",
+                "cpc", 
                 "cpm", 
                 "ctr", 
                 "frequency", 
@@ -445,18 +507,19 @@ class MetaAdsConnector(BaseConnector):
                 "purchase_roas",
                 "purchase",
                 "lead",
-                "post_engagement",
                 "add_to_cart",
                 "initiate_checkout",
                 "roas",
                 "unique_clicks",
                 "inline_link_clicks",
                 "unique_inline_link_clicks",
+                "video_play_actions",
+                "views",
+                "follows",
                 "video_p25_watched_actions",
                 "video_p50_watched_actions",
                 "video_p75_watched_actions",
                 "video_p100_watched_actions",
-                "video_play_actions",
                 "video_30_sec_watched_actions",
                 "video_avg_time_watched_actions",
                 "social_spend",

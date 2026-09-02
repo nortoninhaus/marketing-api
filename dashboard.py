@@ -13,6 +13,7 @@ import hashlib
 import hmac
 import time
 import altair as alt
+from typing import Any, Optional
 from datetime import datetime, date, timedelta
 from dotenv import load_dotenv
 import jwt
@@ -61,6 +62,7 @@ from dashboard.api import (
     fetch_connections_from_api,
     fetch_schema_from_api,
     fetch_campaign_data_from_api,
+    fetch_benchmarking_from_api,
     fetch_meta_aggregate_insights,
     fetch_meta_ad_previews,
     fetch_meta_filter_rows,
@@ -101,7 +103,12 @@ from dashboard.analytics import (
     log_demographics_check,
 )
 
-DASHBOARD_CACHE_VERSION = 4
+from dashboard.reporting import (
+    build_report_payload,
+    render_report,
+)
+
+DASHBOARD_CACHE_VERSION = 5
 
 
 if os.getenv("DASHBOARD_AUTH_SELF_CHECK") == "1":
@@ -116,6 +123,267 @@ def toggle_theme():
 def log_demographics_toggle(user_id, platform_key, account_id):
     if st.session_state.get("load_demographics"):
         log_demographics_check(user_id, platform_key, account_id)
+
+
+REPORT_TEMPLATES = {
+    "Nutri": "nutri",
+    "Adriana Hoyos": "adriana_hoyos",
+    "ARTZ": "artz",
+    "Shamuna": "shamuna",
+}
+
+
+def template_report_html(
+    frame: pd.DataFrame,
+    template_name: str,
+    report_context: dict[str, Any],
+    previous_frame: pd.DataFrame | None = None,
+    export_table: pd.DataFrame | None = None,
+    optional: dict[str, Any] | None = None,
+) -> str:
+    template_key = REPORT_TEMPLATES.get(template_name, template_name.lower().replace(" ", "_"))
+    account_name = str(report_context.get("Cuenta", report_context.get("account_name", "")))
+    account_id = str(report_context.get("account_id", ""))
+    platform = str(report_context.get("platform", "meta_ads"))
+    start_date = str(report_context.get("start_date", ""))
+    end_date = str(report_context.get("end_date", ""))
+    connections = report_context.get("connections")
+    if not connections:
+        connections = [{
+            "account_id": account_id or "default",
+            "account_name": account_name,
+            "platform": platform,
+        }] if account_name else []
+    platforms = report_context.get("platforms") or ([platform] if platform else [])
+    query_context = {
+        "connections": connections,
+        "account_id": account_id,
+        "account_name": account_name,
+        "platform": platform,
+        "start_date": start_date,
+        "end_date": end_date,
+        "period": {
+            "start": start_date,
+            "end": end_date,
+        },
+        "platforms": platforms,
+    }
+    payload = build_report_payload(
+        template_key,
+        current=frame,
+        previous=previous_frame,
+        export_table=export_table if export_table is not None else frame,
+        query_context=query_context,
+        optional=optional,
+    )
+    return render_report(template_key, payload)
+
+
+def segmented_pdf_download_html(export_name, background_color):
+    return f"""
+    <div data-pdf-export-control="true" data-pdf-export-name="{export_name}">
+        <button type="button">Descargar PDF</button>
+        <p role="status" aria-live="polite"></p>
+    </div>
+    <style>
+    [data-pdf-export-name="{export_name}"] button {{
+        width: 100%;
+        padding: 0.55rem 0.75rem;
+        border: 1px solid #02569e;
+        border-radius: 0.5rem;
+        background: #02569e;
+        color: #FFFFFF;
+        font-weight: 700;
+        cursor: pointer;
+    }}
+    [data-pdf-export-name="{export_name}"] button:disabled {{
+        cursor: wait;
+        opacity: 0.65;
+    }}
+    [data-pdf-export-name="{export_name}"] p {{
+        min-height: 1rem;
+        margin: 0.3rem 0 0;
+        color: #02569e;
+        font-size: 0.75rem;
+    }}
+    </style>
+    <script>
+    (() => {{
+        const controls = document.querySelectorAll(
+            '[data-pdf-export-name="{export_name}"]'
+        );
+        const root = controls[controls.length - 1];
+        if (!root || root.dataset.ready === "true") return;
+        root.dataset.ready = "true";
+
+        const button = root.querySelector("button");
+        const status = root.querySelector('[role="status"]');
+        const trigger = document.querySelector('[data-testid="stPopoverButton"]');
+        trigger?.closest('[data-testid="stPopover"]')
+            ?.setAttribute("data-pdf-export-control", "true");
+
+        const loadScript = (src, isReady) => {{
+            if (isReady()) return Promise.resolve();
+            return new Promise((resolve, reject) => {{
+                const existing = document.querySelector(`script[src="${{src}}"]`);
+                const script = existing || document.createElement("script");
+                script.addEventListener("load", resolve, {{ once: true }});
+                script.addEventListener(
+                    "error",
+                    () => reject(new Error(`Failed to load ${{src}}`)),
+                    {{ once: true }},
+                );
+                if (!existing) {{
+                    script.src = src;
+                    document.head.appendChild(script);
+                }}
+            }});
+        }};
+
+        button.addEventListener("click", async () => {{
+            button.disabled = true;
+            status.style.color = "#02569e";
+            status.textContent = "Preparando PDF…";
+
+            try {{
+                await loadScript(
+                    "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js",
+                    () => Boolean(window.html2canvas),
+                );
+                await loadScript(
+                    "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
+                    () => Boolean(window.jspdf?.jsPDF),
+                );
+
+                const target = document.querySelector(
+                    '[data-testid="stMainBlockContainer"]'
+                );
+                if (!target) throw new Error("Dashboard report container not found");
+
+                const pageWidthMm = 281;
+                const pageHeightMm = 194;
+                const captureWidth = Math.ceil(target.scrollWidth);
+                const reportHeight = Math.ceil(target.scrollHeight);
+                const pageHeightPx = Math.max(
+                    1,
+                    Math.floor(captureWidth * pageHeightMm / pageWidthMm),
+                );
+                const pageCount = Math.ceil(reportHeight / pageHeightPx);
+                if (!captureWidth || !reportHeight || !pageCount) {{
+                    throw new Error("Dashboard report is empty");
+                }}
+
+                const pdf = new window.jspdf.jsPDF({{
+                    orientation: "landscape",
+                    unit: "mm",
+                    format: "a4",
+                    compress: true,
+                }});
+                let renderedPageCount = 0;
+
+                const canvasHasContent = (canvas) => {{
+                    const sample = document.createElement("canvas");
+                    sample.width = 64;
+                    sample.height = Math.max(
+                        1,
+                        Math.round(64 * canvas.height / canvas.width),
+                    );
+                    const context = sample.getContext("2d", {{ willReadFrequently: true }});
+                    context.drawImage(canvas, 0, 0, sample.width, sample.height);
+                    const pixels = context.getImageData(
+                        0,
+                        0,
+                        sample.width,
+                        sample.height,
+                    ).data;
+                    const background = pixels.slice(0, 4);
+                    for (let index = 4; index < pixels.length; index += 4) {{
+                        if (
+                            Math.abs(pixels[index] - background[0]) > 8 ||
+                            Math.abs(pixels[index + 1] - background[1]) > 8 ||
+                            Math.abs(pixels[index + 2] - background[2]) > 8 ||
+                            Math.abs(pixels[index + 3] - background[3]) > 8
+                        ) return true;
+                    }}
+                    return false;
+                }};
+
+                // ponytail: one page-sized canvas avoids browser limits from one giant report canvas.
+                for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {{
+                    const pageTop = pageIndex * pageHeightPx;
+                    const sliceHeight = Math.min(
+                        pageHeightPx,
+                        reportHeight - pageTop,
+                    );
+                    status.textContent = `Generando página ${{pageIndex + 1}} de ${{pageCount}}…`;
+
+                    const canvas = await window.html2canvas(target, {{
+                        scale: 1.5,
+                        useCORS: true,
+                        allowTaint: false,
+                        backgroundColor: "{background_color}",
+                        width: captureWidth,
+                        height: sliceHeight,
+                        x: 0,
+                        y: pageTop,
+                        scrollX: 0,
+                        scrollY: 0,
+                        windowWidth: captureWidth,
+                        windowHeight: reportHeight,
+                        logging: false,
+                        onclone: (clonedDoc) => {{
+                            clonedDoc.querySelectorAll(
+                                '[data-testid="stHeader"], [data-testid="stSidebar"], ' +
+                                '[data-testid="stPopoverBody"], [data-pdf-export-control="true"], ' +
+                                '[data-testid^="stElementToolbar"], ' +
+                                '[data-testid="stTooltipHoverTarget"], ' +
+                                '[data-testid="stBaseButton-elementToolbar"], ' +
+                                '[data-testid="stVegaLiteChart"] details'
+                            ).forEach((element) => element.remove());
+                        }},
+                        ignoreElements: (element) => Boolean(
+                            element.closest?.('[data-pdf-export-control="true"]')
+                        ),
+                    }});
+                    if (!canvas.width || !canvas.height) {{
+                        throw new Error(`PDF page ${{pageIndex + 1}} is empty`);
+                    }}
+                    if (!canvasHasContent(canvas)) continue;
+
+                    if (renderedPageCount > 0) pdf.addPage();
+                    const imageHeightMm = Math.min(
+                        pageHeightMm,
+                        pageWidthMm * canvas.height / canvas.width,
+                    );
+                    pdf.addImage(
+                        canvas,
+                        "JPEG",
+                        8,
+                        8,
+                        pageWidthMm,
+                        imageHeightMm,
+                        undefined,
+                        "FAST",
+                    );
+                    renderedPageCount += 1;
+                }}
+                if (!renderedPageCount) throw new Error("Dashboard capture is empty");
+
+                await pdf.save("{export_name}.pdf", {{ returnPromise: true }});
+                status.style.color = "#10B981";
+                status.textContent = `PDF generado correctamente (${{renderedPageCount}} páginas).`;
+                setTimeout(() => {{ status.textContent = ""; }}, 3000);
+            }} catch (error) {{
+                console.error("PDF export failed", error);
+                status.style.color = "#FF4B4B";
+                status.textContent = "No se pudo generar el PDF.";
+            }} finally {{
+                button.disabled = false;
+            }}
+        }});
+    }})();
+    </script>
+    """
 
 
 # Determine sidebar collapse state dynamically to hide it automatically once query runs
@@ -165,16 +433,33 @@ span[data-testid="stSidebarCollapseButton"] {
 }
 
 /* Sidebar collapse/expand toggle button styling & position */
-[data-testid="stHeader"] {
+header.stAppHeader,
+[data-testid="stHeader"],
+.stAppToolbar,
+[data-testid="stToolbar"] {
     background-color: transparent !important;
     box-shadow: none !important;
     height: 0px !important;
     min-height: 0px !important;
+    max-height: 0px !important;
+    padding: 0px !important;
+    margin: 0px !important;
+    border: none !important;
     overflow: visible !important;
     position: absolute !important;
-    top: 21px !important;
+    top: 14px !important;
     left: 16px !important;
     z-index: 9999 !important;
+}
+
+.stAppToolbar > div,
+[data-testid="stToolbar"] > div,
+.st-emotion-cache-1j22a0y {
+    height: 0px !important;
+    min-height: 0px !important;
+    max-height: 0px !important;
+    padding: 0px !important;
+    margin: 0px !important;
 }
 
 [data-testid="stHeader"] button,
@@ -270,70 +555,193 @@ span[data-testid="stSidebarCollapseButton"] {
     font-family: 'Manrope', sans-serif !important;
 }
 
-/* Remove default Streamlit top padding and container margins */
+/* Remove default Streamlit top padding, container margins and style tags gap */
 .block-container,
-[data-testid="stMainBlockContainer"] {
-    padding-top: 0.5rem !important;
+[data-testid="stMainBlockContainer"],
+.stMainBlockContainer {
+    padding-top: 0rem !important;
     padding-bottom: 2rem !important;
+    margin-top: 0rem !important;
     position: relative !important;
 }
 
-/* Position download slot inline inside header next to API Directa */
-.block-container > div[data-testid="stElementContainer"]:has([data-testid="stPopover"]),
-[data-testid="stMainBlockContainer"] > div[data-testid="stElementContainer"]:has([data-testid="stPopover"]),
-div[data-testid="stElementContainer"]:has([data-testid="stPopover"]),
-div[data-testid="stElementContainer"]:has([data-testid="stPopoverButton"]) {
+[data-testid="stAppViewContainer"] > .main {
+    padding-top: 0rem !important;
+}
+
+/* Hide empty style/script/bridge containers from flexbox layout so they do NOT take gap space */
+div[data-testid="stElementContainer"]:empty,
+div[data-testid="stElementContainer"]:has(style),
+div[data-testid="stElementContainer"]:has(script),
+div[data-testid="stElementContainer"]:has([data-testid="stHtml"]),
+div[data-testid="stElementContainer"]:has(iframe[style*="display: none"]),
+div[data-testid="stElementContainer"]:has(iframe[height="0"]),
+div[data-testid="stElementContainer"].element-container:has(style),
+div.element-container:has(style) {
+    display: none !important;
     position: absolute !important;
-    left: auto !important;
-    right: 140px !important;
-    top: 22px !important;
-    z-index: 9999 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    width: auto !important;
-    height: 0 !important;
+    height: 0px !important;
+    max-height: 0px !important;
+    width: 0px !important;
+    margin: 0px !important;
+    padding: 0px !important;
+}
+
+/* Header layout styling */
+.custom-header {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 0px;
+    margin: 0px;
+    position: relative;
+}
+.header-live-badge {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    white-space: nowrap !important;
+    padding: 0px;
+    margin: 0px;
+}
+
+/* Header actions row: group download button and API Directa tightly together */
+[data-testid="stHorizontalBlock"]:has(button[aria-label="Descargar reporte"]) {
+    justify-content: flex-end !important;
+    align-items: center !important;
+    gap: 8px !important;
+}
+
+[data-testid="stColumn"]:has(button[aria-label="Descargar reporte"]) {
     display: flex !important;
     justify-content: flex-end !important;
-}
-
-div[data-testid="stElementContainer"]:has([data-testid="stPopover"]) > div,
-[data-testid="stPopover"],
-[data-testid="stPopoverButton"] {
-    position: relative !important;
-    left: auto !important;
-    right: auto !important;
+    align-items: center !important;
+    flex: 0 0 auto !important;
     width: auto !important;
-    display: inline-flex !important;
+    min-width: auto !important;
 }
 
-[data-testid="stPopoverButton"],
-[data-testid="stDownloadButton"] button {
+[data-testid="stColumn"]:has(.header-live-badge) {
+    display: flex !important;
+    justify-content: flex-start !important;
+    align-items: center !important;
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: auto !important;
+}
+
+button[aria-label="Descargar reporte"],
+[data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"] {
     background-color: #02569e !important;
     color: #FFFFFF !important;
-    border: none !important;
-    border-radius: 6px !important;
-    padding: 4px 12px !important;
-    font-size: 12px !important;
+    border: 1px solid rgba(255, 255, 255, 0.22) !important;
+    border-radius: 8px !important;
+    padding: 0 !important;
+    font-size: 18px !important;
     font-weight: 700 !important;
-    height: 28px !important;
-    min-height: 28px !important;
+    height: 34px !important;
+    min-height: 34px !important;
+    max-height: 34px !important;
+    width: 34px !important;
+    min-width: 34px !important;
+    max-width: 34px !important;
     line-height: 1 !important;
     display: inline-flex !important;
     align-items: center !important;
-    gap: 6px !important;
-    box-shadow: 0 2px 6px rgba(2, 86, 158, 0.3) !important;
+    justify-content: center !important;
+    gap: 0 !important;
+    box-shadow: 0 2px 8px rgba(2, 86, 158, 0.4) !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
 }
-[data-testid="stPopoverButton"] *,
+button[aria-label="Descargar reporte"]:hover,
+[data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"]:hover {
+    background-color: #0369a1 !important;
+    border-color: rgba(255, 255, 255, 0.4) !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 12px rgba(2, 86, 158, 0.5) !important;
+}
+button[aria-label="Descargar reporte"] [data-testid="stIconMaterial"],
+button[aria-label="Descargar reporte"] span {
+    font-size: 18px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+button[aria-label="Descargar reporte"] *,
+[data-testid="stBaseButton-secondary"][aria-label="Descargar reporte"] * {
+    color: #FFFFFF !important;
+    fill: #FFFFFF !important;
+    stroke: #FFFFFF !important;
+}
+
+/* Download buttons inside modal dialog */
+[data-testid="stDownloadButton"] {
+    width: 100% !important;
+}
+[data-testid="stDownloadButton"] button {
+    background-color: #02569e !important;
+    color: #FFFFFF !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    border-radius: 8px !important;
+    padding: 8px 16px !important;
+    font-size: 14px !important;
+    font-weight: 700 !important;
+    height: 40px !important;
+    min-height: 40px !important;
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    box-shadow: 0 2px 6px rgba(2, 86, 158, 0.3) !important;
+    white-space: nowrap !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+}
+[data-testid="stDownloadButton"] button:hover {
+    background-color: #0369a1 !important;
+    border-color: rgba(255, 255, 255, 0.3) !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 10px rgba(2, 86, 158, 0.4) !important;
+}
 [data-testid="stDownloadButton"] button * {
     color: #FFFFFF !important;
     fill: #FFFFFF !important;
     stroke: #FFFFFF !important;
 }
+
+[data-testid="stPopoverButton"] * {
+    color: #FFFFFF !important;
+    fill: #FFFFFF !important;
+    stroke: #FFFFFF !important;
+}
+
+[data-testid="stDialog"] [data-testid="stModal"] {
+    background-color: var(--secondary-background-color, #1e293b) !important;
+    color: var(--text-color, #ffffff) !important;
+    border: 1px solid rgba(128, 128, 128, 0.2) !important;
+    border-radius: 14px !important;
+    padding: 24px !important;
+}
 [data-testid="stPopoverBody"] {
-    background-color: #FFFFFF !important;
+    background-color: var(--secondary-background-color, #1e293b) !important;
+    color: var(--text-color, #ffffff) !important;
+    border: 1px solid rgba(128, 128, 128, 0.2) !important;
+    border-radius: 12px !important;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25) !important;
 }
 [data-testid="stPopoverBody"] > div {
-    background-color: #FFFFFF !important;
+    background-color: transparent !important;
+}
+[data-testid="stPopoverBody"] label,
+[data-testid="stPopoverBody"] label p,
+[data-testid="stPopoverBody"] label span,
+[data-testid="stPopoverBody"] p,
+[data-testid="stPopoverBody"] span {
+    color: var(--text-color, inherit) !important;
 }
 
 /* Sidebar Wrapper */
@@ -866,8 +1274,18 @@ if theme_mode == "Claro":
     }
     
     /* Dropdown popover menu in light mode */
-    [data-baseweb="popover"] {
+    [data-baseweb="popover"],
+    [data-testid="stPopoverBody"] {
         background-color: #FFFFFF !important;
+        color: #0F172A !important;
+        border: 1px solid rgba(15,23,42,0.12) !important;
+    }
+    [data-testid="stPopoverBody"] label,
+    [data-testid="stPopoverBody"] label p,
+    [data-testid="stPopoverBody"] label span,
+    [data-testid="stPopoverBody"] p,
+    [data-testid="stPopoverBody"] span {
+        color: #0F172A !important;
     }
     [data-baseweb="menu"] {
         background-color: #FFFFFF !important;
@@ -1208,8 +1626,21 @@ for selected_platform_key in selected_platform_keys:
         dimensions_list = schema_data.get("dimensions", [])
         metrics_key = f"selected_metrics_{selected_platform_key}"
         dimensions_key = f"selected_dimensions_{selected_platform_key}"
+        platform_preferred_metrics = {
+            "meta_ads": ["spend", "impressions", "reach", "post_engagement", "video_views", "followers", "clicks", "conversions", "__results__", "cost_per_result"],
+            "tiktok_ads": ["spend", "impressions", "clicks", "reach", "conversion", "video_play_actions", "video_watched_2s", "video_watched_6s"],
+            "google_ads": ["spend", "impressions", "clicks", "conversions", "video_views", "cost_per_conversion"],
+        }
+        avail_metric_names = [m["name"] for m in metrics_list]
+        pref = platform_preferred_metrics.get(selected_platform_key, [])
+        smart_defaults = [m for m in pref if m in avail_metric_names] or ([m["name"] for m in metrics_list[:10]] if metrics_list else ["impressions"])
+
         if metrics_key not in st.session_state or not st.session_state[metrics_key]:
-            st.session_state[metrics_key] = [m["name"] for m in metrics_list[:8]] if metrics_list else ["impressions"]
+            st.session_state[metrics_key] = smart_defaults
+        else:
+            for essential in ("spend", "impressions", "reach", "post_engagement", "video_views", "followers"):
+                if essential in avail_metric_names and essential not in st.session_state[metrics_key]:
+                    st.session_state[metrics_key].append(essential)
         if dimensions_key not in st.session_state:
             st.session_state[dimensions_key] = []
 
@@ -1288,6 +1719,22 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
 else:
     start_date, end_date = default_start, today
 
+# Benchmarking / Competitors Section
+with st.sidebar.expander("🔍 Competidores (Benchmarking)", expanded=False):
+    st.caption("Escribe los usernames de Instagram y nombres de página de Facebook para analizar competidores.")
+    st.text_area(
+        "Competidores Instagram (@usernames)",
+        value=st.session_state.get("benchmark_ig_input", "parmalatecuador, toniec, lalecheraec, vita_ecuador"),
+        help="Usernames de Instagram separados por coma o salto de línea",
+        key="benchmark_ig_input",
+    )
+    st.text_area(
+        "Competidores Facebook (Páginas/Usernames)",
+        value=st.session_state.get("benchmark_fb_input", "parmalatecuador, ToniLacteosEc, LaLecheraEcuador, VitaEcuador"),
+        help="Usernames o nombres de página de Facebook separados por coma o salto de línea",
+        key="benchmark_fb_input",
+    )
+
 # Execute Button in Sidebar to prevent auto-loading until clicked
 execute_query = st.sidebar.button("🚀 Consultar API", use_container_width=True)
 
@@ -1298,18 +1745,20 @@ if st.sidebar.button("🔒 Cerrar Sesión", key="logout_button", use_container_w
     st.stop()
 
 # MAIN DISPLAY (Occupies full wide screen)
-download_slot = st.empty()
-
-# Header
-st.markdown(f"""
+header_left, header_right = st.columns([0.84, 0.16], vertical_alignment="center")
+with header_right:
+    col_dl, col_live = st.columns([0.30, 0.70], vertical_alignment="center", gap="small")
+    with col_dl:
+        download_slot = st.empty()
+    with col_live:
+        st.markdown('<div class="header-live-badge"><span class="stamp"><span class="live"></span> API Directa</span></div>', unsafe_allow_html=True)
+with header_left:
+    st.markdown("""
 <div class="custom-header">
     <div class="agency">
         <img src="https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/69691ca0d848087449f86454.svg" alt="Inhaus">
         <span class="div-bar"></span>
         <span class="who">Dashboard de Pauta &middot; Conexión de API</span>
-    </div>
-    <div class="custom-header-right">
-        <span class="stamp"><span class="live"></span> API Directa</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -1344,7 +1793,11 @@ for cfg in platform_configs:
     dimension_names = [x["name"] for x in cfg["dimensions_list"]]
     request_metrics = list(cfg["selected_metrics"])
     if cfg["platform_type"] == "ads":
-        standard_metrics = ["impressions", "clicks", "spend", "conversions", "lead", "reach", "post_engagement", "__results__", "cost_per_result"]
+        standard_metrics = [
+            "impressions", "clicks", "spend", "conversions", "lead", "reach",
+            "post_engagement", "engagement", "__results__", "cost_per_result",
+            "video_play_actions", "video_views", "views", "followers", "follows",
+        ]
     elif cfg["platform_type"] == "analytics":
         standard_metrics = ["sessions", "users", "pageviews", "bounce_rate"]
     elif cfg["platform_type"] == "app_store":
@@ -1410,7 +1863,7 @@ if force_query_fetch or active_query_key not in st.session_state["dashboard_quer
 
     df_curr = pd.concat(curr_frames, ignore_index=True) if curr_frames else pd.DataFrame()
     df_prev = pd.concat(prev_frames, ignore_index=True) if prev_frames else pd.DataFrame()
-    account_disp = " | ".join(f"{cfg['platform_label']}: {cfg['account_id']}" for cfg in platform_configs)
+    account_disp = platform_configs[0]["account_id"] if len(platform_configs) == 1 else " | ".join(f"{cfg['platform_label']}: {cfg['account_id']}" for cfg in platform_configs)
     active_context = {
         "platform_key": platform_key,
         "platform_type": platform_type,
@@ -1707,18 +2160,6 @@ export_slug = re.sub(r"[^a-z0-9]+", "-", selected_platform_label.lower()).strip(
 export_name = f"{export_slug}_{start_date:%Y-%m-%d}_{end_date:%Y-%m-%d}"
 csv_export_frame = {"frame": df_curr}
 
-with download_slot.container():
-    with st.popover("Descargar", icon=":material/download:", width="content"):
-        # ponytail: PDF export stays disabled until browser capture is reliable.
-        st.download_button(
-            "Descargar CSV",
-            data=lambda: csv_export_frame["frame"].to_csv(index=False).encode("utf-8-sig"),
-            file_name=f"{export_name}.csv",
-            mime="text/csv;charset=utf-8",
-            on_click="ignore",
-            icon=":material/download:",
-            width="stretch",
-        )
 # HERO RENDER (Clean, full width, no Sipy logo)
 title_color = "#0F172A" if theme_mode == "Claro" else "#EAF0F7"
 display_title = campaign_title(applied_campaign_filter, selected_platform_label) if platform_key == "meta_ads" else selected_platform_label
@@ -2319,6 +2760,9 @@ else:
     df_table["reach"] = df_table["reach"].apply(lambda x: f"{x:,}")
     df_table = df_table.rename(columns={"campaign_name": "Publicación", "platform": "Plataforma", "impressions": "Impresiones", "engagement": "Interacciones", "reach": "Alcance"})
 
+if platform_key != "meta_ads":
+    csv_export_frame["frame"] = df_table
+
 if platform_key == "meta_organic":
     st.markdown("### Ranking: top publicaciones por interacciones (Meta)")
     post_metric = "engagement" if df_curr["engagement"].sum() else ("reach" if df_curr["reach"].sum() else "impressions")
@@ -2360,3 +2804,290 @@ if platform_key == "meta_organic":
         show_theme_table(hashtag_df)
 
     st.dataframe(df_table, width="stretch", hide_index=True)
+
+with download_slot.container():
+    @st.dialog("Descargar Reporte", width="small")
+    def _show_download_dialog(
+        export_name=export_name,
+        chart_bg=chart_bg,
+        csv_export_frame=csv_export_frame,
+        df_curr=df_curr,
+        df_prev=df_prev,
+        selected_platform_label=selected_platform_label,
+        account_disp=account_disp,
+        start_date=start_date,
+        end_date=end_date,
+        account_id=account_id,
+        platform_key=platform_key,
+        selected_platform_keys=selected_platform_keys,
+        client_id=client_id,
+        user_id=user_id,
+        api_key=api_key,
+        dashboard_user=dashboard_user,
+    ):
+        st.html(
+            segmented_pdf_download_html(export_name, chart_bg),
+            unsafe_allow_javascript=True,
+            width="stretch",
+        )
+        st.download_button(
+            "Descargar CSV",
+            data=lambda: csv_export_frame["frame"].to_csv(index=False).encode("utf-8-sig"),
+            file_name=f"{export_name}.csv",
+            mime="text/csv;charset=utf-8",
+            on_click="ignore",
+            icon=":material/download:",
+            width="stretch",
+        )
+        report_template = st.selectbox("Template HTML", list(REPORT_TEMPLATES.keys()))
+        html_export_context = {
+            "Plataformas": selected_platform_label,
+            "Cuenta": account_disp,
+            "Fechas": f"{start_date:%d/%m/%Y} – {end_date:%d/%m/%Y}",
+            "account_id": str(account_id),
+            "platform": str(platform_key),
+            "start_date": f"{start_date:%Y-%m-%d}",
+            "end_date": f"{end_date:%Y-%m-%d}",
+        }
+        curr_frame_export = df_curr if isinstance(df_curr, pd.DataFrame) and not df_curr.empty else csv_export_frame["frame"]
+        prev_frame_export = df_prev if isinstance(df_prev, pd.DataFrame) and not df_prev.empty else None
+
+        include_tiktok = False
+        tiktok_account_id = ""
+        tiktok_account_name = ""
+        if "tiktok_ads" not in selected_platform_keys:
+            include_tiktok = st.checkbox("¿Deseas agregar datos de TikTok?", value=False, key="export_add_tiktok")
+            if include_tiktok:
+                tt_connections = fetch_connections_from_api("tiktok_ads", client_id, api_key)
+                tt_connections = filter_dashboard_connections(tt_connections, dashboard_user, "tiktok_ads")
+                tt_allowed_ids = dashboard_allowed_account_ids(dashboard_user, "tiktok_ads")
+                if tt_connections:
+                    tt_options = {connection_account_label(c, "tiktok_ads"): (c["account_id"], connection_account_label(c, "tiktok_ads")) for c in tt_connections}
+                    selected_tt_label = st.selectbox("Cuenta de TikTok Ads", [""] + list(tt_options.keys()), key="export_conn_tiktok_ads")
+                    if selected_tt_label:
+                        tiktok_account_id, tiktok_account_name = tt_options[selected_tt_label]
+                else:
+                    tt_fallback = tt_allowed_ids or []
+                    tt_fallback_options = {connection_account_label({"account_id": a_id}, "tiktok_ads"): a_id for a_id in tt_fallback}
+                    selected_tt_label = st.selectbox("Cuenta de TikTok Ads", [""] + list(tt_fallback_options.keys()), key="export_allowed_tiktok_ads") if tt_allowed_ids else ""
+                    if selected_tt_label:
+                        tiktok_account_id = tt_fallback_options[selected_tt_label]
+                        tiktok_account_name = selected_tt_label
+                    elif not tt_allowed_ids:
+                        tiktok_account_id = st.text_input("ID de cuenta de TikTok Ads", key="export_account_tiktok_ads")
+                        tiktok_account_name = f"TikTok Ads: {tiktok_account_id}"
+
+        def _build_download_html(
+            curr_df=curr_frame_export,
+            prev_df=prev_frame_export,
+            tpl=report_template,
+            ctx=html_export_context,
+            exp_df=csv_export_frame,
+            add_tt=include_tiktok,
+            tt_acc_id=tiktok_account_id,
+            tt_acc_name=tiktok_account_name,
+            c_id=client_id,
+            u_id=user_id,
+            s_date=start_date,
+            e_date=end_date,
+            key=api_key,
+        ) -> bytes:
+            final_df = curr_df
+            final_ctx = dict(ctx)
+            final_connections = [{
+                "account_id": str(ctx.get("account_id", "")),
+                "account_name": str(ctx.get("Cuenta", "")),
+                "platform": str(ctx.get("platform", "meta_ads")),
+            }]
+            platforms_list = [str(ctx.get("platform", "meta_ads"))]
+            df_tt = None
+
+            # Calculate 3 calendar months for real historical evolution
+            p1_start, p1_end = get_prior_month_range(s_date)
+            p2_start, p2_end = get_prior_month_range(p1_start)
+            spanish_months = {
+                1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
+                5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
+                9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
+            }
+            monthly_evolution = {
+                "months": [
+                    {"key": "m2", "label": spanish_months[p2_start.month], "year": p2_start.year},
+                    {"key": "m1", "label": spanish_months[p1_start.month], "year": p1_start.year},
+                    {"key": "m0", "label": spanish_months[s_date.month], "year": s_date.year},
+                ],
+                "networks": {
+                    "facebook": {
+                        "impressions": {"m2": 0.0, "m1": 0.0, "m0": 0.0},
+                        "reach": {"m2": 0.0, "m1": 0.0, "m0": 0.0},
+                    },
+                    "instagram": {
+                        "impressions": {"m2": 0.0, "m1": 0.0, "m0": 0.0},
+                        "reach": {"m2": 0.0, "m1": 0.0, "m0": 0.0},
+                    },
+                }
+            }
+
+            # Fetch Meta history for M-1 and M-2 with publisher_platform
+            meta_acc_id = str(ctx.get("account_id", ""))
+            meta_platform = str(ctx.get("platform", "meta_ads"))
+            if meta_platform == "meta_ads" and meta_acc_id:
+                try:
+                    def _filter_meta_pub(df: pd.DataFrame, target: str) -> pd.DataFrame:
+                        if not isinstance(df, pd.DataFrame) or df.empty or "publisher_platform" not in df.columns:
+                            return pd.DataFrame()
+                        pubs = df["publisher_platform"].astype(str).str.lower().str.strip()
+                        if target == "instagram":
+                            return df[pubs.isin(["instagram", "threads"])]
+                        elif target == "facebook":
+                            return df[~pubs.isin(["instagram", "threads"])]
+                        return df[pubs == target]
+
+                    if isinstance(curr_df, pd.DataFrame) and not curr_df.empty:
+                        for pub in ("facebook", "instagram"):
+                            pub_df = _filter_meta_pub(curr_df, pub)
+                            if not pub_df.empty:
+                                if "impressions" in pub_df.columns:
+                                    monthly_evolution["networks"][pub]["impressions"]["m0"] = float(pub_df["impressions"].sum())
+                                if "reach" in pub_df.columns:
+                                    monthly_evolution["networks"][pub]["reach"]["m0"] = float(pub_df["reach"].sum())
+
+                    m1_rows = fetch_campaign_data_from_api(
+                        "meta_ads", c_id, u_id, meta_acc_id,
+                        p1_start, p1_end, ["impressions", "reach", "spend"], ["publisher_platform"],
+                        {}, False, key, show_errors=False
+                    )
+                    if m1_rows:
+                        m1_df = process_api_response(m1_rows, "meta_ads", c_id, u_id)
+                        if isinstance(m1_df, pd.DataFrame) and not m1_df.empty:
+                            for pub in ("facebook", "instagram"):
+                                pub_df = _filter_meta_pub(m1_df, pub)
+                                if not pub_df.empty:
+                                    if "impressions" in pub_df.columns:
+                                        monthly_evolution["networks"][pub]["impressions"]["m1"] = float(pub_df["impressions"].sum())
+                                    if "reach" in pub_df.columns:
+                                        monthly_evolution["networks"][pub]["reach"]["m1"] = float(pub_df["reach"].sum())
+
+                    m2_rows = fetch_campaign_data_from_api(
+                        "meta_ads", c_id, u_id, meta_acc_id,
+                        p2_start, p2_end, ["impressions", "reach", "spend"], ["publisher_platform"],
+                        {}, False, key, show_errors=False
+                    )
+                    if m2_rows:
+                        m2_df = process_api_response(m2_rows, "meta_ads", c_id, u_id)
+                        if isinstance(m2_df, pd.DataFrame) and not m2_df.empty:
+                            for pub in ("facebook", "instagram"):
+                                pub_df = _filter_meta_pub(m2_df, pub)
+                                if not pub_df.empty:
+                                    if "impressions" in pub_df.columns:
+                                        monthly_evolution["networks"][pub]["impressions"]["m2"] = float(pub_df["impressions"].sum())
+                                    if "reach" in pub_df.columns:
+                                        monthly_evolution["networks"][pub]["reach"]["m2"] = float(pub_df["reach"].sum())
+                except Exception as ex:
+                    print(f"Error fetching Meta historical evolution: {ex}")
+
+            if add_tt and tt_acc_id:
+                try:
+                    tt_metrics = [
+                        "spend", "impressions", "clicks", "reach", "conversion",
+                        "cost_per_conversion", "conversion_rate", "ctr", "cpc", "cpm",
+                        "frequency", "video_play_actions", "video_watched_2s",
+                        "video_watched_6s", "video_views_p25", "video_views_p50",
+                        "video_views_p75", "video_views_p100"
+                    ]
+                    tt_dimensions = []
+                    tt_rows = fetch_campaign_data_from_api(
+                        "tiktok_ads", c_id, u_id, str(tt_acc_id),
+                        s_date, e_date, tt_metrics, tt_dimensions,
+                        {}, False, key, show_errors=False
+                    )
+                    if tt_rows:
+                        df_tt = process_api_response(tt_rows, "tiktok_ads", c_id, u_id)
+                        if isinstance(df_tt, pd.DataFrame) and not df_tt.empty:
+                            if isinstance(final_df, pd.DataFrame) and not final_df.empty:
+                                final_df = pd.concat([final_df, df_tt], ignore_index=True)
+                            else:
+                                final_df = df_tt
+                    final_connections.append({
+                        "account_id": str(tt_acc_id),
+                        "account_name": str(tt_acc_name or f"TikTok Ads: {tt_acc_id}"),
+                        "platform": "tiktok_ads",
+                    })
+                    platforms_list.append("tiktok_ads")
+
+                    # TikTok historical evolution for M-0, M-1, M-2
+                    monthly_evolution["networks"]["tiktok"] = {
+                        "impressions": {"m2": 0.0, "m1": 0.0, "m0": 0.0},
+                        "reach": {"m2": 0.0, "m1": 0.0, "m0": 0.0},
+                    }
+                    if isinstance(df_tt, pd.DataFrame) and not df_tt.empty:
+                        if "impressions" in df_tt.columns:
+                            monthly_evolution["networks"]["tiktok"]["impressions"]["m0"] = float(df_tt["impressions"].sum())
+                        if "reach" in df_tt.columns:
+                            monthly_evolution["networks"]["tiktok"]["reach"]["m0"] = float(df_tt["reach"].sum())
+
+                    tt_m1_rows = fetch_campaign_data_from_api(
+                        "tiktok_ads", c_id, u_id, str(tt_acc_id),
+                        p1_start, p1_end, ["impressions", "reach", "spend"], [],
+                        {}, False, key, show_errors=False
+                    )
+                    if tt_m1_rows:
+                        tt_m1_df = process_api_response(tt_m1_rows, "tiktok_ads", c_id, u_id)
+                        if isinstance(tt_m1_df, pd.DataFrame) and not tt_m1_df.empty:
+                            if "impressions" in tt_m1_df.columns:
+                                monthly_evolution["networks"]["tiktok"]["impressions"]["m1"] = float(tt_m1_df["impressions"].sum())
+                            if "reach" in tt_m1_df.columns:
+                                monthly_evolution["networks"]["tiktok"]["reach"]["m1"] = float(tt_m1_df["reach"].sum())
+
+                    tt_m2_rows = fetch_campaign_data_from_api(
+                        "tiktok_ads", c_id, u_id, str(tt_acc_id),
+                        p2_start, p2_end, ["impressions", "reach", "spend"], [],
+                        {}, False, key, show_errors=False
+                    )
+                    if tt_m2_rows:
+                        tt_m2_df = process_api_response(tt_m2_rows, "tiktok_ads", c_id, u_id)
+                        if isinstance(tt_m2_df, pd.DataFrame) and not tt_m2_df.empty:
+                            if "impressions" in tt_m2_df.columns:
+                                monthly_evolution["networks"]["tiktok"]["impressions"]["m2"] = float(tt_m2_df["impressions"].sum())
+                            if "reach" in tt_m2_df.columns:
+                                monthly_evolution["networks"]["tiktok"]["reach"]["m2"] = float(tt_m2_df["reach"].sum())
+                except Exception as ex:
+                    print(f"Error fetching TikTok Ads for export: {ex}")
+            breakdowns_opt = {"monthly_evolution": monthly_evolution}
+            ig_raw = str(st.session_state.get("benchmark_ig_input") or "parmalatecuador, toniec, lalecheraec, vita_ecuador")
+            fb_raw = str(st.session_state.get("benchmark_fb_input") or "parmalatecuador, ToniLacteosEc, LaLecheraEcuador, VitaEcuador")
+            ig_comps = [u.strip().lstrip("@") for u in re.split(r"[,\n]+", ig_raw) if u.strip()]
+            fb_comps = [p.strip() for p in re.split(r"[,\n]+", fb_raw) if p.strip()]
+            effective_client_id = c_id or client_id or "client_1"
+            if ig_comps or fb_comps:
+                try:
+                    bench_res = fetch_benchmarking_from_api(
+                        effective_client_id, u_id, str(ctx.get("account_id", "")), ig_comps, fb_comps, key, show_errors=False
+                    )
+                    if bench_res and isinstance(bench_res, dict) and (bench_res.get("instagram") or bench_res.get("facebook")):
+                        breakdowns_opt["benchmarking"] = bench_res
+                        breakdowns_opt["competition"] = bench_res
+                except Exception as ex:
+                    print(f"Error fetching benchmarking data: {ex}")
+
+            return template_report_html(
+                final_df,
+                tpl,
+                final_ctx,
+                previous_frame=prev_df,
+                export_table=exp_df["frame"],
+                optional={"breakdowns": breakdowns_opt},
+            ).encode("utf-8")
+
+        st.download_button(
+            "Descargar HTML",
+            data=_build_download_html,
+            file_name=f"{export_name}_{report_template.lower().replace(' ', '-')}.html",
+            mime="text/html;charset=utf-8",
+            on_click="ignore",
+            icon=":material/download:",
+            width="stretch",
+        )
+
+    if st.button("", icon=":material/download:", key="btn_download_modal", help="Descargar reporte"):
+        _show_download_dialog()

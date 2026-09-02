@@ -124,9 +124,15 @@ class GoogleAdsConnector(BaseConnector):
         # Identify standard vs custom conversion action metrics
         STANDARD_FIELDS = {
             "impressions", "clicks", "cost_micros", "conversions", "conversions_value",
-            "video_views", "roas", "video_quartile_25_rate", "video_quartile_50_rate",
-            "video_quartile_75_rate", "video_quartile_100_rate", "value_per_all_conversion",
-            "average_cpc", "average_cpm", "engagements", "bounce_rate"
+            "all_conversions", "all_conversions_value", "interactions", "engagements",
+            "video_views", "video_trueview_views", "active_view_impressions",
+            "conversions_from_interactions_rate", "interaction_rate", "average_cpc",
+            "average_cpm", "ctr", "bounce_rate", "active_view_measurability",
+            "active_view_viewability", "video_quartile_p25_rate", "video_quartile_p50_rate",
+            "video_quartile_p75_rate", "video_quartile_p100_rate", "cost_per_conversion",
+            "cost_per_all_conversions", "all_conversions_from_interactions_rate",
+            "value_per_conversion", "value_per_all_conversions", "active_view_cpm",
+            "active_view_ctr", "roas"
         }
         
         query_metrics = []
@@ -135,6 +141,9 @@ class GoogleAdsConnector(BaseConnector):
             if m == "roas":
                 if "conversions_value" not in query_metrics:
                     query_metrics.append("conversions_value")
+                if "cost_micros" not in query_metrics:
+                    query_metrics.append("cost_micros")
+            elif m in ("spend", "cost"):
                 if "cost_micros" not in query_metrics:
                     query_metrics.append("cost_micros")
             else:
@@ -254,6 +263,12 @@ class GoogleAdsConnector(BaseConnector):
                                 metrics_dict["roas"] = 0.0
                         except Exception:
                             metrics_dict["roas"] = 0.0
+                    elif m in ("spend", "cost"):
+                        try:
+                            val_cost = getattr(row.metrics, "cost_micros", 0.0) or 0.0
+                            metrics_dict[m] = float(val_cost) / 1_000_000.0
+                        except Exception:
+                            metrics_dict[m] = 0.0
                     elif m in custom_metrics:
                         # Pull custom metric value from segmented conversions data
                         # We will merge the custom metric after determining row name and date
@@ -261,7 +276,10 @@ class GoogleAdsConnector(BaseConnector):
                     else:
                         mapped_m = MAP_METRICS.get(m, m)
                         try:
-                            metrics_dict[m] = getattr(row.metrics, mapped_m, 0)
+                            val = getattr(row.metrics, mapped_m, 0)
+                            if mapped_m == "cost_micros":
+                                metrics_dict["spend"] = float(val) / 1_000_000.0 if val else 0.0
+                            metrics_dict[m] = float(val) if isinstance(val, (int, float)) else val
                         except Exception:
                             metrics_dict[m] = 0
 
@@ -306,10 +324,31 @@ class GoogleAdsConnector(BaseConnector):
                     for m in custom_metrics:
                         metrics_dict[m] = custom_metrics_data[(name, date_val)].get(m, 0.0)
 
+                dims_dict = {}
+                if request.dimensions:
+                    for d in request.dimensions:
+                        parts = d.split(".")
+                        obj = row
+                        for part in parts:
+                            obj = getattr(obj, part, None)
+                            if obj is None:
+                                break
+                        if obj is not None:
+                            val_str = str(obj.name) if hasattr(obj, "name") else str(obj)
+                            dims_dict[d] = val_str
+                            dims_dict[parts[-1]] = val_str
+
+                if hasattr(row, "campaign") and hasattr(row.campaign, "advertising_channel_type"):
+                    ch_val = row.campaign.advertising_channel_type
+                    ch_str = str(ch_val.name) if hasattr(ch_val, "name") else str(ch_val)
+                    dims_dict["campaign.advertising_channel_type"] = ch_str
+                    dims_dict["advertising_channel_type"] = ch_str
+
                 results.append(CampaignData(
                     campaign_name=name,
                     date=date_val,
-                    metrics=metrics_dict
+                    metrics=metrics_dict,
+                    dimensions=dims_dict
                 ))
                 
         return results
@@ -350,8 +389,10 @@ class GoogleAdsConnector(BaseConnector):
                 "active_view_ctr"
             ],
             "dimensions": [
-                "campaign.name", "segments.date", "ad_group.name", "ad_group_criterion.keyword.text",
-                "ad_group_ad.ad.name", "campaign_search_term_view.search_term", "geographic_view.country_criterion_id",
+                "campaign.name", "campaign.status", "campaign.advertising_channel_type",
+                "campaign.bidding_strategy_type", "segments.date", "ad_group.name",
+                "ad_group_criterion.keyword.text", "ad_group_ad.ad.name",
+                "campaign_search_term_view.search_term", "geographic_view.country_criterion_id",
                 "segments.device", "segments.ad_network_type"
             ]
         }
