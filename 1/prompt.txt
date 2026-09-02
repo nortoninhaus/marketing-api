@@ -1,0 +1,887 @@
+You are a code reviewer. Analyze the files below and validate they comply with the coding standards provided.
+
+=== CODING STANDARDS ===
+# AGENTS.md
+
+## Developer Commands
+- **Backend (FastAPI):**
+  - Install: `pip install -r requirements.txt`
+  - Run: `uvicorn app.main:app --reload` (Note: `app/main.py` is the likely entrypoint)
+  - Test: `pytest`
+- **Dashboard (Streamlit):**
+  - Run: `streamlit run dashboard.py`
+- **Frontend (Flutter Web):**
+  - Path: `web_ui/`
+  - Commands: `flutter pub get`, `flutter run -d chrome`
+
+## Project Structure
+- `app/`: FastAPI backend implementation.
+  - `connectors/`: Multi-platform marketing API integrations (Meta, Google, TikTok, etc.).
+  - `routers/`: API endpoints.
+  - `models/`: Pydantic schemas for requests/responses.
+- `dashboard.py`: Streamlit-based data visualization.
+- `web_ui/`: Flutter web application.
+- `tests/`: Extensive pytest suite for connectors and API.
+
+## Core Logic & Conventions
+- **Connectors:** All platforms inherit from `app/connectors/base.py`. Follow this pattern when adding new integrations.
+- **Environment:** Requires a `.env` file (see `.env.example`).
+- **Deployment:** Uses Docker (`Dockerfile`, `Dockerfile.dashboard`) and Google Cloud (`.gcloudignore`, `deploy.sh`).
+
+## Testing Quirks
+- Tests cover specific OAuth flows and API validations for multiple social platforms.
+- `tests/conftest.py` contains shared fixtures for API mocking.
+=== END CODING STANDARDS ===
+
+=== FILES TO REVIEW ===
+
+--- FILE: app/connectors/google_ads.py ---
+"""
+Google Ads connector.
+Supports dynamic GAQL query construction based on requested dimensions,
+search_stream for improved performance, and dynamic client/OAuth credentials.
+"""
+
+from typing import List, Dict, Any, Optional
+import logging
+from google.ads.googleads.client import GoogleAdsClient
+
+from app.connectors.base import BaseConnector
+from app.models.requests import DataRequest
+from app.models.responses import CampaignData
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+
+class GoogleAdsConnector(BaseConnector):
+    platform_name = "google_ads"
+
+    def get_credentials(self, request: Optional[DataRequest] = None) -> Dict[str, Any]:
+        creds = super().get_credentials(request)
+        
+        developer_token = creds.get("developer_token") or settings.google_ads_developer_token
+        client_id = creds.get("client_id") or settings.google_client_id or settings.google_ads_client_id
+        client_secret = creds.get("client_secret") or settings.google_client_secret or settings.google_ads_client_secret
+        refresh_token = creds.get("refresh_token") or settings.google_ads_refresh_token
+        
+        # Use account_id as the primary target for google ads queries
+        customer_id = request.account_id if request and request.account_id else creds.get("customer_id")
+        if customer_id:
+            customer_id = str(customer_id).replace("-", "")
+            
+        login_customer_id = creds.get("login_customer_id")
+        if login_customer_id:
+            login_customer_id = str(login_customer_id).replace("-", "")
+            
+        # Omit login_customer_id if it is empty, not provided, or matches target customer_id
+        if not login_customer_id or login_customer_id == customer_id:
+            login_customer_id = None
+        
+        return {
+            "developer_token": developer_token,
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "refresh_token": refresh_token,
+            "login_customer_id": login_customer_id,
+            "customer_id": customer_id
+        }
+
+    def _build_client(self, creds: Dict[str, Any]) -> GoogleAdsClient:
+        if creds.get("access_token"):
+            from google.oauth2.credentials import Credentials
+            token_credentials = Credentials(
+                token=creds["access_token"],
+                refresh_token=creds.get("refresh_token"),
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=creds["client_id"],
+                client_secret=creds["client_secret"]
+            )
+            return GoogleAdsClient(
+                credentials=token_credentials,
+                developer_token=creds["developer_token"],
+                login_customer_id=creds.get("login_customer_id"),
+                use_proto_plus=True
+            )
+        client_dict = {
+            "developer_token": creds["developer_token"],
+            "client_id": creds["client_id"],
+            "client_secret": creds["client_secret"],
+            "refresh_token": creds["refresh_token"],
+            "use_proto_plus": True
+        }
+        if creds.get("login_customer_id"):
+            client_dict["login_customer_id"] = creds["login_customer_id"]
+        return GoogleAdsClient.load_from_dict(client_dict)
+
+    def fetch_data(self, request: DataRequest) -> List[CampaignData]:
+        creds = self.get_credentials(request)
+        client = self._build_client(creds)
+        ga_service = client.get_service("GoogleAdsService")
+        start_str = request.start_date.strftime("%Y-%m-%d")
+        end_str = request.end_date.strftime("%Y-%m-%d")
+
+        # Determine target query table and select dimensions based on requested dimensions
+        resource = "campaign"
+        select_dims = ["campaign.name", "segments.date"]
+        
+        if request.dimensions:
+            if any("ad_group_ad" in d or "ad.name" in d or "ad_name" in d for d in request.dimensions):
+                resource = "ad_group_ad"
+                select_dims.append("ad_group.name")
+                select_dims.append("ad_group_ad.ad.name")
+            elif any("search_term" in d or "campaign_search_term_view" in d for d in request.dimensions):
+                resource = "campaign_search_term_view"
+                select_dims.append("campaign_search_term_view.search_term")
+            elif any("geographic" in d or "country" in d or "location" in d for d in request.dimensions):
+                resource = "geographic_view"
+                select_dims.append("geographic_view.country_criterion_id")
+            elif any("keyword" in d or "ad_group_criterion" in d for d in request.dimensions):
+                resource = "keyword_view"
+                select_dims.append("ad_group.name")
+                select_dims.append("ad_group_criterion.keyword.text")
+            elif any("ad_group.name" in d or "ad_group" in d for d in request.dimensions):
+                resource = "ad_group"
+                select_dims.append("ad_group.name")
+
+            # Collect any custom segment dimensions requested (e.g. conversion actions)
+            for d in request.dimensions:
+                if (d.startswith("segments.") or d.startswith("campaign.") or d.startswith("ad_group.") or d.startswith("ad_group_ad.")) and d not in select_dims:
+                    select_dims.append(d)
+
+        MAP_METRICS = {
+            "video_views": "video_trueview_views",
+            "video_quartile_25_rate": "video_quartile_p25_rate",
+            "video_quartile_50_rate": "video_quartile_p50_rate",
+            "video_quartile_75_rate": "video_quartile_p75_rate",
+            "video_quartile_100_rate": "video_quartile_p100_rate",
+            "value_per_all_conversion": "value_per_all_conversions",
+        }
+
+        # Build metrics select list
+        # Identify standard vs custom conversion action metrics
+        STANDARD_FIELDS = {
+            "impressions", "clicks", "cost_micros", "conversions", "conversions_value",
+            "all_conversions", "all_conversions_value", "interactions", "engagements",
+            "video_views", "video_trueview_views", "active_view_impressions",
+            "conversions_from_interactions_rate", "interaction_rate", "average_cpc",
+            "average_cpm", "ctr", "bounce_rate", "active_view_measurability",
+            "active_view_viewability", "video_quartile_p25_rate", "video_quartile_p50_rate",
+            "video_quartile_p75_rate", "video_quartile_p100_rate", "cost_per_conversion",
+            "cost_per_all_conversions", "all_conversions_from_interactions_rate",
+            "value_per_conversion", "value_per_all_conversions", "active_view_cpm",
+            "active_view_ctr", "roas"
+        }
+        
+        query_metrics = []
+        custom_metrics = []
+        for m in request.metrics:
+            if m == "roas":
+                if "conversions_value" not in query_metrics:
+                    query_metrics.append("conversions_value")
+                if "cost_micros" not in query_metrics:
+                    query_metrics.append("cost_micros")
+            elif m in ("spend", "cost"):
+                if "cost_micros" not in query_metrics:
+                    query_metrics.append("cost_micros")
+            else:
+                mapped_m = MAP_METRICS.get(m, m)
+                if mapped_m in STANDARD_FIELDS or mapped_m in MAP_METRICS.values():
+                    if mapped_m not in query_metrics:
+                        query_metrics.append(mapped_m)
+                else:
+                    custom_metrics.append(m)
+
+        metric_fields = [f"metrics.{m}" for m in query_metrics]
+        query_fields = select_dims + metric_fields
+        
+        # Build GAQL filters if request.filters is provided
+        filter_clauses = []
+        if hasattr(request, "filters") and request.filters:
+            for field, val in request.filters.items():
+                # Automatically add table prefix if not specified
+                if not "." in field and not field.startswith("metrics."):
+                    field = f"{resource}.{field}"
+                
+                if isinstance(val, list):
+                    items_str = ", ".join([f"'{v}'" if isinstance(v, str) else str(v) for v in val])
+                    filter_clauses.append(f"{field} IN ({items_str})")
+                elif isinstance(val, str):
+                    filter_clauses.append(f"{field} = '{val}'")
+                else:
+                    filter_clauses.append(f"{field} = {val}")
+
+        where_clause = f"segments.date BETWEEN '{start_str}' AND '{end_str}'"
+        if filter_clauses:
+            where_clause += " AND " + " AND ".join(filter_clauses)
+            
+        limit_clause = ""
+        if request.limit is not None:
+            offset = 0
+            if request.next_page_token:
+                try:
+                    offset = int(request.next_page_token)
+                except ValueError:
+                    pass
+            limit_clause = f" LIMIT {offset + request.limit}"
+
+        query = f"""
+            SELECT {', '.join(query_fields)} 
+            FROM {resource} 
+            WHERE {where_clause}
+            {limit_clause}
+        """
+        
+        # If custom metrics are requested, perform a separate segmented conversions query
+        custom_metrics_data = {}
+        if custom_metrics:
+            seg_fields = select_dims + ["metrics.conversions", "metrics.conversions_value", "segments.conversion_action", "conversion_action.name"]
+            seg_query = f"""
+                SELECT {', '.join(seg_fields)}
+                FROM {resource}
+                WHERE {where_clause}
+            """
+            try:
+                seg_stream = ga_service.search_stream(customer_id=creds["customer_id"], query=seg_query)
+                for batch in seg_stream:
+                    for row in batch.results:
+                        if not hasattr(row, "segments") or not hasattr(row.segments, "conversion_action"):
+                            continue
+                        action_name = row.conversion_action.name if hasattr(row, "conversion_action") and hasattr(row.conversion_action, "name") else ""
+                        if not action_name:
+                            continue
+                        
+                        # Build campaign name
+                        c_name = row.campaign.name if hasattr(row, "campaign") and hasattr(row.campaign, "name") else "Campaign"
+                        if resource == "ad_group" and hasattr(row, "ad_group") and hasattr(row.ad_group, "name"):
+                            c_name = f"{c_name} | {row.ad_group.name}"
+                        elif resource == "ad_group_ad" and hasattr(row, "ad_group_ad") and hasattr(row.ad_group_ad, "ad") and hasattr(row.ad_group_ad.ad, "name"):
+                            c_name = f"{c_name} | {row.ad_group.name} | Ad: {row.ad_group_ad.ad.name}"
+                        elif resource == "campaign_search_term_view" and hasattr(row, "campaign_search_term_view") and hasattr(row.campaign_search_term_view, "search_term"):
+                            c_name = f"{c_name} | Search: {row.campaign_search_term_view.search_term}"
+                        elif resource == "geographic_view" and hasattr(row, "geographic_view") and hasattr(row.geographic_view, "country_criterion_id"):
+                            c_name = f"{c_name} | Geo: {row.geographic_view.country_criterion_id}"
+                        elif resource == "keyword_view":
+                            kw_part = ""
+                            if hasattr(row, "ad_group_criterion") and hasattr(row.ad_group_criterion, "keyword") and hasattr(row.ad_group_criterion.keyword, "text"):
+                                kw_part = f" | KW: {row.ad_group_criterion.keyword.text}"
+                            ag_part = f" | {row.ad_group.name}" if hasattr(row, "ad_group") and hasattr(row.ad_group, "name") else ""
+                            c_name = f"{c_name}{ag_part}{kw_part}"
+                            
+                        # Reconstruct date
+                        c_date = str(row.segments.date) if hasattr(row.segments, "date") else start_str
+                        key = (c_name, c_date)
+                        if key not in custom_metrics_data:
+                            custom_metrics_data[key] = {}
+                            
+                        for m in custom_metrics:
+                            is_val = m.endswith("_value")
+                            base_m = m[:-6] if is_val else m
+                            if action_name == base_m:
+                                val = float(row.metrics.conversions_value) if is_val else float(row.metrics.conversions)
+                                custom_metrics_data[key][m] = custom_metrics_data[key].get(m, 0.0) + val
+            except Exception as e:
+                logger.warning(f"Failed to query custom conversion actions: {e}")
+
+        # Use search_stream to fetch records in dynamic chunks
+        response_stream = ga_service.search_stream(customer_id=creds["customer_id"], query=query)
+        results = []
+        
+        for batch in response_stream:
+            for row in batch.results:
+                metrics_dict = {}
+                for m in request.metrics:
+                    if m == "roas":
+                        try:
+                            val_value = getattr(row.metrics, "conversions_value", 0.0) or 0.0
+                            val_cost = getattr(row.metrics, "cost_micros", 0.0) or 0.0
+                            if val_cost > 0:
+                                metrics_dict["roas"] = float(val_value) / (float(val_cost) / 1_000_000.0)
+                            else:
+                                metrics_dict["roas"] = 0.0
+                        except Exception:
+                            metrics_dict["roas"] = 0.0
+                    elif m in ("spend", "cost"):
+                        try:
+                            val_cost = getattr(row.metrics, "cost_micros", 0.0) or 0.0
+                            metrics_dict[m] = float(val_cost) / 1_000_000.0
+                        except Exception:
+                            metrics_dict[m] = 0.0
+                    elif m in custom_metrics:
+                        # Pull custom metric value from segmented conversions data
+                        # We will merge the custom metric after determining row name and date
+                        metrics_dict[m] = 0.0
+                    else:
+                        mapped_m = MAP_METRICS.get(m, m)
+                        try:
+                            val = getattr(row.metrics, mapped_m, 0)
+                            if mapped_m == "cost_micros":
+                                metrics_dict["spend"] = float(val) / 1_000_000.0 if val else 0.0
+                            metrics_dict[m] = float(val) if isinstance(val, (int, float)) else val
+                        except Exception:
+                            metrics_dict[m] = 0
+
+                # Reconstruct descriptive campaign_name based on level
+                name = row.campaign.name if hasattr(row, "campaign") and hasattr(row.campaign, "name") else "Campaign"
+                if resource == "ad_group" and hasattr(row, "ad_group") and hasattr(row.ad_group, "name"):
+                    name = f"{name} | {row.ad_group.name}"
+                elif resource == "ad_group_ad" and hasattr(row, "ad_group_ad") and hasattr(row.ad_group_ad, "ad") and hasattr(row.ad_group_ad.ad, "name"):
+                    name = f"{name} | {row.ad_group.name} | Ad: {row.ad_group_ad.ad.name}"
+                elif resource == "campaign_search_term_view" and hasattr(row, "campaign_search_term_view") and hasattr(row.campaign_search_term_view, "search_term"):
+                    name = f"{name} | Search: {row.campaign_search_term_view.search_term}"
+                elif resource == "geographic_view" and hasattr(row, "geographic_view") and hasattr(row.geographic_view, "country_criterion_id"):
+                    name = f"{name} | Geo: {row.geographic_view.country_criterion_id}"
+                elif resource == "keyword_view":
+                    kw_part = ""
+                    if hasattr(row, "ad_group_criterion") and hasattr(row.ad_group_criterion, "keyword") and hasattr(row.ad_group_criterion.keyword, "text"):
+                        kw_part = f" | KW: {row.ad_group_criterion.keyword.text}"
+                    ag_part = f" | {row.ad_group.name}" if hasattr(row, "ad_group") and hasattr(row.ad_group, "name") else ""
+                    name = f"{name}{ag_part}{kw_part}"
+
+                # Append segment names to campaign_name to differentiate rows if requested
+                if request.dimensions:
+                    for d in request.dimensions:
+                        if d.startswith("segments.") and d != "segments.date":
+                            seg_field = d.split(".", 1)[1]
+                            seg_obj = getattr(row, "segments", None)
+                            if seg_obj:
+                                # Safe traversal for nested segments (e.g. conversion_action)
+                                if hasattr(seg_obj, seg_field):
+                                    val = getattr(seg_obj, seg_field, None)
+                                    if val is not None:
+                                        val_str = str(val.name) if hasattr(val, "name") else str(val)
+                                        name += f"_{val_str}"
+                                else:
+                                    # Fallback search inside segments dict
+                                    pass
+
+                date_val = str(row.segments.date) if hasattr(row.segments, "date") else start_str
+                
+                # Merge custom conversion action metrics if present
+                if (name, date_val) in custom_metrics_data:
+                    for m in custom_metrics:
+                        metrics_dict[m] = custom_metrics_data[(name, date_val)].get(m, 0.0)
+
+                dims_dict = {}
+                if request.dimensions:
+                    for d in request.dimensions:
+                        parts = d.split(".")
+                        obj = row
+                        for part in parts:
+                            obj = getattr(obj, part, None)
+                            if obj is None:
+                                break
+                        if obj is not None:
+                            val_str = str(obj.name) if hasattr(obj, "name") else str(obj)
+                            dims_dict[d] = val_str
+                            dims_dict[parts[-1]] = val_str
+
+                if hasattr(row, "campaign") and hasattr(row.campaign, "advertising_channel_type"):
+                    ch_val = row.campaign.advertising_channel_type
+                    ch_str = str(ch_val.name) if hasattr(ch_val, "name") else str(ch_val)
+                    dims_dict["campaign.advertising_channel_type"] = ch_str
+                    dims_dict["advertising_channel_type"] = ch_str
+
+                results.append(CampaignData(
+                    campaign_name=name,
+                    date=date_val,
+                    metrics=metrics_dict,
+                    dimensions=dims_dict
+                ))
+                
+        return results
+
+    def get_schema(self) -> Dict[str, Any]:
+        return {
+            "metrics": [
+                "impressions", 
+                "clicks", 
+                "cost_micros", 
+                "conversions", 
+                "roas",
+                "all_conversions",
+                "conversions_value",
+                "all_conversions_value",
+                "interactions",
+                "engagements",
+                "video_views",
+                "active_view_impressions",
+                "conversions_from_interactions_rate",
+                "interaction_rate",
+                "average_cpc",
+                "average_cpm",
+                "ctr",
+                "bounce_rate",
+                "active_view_measurability",
+                "active_view_viewability",
+                "video_quartile_25_rate",
+                "video_quartile_50_rate",
+                "video_quartile_75_rate",
+                "video_quartile_100_rate",
+                "cost_per_conversion",
+                "cost_per_all_conversions",
+                "all_conversions_from_interactions_rate",
+                "value_per_conversion",
+                "value_per_all_conversion",
+                "active_view_cpm",
+                "active_view_ctr"
+            ],
+            "dimensions": [
+                "campaign.name", "campaign.status", "campaign.advertising_channel_type",
+                "campaign.bidding_strategy_type", "segments.date", "ad_group.name",
+                "ad_group_criterion.keyword.text", "ad_group_ad.ad.name",
+                "campaign_search_term_view.search_term", "geographic_view.country_criterion_id",
+                "segments.device", "segments.ad_network_type"
+            ]
+        }
+
+    def ping(self) -> bool:
+        try:
+            creds = self.get_credentials()
+            client = self._build_client(creds)
+            ga_service = client.get_service("GoogleAdsService")
+            query = "SELECT campaign.id FROM campaign LIMIT 1"
+            ga_service.search(customer_id=creds["customer_id"], query=query)
+            return True
+        except Exception:
+            return False
+
+--- FILE: app/connectors/tiktok.py ---
+"""
+TikTok connectors (Ads and Organic).
+"""
+
+from typing import List, Dict, Any, Optional
+import requests
+import logging
+
+from app.connectors.base import BaseConnector
+from app.models.requests import DataRequest
+from app.models.responses import CampaignData
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+class TikTokAdsConnector(BaseConnector):
+    platform_name = "tiktok_ads"
+
+    def get_credentials(self, request: Optional[DataRequest] = None) -> Dict[str, Any]:
+        creds = super().get_credentials(request)
+        
+        access_token = creds.get("access_token", settings.tiktok_ads_access_token)
+        advertiser_id = request.account_id if request and request.account_id else creds.get("advertiser_id")
+        
+        return {
+            "access_token": access_token,
+            "advertiser_id": advertiser_id
+        }
+
+    def fetch_data(self, request: DataRequest) -> List[CampaignData]:
+        creds = self.get_credentials(request)
+        advertiser_id = creds["advertiser_id"]
+        access_token = creds["access_token"]
+        
+        url = "https://business-api.tiktok.com/open_api/v1.3/report/integrated/get/"
+        headers = {"Access-Token": access_token}
+        results = []
+        
+        # Query both AUCTION_CAMPAIGN and RESERVATION_CAMPAIGN to cover all campaign types
+        import json
+        success_count = 0
+        errors = []
+
+        # Build campaign ID -> metadata mapping
+        campaign_map = {}
+        try:
+            camp_url = "https://business-api.tiktok.com/open_api/v1.3/campaign/get/"
+            c_page = 1
+            while True:
+                camp_params = {
+                    "advertiser_id": advertiser_id,
+                    "page": c_page,
+                    "page_size": 1000,
+                    "fields": json.dumps(["campaign_id", "campaign_name", "campaign_type", "objective_type", "operation_status", "secondary_status"])
+                }
+                camp_resp = requests.get(camp_url, params=camp_params, headers=headers, timeout=20)
+                if camp_resp.status_code == 200:
+                    camp_data = camp_resp.json()
+                    if camp_data.get("code") == 0:
+                        c_list = camp_data.get("data", {}).get("list", [])
+                        for c in c_list:
+                            cid = str(c.get("campaign_id"))
+                            campaign_map[cid] = {
+                                "campaign_name": c.get("campaign_name", cid),
+                                "campaign_type": c.get("campaign_type", ""),
+                                "objective_type": c.get("objective_type", ""),
+                                "status": c.get("operation_status", ""),
+                            }
+                        page_info = camp_data.get("data", {}).get("page_info", {})
+                        if c_page >= page_info.get("total_page", 1) or not c_list:
+                            break
+                        c_page += 1
+                    else:
+                        break
+                else:
+                    break
+        except Exception as e:
+            logger.warning(f"Failed to fetch TikTok campaign details mapping: {e}")
+
+        requested_dims = list(request.dimensions) if request.dimensions else []
+        report_dims = ["campaign_id", "stat_time_day"]
+        for d in requested_dims:
+            if d in ["adgroup_id", "ad_id"] and d not in report_dims:
+                report_dims.append(d)
+
+        adgroup_map = {}
+        if "adgroup_id" in report_dims:
+            try:
+                ag_url = "https://business-api.tiktok.com/open_api/v1.3/adgroup/get/"
+                ag_resp = requests.get(ag_url, params={"advertiser_id": advertiser_id, "page_size": 1000}, headers=headers, timeout=20)
+                if ag_resp.status_code == 200:
+                    ag_data = ag_resp.json()
+                    if ag_data.get("code") == 0:
+                        for ag in ag_data.get("data", {}).get("list", []):
+                            adgroup_map[str(ag.get("adgroup_id"))] = ag.get("adgroup_name", "")
+            except Exception as e:
+                logger.warning(f"Failed to fetch TikTok adgroup mapping: {e}")
+
+        ad_map = {}
+        if "ad_id" in report_dims:
+            try:
+                ad_url = "https://business-api.tiktok.com/open_api/v1.3/ad/get/"
+                ad_resp = requests.get(ad_url, params={"advertiser_id": advertiser_id, "page_size": 1000}, headers=headers, timeout=20)
+                if ad_resp.status_code == 200:
+                    ad_data = ad_resp.json()
+                    if ad_data.get("code") == 0:
+                        for a in ad_data.get("data", {}).get("list", []):
+                            ad_map[str(a.get("ad_id"))] = a.get("ad_name", "")
+            except Exception as e:
+                logger.warning(f"Failed to fetch TikTok ad mapping: {e}")
+
+        if "ad_id" in report_dims:
+            data_levels = ["AUCTION_AD", "RESERVATION_AD"]
+        elif "adgroup_id" in report_dims:
+            data_levels = ["AUCTION_ADGROUP", "RESERVATION_ADGROUP"]
+        else:
+            data_levels = ["AUCTION_CAMPAIGN", "RESERVATION_CAMPAIGN"]
+
+        # Map common metric aliases and filter out metrics unsupported by TikTok Ads API
+        metric_alias_map = {
+            "video_views": "video_play_actions",
+            "views": "video_play_actions",
+            "conversions": "conversion",
+            "followers": "follows",
+        }
+        allowed_tiktok_metrics = set(self.get_schema()["metrics"])
+        cleaned_metrics = []
+        for m in request.metrics:
+            target_m = metric_alias_map.get(m, m)
+            if target_m in allowed_tiktok_metrics and target_m not in cleaned_metrics:
+                cleaned_metrics.append(target_m)
+        if not cleaned_metrics:
+            cleaned_metrics = ["spend", "impressions", "clicks"]
+
+        for data_level in data_levels:
+            page = 1
+            page_size = 1000
+            while True:
+                params = {
+                    "advertiser_id": advertiser_id,
+                    "report_type": "BASIC",
+                    "data_level": data_level,
+                    "dimensions": json.dumps(report_dims),
+                    "metrics": json.dumps(cleaned_metrics),
+                    "start_date": request.start_date.strftime("%Y-%m-%d"),
+                    "end_date": request.end_date.strftime("%Y-%m-%d"),
+                    "page": page,
+                    "page_size": page_size
+                }
+                try:
+                    response = requests.get(url, params=params, headers=headers, timeout=30)
+                    self._record_rate_limit(response.headers)
+                    response.raise_for_status()
+                    data = response.json()
+                    
+                    if data.get("code", 0) != 0:
+                        msg = data.get("message", "Unknown error")
+                        code = data.get("code")
+                        # Check if this is just an unsupported data level error
+                        if code == 40002 and "Unsupported data_level" in msg:
+                            logger.info(f"TikTok Ads data level {data_level} not supported for advertiser {advertiser_id}.")
+                            break
+                        
+                        logger.warning(f"TikTok Ads API error for level {data_level}: code={code}, message={msg}")
+                        errors.append(f"{data_level} API error: {msg} (code {code})")
+                        break
+                    else:
+                        success_count += 1
+                        page_items = data.get("data", {}).get("list", [])
+                        for item in page_items:
+                            item_dims = dict(item.get("dimensions", {}))
+                            cid = str(item_dims.get("campaign_id", ""))
+                            camp_meta = campaign_map.get(cid, {})
+                            camp_name = camp_meta.get("campaign_name") or item.get("metrics", {}).get("campaign_name") or (f"Campaña {cid}" if cid else "TikTok Campaign")
+                            
+                            if camp_meta.get("campaign_type"):
+                                item_dims["campaign_type"] = camp_meta["campaign_type"]
+                            if camp_meta.get("objective_type"):
+                                item_dims["objective_type"] = camp_meta["objective_type"]
+                                item_dims["Tipo de Campaña"] = camp_meta["objective_type"]
+                            if camp_meta.get("status"):
+                                item_dims["status"] = camp_meta["status"]
+
+                            if "adgroup_id" in item_dims:
+                                ag_id = str(item_dims["adgroup_id"])
+                                if ag_id in adgroup_map:
+                                    item_dims["ad_group_name"] = adgroup_map[ag_id]
+                            if "ad_id" in item_dims:
+                                aid = str(item_dims["ad_id"])
+                                if aid in ad_map:
+                                    item_dims["ad_name"] = ad_map[aid]
+
+                            results.append(CampaignData(
+                                campaign_name=camp_name,
+                                date=item_dims.get("stat_time_day", request.start_date.strftime("%Y-%m-%d")),
+                                metrics=item.get("metrics", {}),
+                                dimensions=item_dims
+                            ))
+                        # Check if there are more pages
+                        page_info = data.get("data", {}).get("page_info", {})
+                        total_page = page_info.get("total_page", 1)
+                        if page >= total_page or not page_items:
+                            break
+                        page += 1
+                except Exception as e:
+                    logger.warning(f"TikTok Ads query failed for level {data_level}: {e}")
+                    errors.append(f"{data_level} query failed: {e}")
+                    break
+                
+        if success_count == 0 and errors:
+            raise ValueError(f"TikTok Ads query failed: {'; '.join(errors)}")
+            
+        return results
+
+    def get_schema(self) -> Dict[str, Any]:
+        return {
+            "metrics": [
+                "spend", 
+                "impressions", 
+                "clicks", 
+                "reach",
+                "conversion", 
+                "cost_per_conversion",
+                "conversion_rate",
+                "ctr",
+                "cpc",
+                "cpm",
+                "frequency",
+                "follows",
+                "profile_visits",
+                "likes",
+                "comments",
+                "shares",
+                "video_play_actions",
+                "video_watched_2s",
+                "video_watched_6s",
+                "video_views_p25",
+                "video_views_p50",
+                "video_views_p75",
+                "video_views_p100",
+                "average_video_play",
+                "average_video_play_per_user"
+            ],
+            "dimensions": ["campaign_id", "stat_time_day", "adgroup_id", "ad_id"]
+        }
+
+    def ping(self) -> bool:
+        try:
+            creds = self.get_credentials()
+            url = "https://business-api.tiktok.com/open_api/v1.3/advertiser/info/"
+            params = {"advertiser_ids": f'["{creds["advertiser_id"]}"]'}
+            headers = {"Access-Token": creds["access_token"]}
+            response = requests.get(url, params=params, headers=headers, timeout=10)
+            return response.status_code == 200
+        except Exception:
+            return False
+
+class TikTokOrganicConnector(BaseConnector):
+    platform_name = "tiktok_organic"
+
+    def get_credentials(self, request: Optional[DataRequest] = None) -> Dict[str, Any]:
+        creds = super().get_credentials(request)
+        
+        access_token = creds.get("access_token", settings.tiktok_access_token)
+        open_id = request.account_id if request and request.account_id else creds.get("open_id")
+        
+        return {
+            "access_token": access_token,
+            "open_id": open_id,
+            "account_name": creds.get("account_name", "TikTok Profile")
+        }
+
+    def fetch_data(self, request: DataRequest) -> List[CampaignData]:
+        creds = self.get_credentials(request)
+        access_token = creds["access_token"]
+        open_id = creds.get("open_id") or request.account_id
+        
+        # Check if this is a Business Center asset connection
+        is_bc_asset = creds.get("is_bc_asset") == True
+        
+        # Determine if they are asking for profile-level metrics
+        profile_metrics = {"follower_count", "profile_views"}
+        requested_metrics = set(request.metrics)
+        wants_profile_only = bool(requested_metrics & profile_metrics) and not request.video_id
+        
+        if wants_profile_only:
+            if is_bc_asset:
+                # Fetch real profile data from the Business API
+                bc_profile_url = "https://business-api.tiktok.com/open_api/v1.3/business/get/"
+                bc_headers = {"Access-Token": access_token}
+                bc_params = {"business_id": open_id}
+                profile_metrics = {}
+                try:
+                    bc_response = requests.get(bc_profile_url, params=bc_params, headers=bc_headers, timeout=30)
+                    self._record_rate_limit(bc_response.headers)
+                    bc_response.raise_for_status()
+                    bc_data = bc_response.json()
+                    if bc_data.get("code", 0) == 0:
+                        bc_info = bc_data.get("data", {})
+                        profile_metrics["follower_count"] = bc_info.get("follower_count")
+                        profile_metrics["profile_views"] = bc_info.get("profile_views")
+                    else:
+                        logger.warning(f"TikTok Business profile API returned code {bc_data.get('code')}: {bc_data.get('message')}")
+                        profile_metrics["follower_count"] = None
+                        profile_metrics["profile_views"] = None
+                except Exception as e:
+                    logger.warning(f"Failed to fetch TikTok Business profile metrics: {e}")
+                    profile_metrics["follower_count"] = None
+                    profile_metrics["profile_views"] = None
+                return [CampaignData(
+                    campaign_name=creds.get("account_name", "TikTok Brand Account"),
+                    date=request.start_date.strftime("%Y-%m-%d"),
+                    metrics=profile_metrics
+                )]
+            else:
+                base_url = "https://open-sandbox.tiktokapis.com" if settings.use_tiktok_sandbox else "https://open.tiktokapis.com"
+                url = f"{base_url}/v2/user/info/"
+                headers = {"Authorization": f"Bearer {access_token}"}
+                response = requests.get(url, headers=headers, params={"fields": "follower_count,display_name"}, timeout=30)
+                self._record_rate_limit(response.headers)
+                response.raise_for_status()
+                user_data = response.json().get("data", {}).get("user", {})
+                return [CampaignData(
+                    campaign_name=user_data.get("display_name") or "TikTok User",
+                    date=request.start_date.strftime("%Y-%m-%d"),
+                    metrics={
+                        "follower_count": user_data.get("follower_count", 0),
+                        "profile_views": 0
+                    }
+                )]
+        
+        if is_bc_asset:
+            url = "https://business-api.tiktok.com/open_api/v1.3/business/video/list/"
+            headers = {"Access-Token": access_token}
+            
+            metric_to_field = {
+                "view_count": "video_views",
+                "like_count": "likes",
+                "comment_count": "comments",
+                "share_count": "shares"
+            }
+            requested_fields = ["item_id", "title", "create_time"]
+            for m in request.metrics:
+                if m in metric_to_field:
+                    requested_fields.append(metric_to_field[m])
+                    
+            import json
+            from datetime import datetime
+            params = {
+                "business_id": open_id,
+                "fields": json.dumps(requested_fields)
+            }
+            response = requests.get(url, params=params, headers=headers, timeout=30)
+            self._record_rate_limit(response.headers)
+            response.raise_for_status()
+            data = response.json()
+            
+            if data.get("code", 0) != 0:
+                logger.warning(f"TikTok Business Organic API error: code={data.get('code')}, message={data.get('message')}")
+                raise ValueError(f"TikTok Organic API error: {data.get('message')} (code {data.get('code')})")
+                
+            videos = data.get("data", {}).get("list", [])
+            return [CampaignData(
+                campaign_name=v.get("title", f"Video_{v.get('item_id')}")[:50],
+                date=datetime.fromtimestamp(v.get("create_time", 0)).strftime("%Y-%m-%d") if v.get("create_time") else request.start_date.strftime("%Y-%m-%d"),
+                metrics={
+                    "view_count": v.get("video_views", 0),
+                    "like_count": v.get("likes", 0),
+                    "comment_count": v.get("comments", 0),
+                    "share_count": v.get("shares", 0)
+                }
+            ) for v in videos]
+        else:
+            base_url = "https://open-sandbox.tiktokapis.com" if settings.use_tiktok_sandbox else "https://open.tiktokapis.com"
+            url = f"{base_url}/v2/video/list/"
+            headers = {"Authorization": f"Bearer {access_token}"}
+            
+            metric_to_field = {
+                "view_count": "view_count",
+                "like_count": "like_count",
+                "comment_count": "comment_count",
+                "share_count": "share_count"
+            }
+            requested_fields = ["id", "title", "create_time"]
+            for m in request.metrics:
+                if m in metric_to_field:
+                    requested_fields.append(metric_to_field[m])
+            
+            params = {"fields": ",".join(requested_fields)}
+            response = requests.get(url, headers=headers, params=params, timeout=30)
+            self._record_rate_limit(response.headers)
+            response.raise_for_status()
+            data = response.json()
+            
+            videos = data.get("data", {}).get("videos", [])
+            return [CampaignData(
+                campaign_name=v.get("title", f"Video_{v.get('id')}")[:50],
+                date=request.start_date.strftime("%Y-%m-%d"),
+                metrics={
+                    "view_count": v.get("view_count", 0),
+                    "like_count": v.get("like_count", 0),
+                    "comment_count": v.get("comment_count", 0),
+                    "share_count": v.get("share_count", 0)
+                }
+            ) for v in videos]
+
+    def get_schema(self) -> Dict[str, Any]:
+        return {
+            "metrics": ["view_count", "like_count", "comment_count", "share_count", "follower_count", "profile_views"],
+            "dimensions": ["video_id", "create_time"]
+        }
+
+    def ping(self) -> bool:
+        try:
+            creds = self.get_credentials()
+            base_url = "https://open-sandbox.tiktokapis.com" if settings.use_tiktok_sandbox else "https://open.tiktokapis.com"
+            url = f"{base_url}/v2/user/info/"
+            headers = {"Authorization": f"Bearer {creds['access_token']}"}
+            response = requests.get(url, headers=headers, timeout=10)
+            return response.status_code == 200
+        except Exception:
+            return False
+
+=== END FILES ===
+
+**IMPORTANT: Your response MUST include one of these lines near the beginning:**
+STATUS: PASSED
+STATUS: FAILED
+
+**If FAILED:** List each violation with:
+- File name
+- Line number (if applicable)
+- Rule violated
+- Description of the issue
+
+**If PASSED:** Confirm all files comply with the coding standards.
+
+**Begin with STATUS:**
