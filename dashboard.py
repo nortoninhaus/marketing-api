@@ -1448,9 +1448,22 @@ st.html("""
         }
     } catch (_) {}
 
-    const version = "polygon-gradient-v8";
+    const version = "polygon-gradient-v9";
     if (parentDoc.__inhausSidebarEnhancer === version) return;
     parentDoc.__inhausSidebarEnhancer = version;
+
+    // Reset Streamlit's internal collapsed state so it defaults to open
+    try {
+        const ls = parentWin.localStorage || window.localStorage;
+        if (ls) {
+            for (let i = 0; i < ls.length; i++) {
+                const k = ls.key(i);
+                if (k && k.startsWith("stSidebarCollapsed")) {
+                    ls.setItem(k, "false");
+                }
+            }
+        }
+    } catch (_) {}
 
     if (!parentWin.__inhausNavListener) {
         parentWin.__inhausNavListener = (event) => {
@@ -1460,6 +1473,35 @@ st.html("""
         };
         parentWin.addEventListener("message", parentWin.__inhausNavListener);
     }
+
+    const expandSidebar = () => {
+        try {
+            const openBtn = parentDoc.querySelector(
+                'button[data-testid="stSidebarCollapseButton"], button[aria-label="Open sidebar"], button[title="Open sidebar"], [data-testid="stSidebarCollapsedControl"] button, [data-testid="collapsedControl"] button'
+            );
+            if (openBtn) {
+                const label = (openBtn.getAttribute("aria-label") || openBtn.getAttribute("title") || "").toLowerCase();
+                if (!label.includes("close") && !label.includes("cerrar")) {
+                    openBtn.click();
+                }
+            }
+            const ls = parentWin.localStorage || window.localStorage;
+            if (ls) {
+                for (let i = 0; i < ls.length; i++) {
+                    const k = ls.key(i);
+                    if (k && k.startsWith("stSidebarCollapsed")) {
+                        ls.setItem(k, "false");
+                    }
+                }
+            }
+        } catch (_) {}
+    };
+    parentWin.__inhausExpandSidebar = expandSidebar;
+
+    // Automatically ensure sidebar is open on startup and after dialogs
+    setTimeout(expandSidebar, 150);
+    setTimeout(expandSidebar, 600);
+    setTimeout(expandSidebar, 1200);
 
     const collapseSidebar = () => {
         const collapseBtn = parentDoc.querySelector(
@@ -1532,6 +1574,7 @@ st.html("""
 
     parentDoc.addEventListener("click", startThemeTransition, true);
     parentDoc.addEventListener("pointerdown", (event) => {
+        if (parentWin.innerWidth > 768) return; // Keep sidebar open on desktop screens
         const sidebar = event.target.closest('[data-testid="stSidebar"]');
         const sidebarControl = event.target.closest('[data-testid="stSidebarCollapseButton"], button[aria-label="Open sidebar"], button[aria-label="Close sidebar"]');
         const portal = event.target.closest('[data-baseweb="popover"], [data-baseweb="menu"], [data-baseweb="select"], [role="listbox"], [role="dialog"], [data-testid="stModal"]');
@@ -1572,18 +1615,25 @@ def persist_onboarding_seen_to_client(username=None):
                 if (window.parent) {
                     window.parent.localStorage.setItem("inhaus_onboarding_seen", "true");
                     window.parent.document.cookie = "inhaus_onboarding_seen=true; path=/; max-age=31536000; SameSite=Lax";
+                    if (window.parent.__inhausExpandSidebar) {
+                        window.parent.__inhausExpandSidebar();
+                    }
                 }
             } catch(e) {}
             try {
                 if (window.top) {
                     window.top.localStorage.setItem("inhaus_onboarding_seen", "true");
                     window.top.document.cookie = "inhaus_onboarding_seen=true; path=/; max-age=31536000; SameSite=Lax";
+                    if (window.top.__inhausExpandSidebar) {
+                        window.top.__inhausExpandSidebar();
+                    }
                 }
             } catch(e) {}
             try { document.cookie = "inhaus_onboarding_seen=true; path=/; max-age=31536000; SameSite=Lax"; } catch(e) {}
         };
         setSeen();
         setTimeout(setSeen, 200);
+        setTimeout(setSeen, 600);
     })();
     </script>
     """, height=0, width=0)
@@ -1624,15 +1674,28 @@ def show_onboarding_dialog():
                 }
             } catch(e) {}
             try {
+                if (window.parent) {
+                    window.parent.localStorage.setItem("inhaus_onboarding_seen", "true");
+                    window.parent.document.cookie = "inhaus_onboarding_seen=true; path=/; max-age=31536000; SameSite=Lax";
+                    if (window.parent.__inhausExpandSidebar) {
+                        window.parent.__inhausExpandSidebar();
+                    }
+                }
+            } catch(e) {}
+            try {
                 if (window.top) {
                     window.top.localStorage.setItem("inhaus_onboarding_seen", "true");
                     window.top.document.cookie = "inhaus_onboarding_seen=true; path=/; max-age=31536000; SameSite=Lax";
+                    if (window.top.__inhausExpandSidebar) {
+                        window.top.__inhausExpandSidebar();
+                    }
                 }
             } catch(e) {}
             try { document.cookie = "inhaus_onboarding_seen=true; path=/; max-age=31536000; SameSite=Lax"; } catch(e) {}
         };
         setSeen();
         setTimeout(setSeen, 200);
+        setTimeout(setSeen, 600);
     })();
     </script>
     """, height=0, width=0)
@@ -1664,6 +1727,20 @@ def show_onboarding_dialog():
     """, unsafe_allow_html=True)
     if st.button("¡Entendido, comenzar a explorar!", type="primary", width="stretch"):
         persist_onboarding_seen_to_client(current_username)
+        components.html("""
+        <script>
+        try {
+            if (window.parent && window.parent.__inhausExpandSidebar) {
+                window.parent.__inhausExpandSidebar();
+            }
+        } catch(_) {}
+        try {
+            if (window.top && window.top.__inhausExpandSidebar) {
+                window.top.__inhausExpandSidebar();
+            }
+        } catch(_) {}
+        </script>
+        """, height=0, width=0)
         st.rerun()
 
 if not has_seen_onboarding_persisted(dashboard_user):
