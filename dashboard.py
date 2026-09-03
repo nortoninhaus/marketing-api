@@ -2007,20 +2007,22 @@ else:
     start_date, end_date = default_start, today
 
 # Benchmarking / Competitors Section
-with st.sidebar.expander("🔍 Competidores (Benchmarking)", expanded=False):
-    st.caption("Escribe los usernames de Instagram y nombres de página de Facebook para analizar competidores.")
-    st.text_area(
-        "Competidores Instagram (@usernames)",
-        value=st.session_state.get("benchmark_ig_input", "parmalatecuador, toniec, lalecheraec, vita_ecuador"),
-        help="Usernames de Instagram separados por coma o salto de línea",
-        key="benchmark_ig_input",
-    )
-    st.text_area(
-        "Competidores Facebook (Páginas/Usernames)",
-        value=st.session_state.get("benchmark_fb_input", "parmalatecuador, ToniLacteosEc, LaLecheraEcuador, VitaEcuador"),
-        help="Usernames o nombres de página de Facebook separados por coma o salto de línea",
-        key="benchmark_fb_input",
-    )
+can_benchmark = bool(dashboard_user.get("can_benchmark", False)) if dashboard_user else False
+if can_benchmark:
+    with st.sidebar.expander("🔍 Competidores (Benchmarking)", expanded=False):
+        st.caption("Escribe los usernames de Instagram y nombres de página de Facebook para analizar competidores.")
+        st.text_area(
+            "Competidores Instagram (@usernames)",
+            value=st.session_state.get("benchmark_ig_input", "parmalatecuador, toniec, lalecheraec, vita_ecuador"),
+            help="Usernames de Instagram separados por coma o salto de línea",
+            key="benchmark_ig_input",
+        )
+        st.text_area(
+            "Competidores Facebook (Páginas/Usernames)",
+            value=st.session_state.get("benchmark_fb_input", "parmalatecuador, ToniLacteosEc, LaLecheraEcuador, VitaEcuador"),
+            help="Usernames o nombres de página de Facebook separados por coma o salto de línea",
+            key="benchmark_fb_input",
+        )
 
 # Execute Button in Sidebar to prevent auto-loading until clicked
 execute_query = st.sidebar.button("🚀 Consultar API", width="stretch", help="Ejecuta la consulta en tiempo real contra las APIs oficiales de cada plataforma seleccionada.")
@@ -3659,7 +3661,7 @@ def render_meta_ads_platform_tab(
                 ig_comps = [u.strip().lstrip("@") for u in re.split(r"[,\n]+", ig_raw) if u.strip()]
                 fb_comps = [p.strip() for p in re.split(r"[,\n]+", fb_raw) if p.strip()]
                 effective_client_id = c_id or client_id or "client_1"
-                if ig_comps or fb_comps:
+                if can_benchmark and (ig_comps or fb_comps):
                     try:
                         bench_res = fetch_benchmarking_from_api(
                             effective_client_id, u_id, str(ctx.get("account_id", "")), ig_comps, fb_comps, key, show_errors=False
@@ -3693,14 +3695,6 @@ def render_meta_ads_platform_tab(
         if can_download:
             if st.button("", icon=":material/download:", key="btn_download_modal", help="Descargar reporte"):
                 _show_download_dialog()
-        else:
-            st.button(
-                "",
-                icon=":material/download:",
-                key="btn_download_modal",
-                help="Descargas deshabilitadas: tu usuario no tiene permisos de descarga asignados en Firestore. Contacta a dpineda@inhauscorp.com si requieres este acceso.",
-                disabled=True,
-            )
 
 
 query_key = (

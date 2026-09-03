@@ -23,6 +23,7 @@ def list_users():
         print(f"  Client ID: {data.get('client_id')}")
         print(f"  User ID: {data.get('user_id')}")
         print(f"  Descargas permitidas (can_download): {data.get('can_download', False)}")
+        print(f"  Ver competidores (can_benchmark): {data.get('can_benchmark', data.get('can_view_benchmarking', False))}")
         print(f"  Cuentas / Permisos: {json.dumps(data.get('accounts', {}), indent=4)}")
 
 
@@ -35,6 +36,17 @@ def update_user_download_permission(username: str, can_download: bool):
         sys.exit(1)
     doc_ref.update({"can_download": can_download})
     print(f"Permiso de descargas actualizado: {username} -> can_download = {can_download}")
+
+
+def update_user_benchmark_permission(username: str, can_benchmark: bool):
+    db = get_firestore_client()
+    doc_ref = db.collection(DASHBOARD_USERS_COLLECTION).document(username)
+    doc = doc_ref.get()
+    if not doc.exists:
+        print(f"Error: El usuario '{username}' no existe en Firestore.")
+        sys.exit(1)
+    doc_ref.update({"can_benchmark": can_benchmark})
+    print(f"Permiso de competidores/benchmarking actualizado: {username} -> can_benchmark = {can_benchmark}")
 
 
 def update_user_accounts(username: str, accounts: dict):
@@ -78,6 +90,7 @@ def main():
     parser.add_argument("--add-account", nargs=2, metavar=("PLATFORM", "ACCOUNT_ID"), help="Agregar cuenta a una plataforma")
     parser.add_argument("--set-all", action="store_true", help="Dar acceso total a todas las plataformas y cuentas (*)")
     parser.add_argument("--set-download", choices=["true", "false"], help="Habilitar o deshabilitar descargas (can_download)")
+    parser.add_argument("--set-benchmark", choices=["true", "false"], help="Habilitar o deshabilitar sección de competidores/benchmarking (can_benchmark)")
     
     args = parser.parse_args()
 
@@ -86,15 +99,20 @@ def main():
         return
 
     if args.user:
+        modified_something = False
         if args.set_download is not None:
             update_user_download_permission(args.user, args.set_download.lower() == "true")
+            modified_something = True
+        if args.set_benchmark is not None:
+            update_user_benchmark_permission(args.user, args.set_benchmark.lower() == "true")
+            modified_something = True
         if args.set_all:
             set_admin_all(args.user)
             return
         if args.add_account:
             add_platform_account(args.user, args.add_account[0], args.add_account[1])
             return
-        if args.set_download is not None:
+        if modified_something:
             return
 
     parser.print_help()
