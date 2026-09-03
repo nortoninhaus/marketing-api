@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="es">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reporte estratégico digital</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <div class="nav-wrapper">
+    <nav class="primary-nav" aria-label="Navegación principal">
+      <div class="nav-logo">
+        <span class="brand-text">INHAUS<br><small>ESTUDIO CREATIVO</small></span>
+      </div>
+      <button class="main-tab-btn active" type="button" data-main-tab="general">1. Resumen General</button>
+      <button class="main-tab-btn" type="button" data-main-tab="redes">2. Rendimiento por Red</button>
+      <button class="main-tab-btn" type="button" data-main-tab="optimizacion">3. KPI e Inversión</button>
+    </nav>
+    <nav class="secondary-nav" id="subnav-general" aria-label="Subnavegación Resumen General">
+      <button class="tab-btn active" type="button" data-target="summary-panel">Resumen del Mes</button>
+      <button class="tab-btn" type="button" data-target="competition-panel" hidden>Análisis de Competencia</button>
+    </nav>
+    <nav class="secondary-nav" id="subnav-redes" style="display: none;" aria-label="Subnavegación Rendimiento por Red">
+      <button class="tab-btn active" type="button" data-target="facebook-panel">Facebook</button>
+      <button class="tab-btn" type="button" data-target="instagram-panel">Instagram</button>
+      <button class="tab-btn" type="button" data-target="tiktok-panel" hidden>TikTok</button>
+    </nav>
+    <nav class="secondary-nav" id="subnav-optimizacion" style="display: none;"
+      aria-label="Subnavegación KPI e Inversión">
+      <button class="tab-btn active" type="button" data-target="investment-panel">KPI e Inversión</button>
+    </nav>
+  </div>
+  <header class="hero" id="hero-section">
+    <div class="eyebrow accent-text">Reporte estratégico de agencia</div>
+    <h1>Dashboard de pauta <span id="company-name"></span></h1>
+    <p class="hero-copy">Reporte consolidado y desglose por red basado únicamente en los datos disponibles para la
+      cuenta y el período seleccionados.</p>
+    <div class="meta-row"><span class="badge">Período <strong id="report-period"></strong></span><span
+        class="badge">Generado <strong id="generated-at"></strong></span></div>
+    <div class="chip-row" id="hero-platforms" aria-label="Plataformas incluidas"></div>
+  </header>
+  <main>
+    <section class="report-panel active" id="summary-panel" hidden>
+      <div class="panel-banner"><strong>Métricas consolidadas multicanal</strong><span>Vista global del rendimiento
+          publicitario disponible.</span></div>
+      <div class="section-head">
+        <div>
+          <div class="section-kicker accent-text">VISTA PREVIA GLOBAL</div>
+          <h2 class="section-title">Resultados Consolidados</h2>
+        </div>
+        <p class="section-desc" id="summary-section-desc">Métricas maestras sumando Facebook e Instagram (Datos
+          Oficiales Verificados).</p>
+      </div>
+      <div class="grid stats-grid" id="summary-kpis"></div>
+
+      <!-- DESGLOSE DE KPIS POR RED SOCIAL -->
+      <article class="card subsection" id="summary-platform-table" data-family="table" hidden>
+        <h3 class="card-title"
+          style="color:var(--dark); font-size:13px; font-weight:800; letter-spacing:0.05em; text-transform:uppercase; margin-bottom:16px;">
+          Desglose de KPIs por red social</h3>
+        <div class="table-wrap">
+          <table>
+            <caption>Desglose por red social</caption>
+            <thead>
+              <tr id="summary-platform-head">
+                <th style="text-align:left;">PLATAFORMA</th>
+                <th>INVERSIÓN (USD)</th>
+                <th>IMPRESIONES TOTALES</th>
+                <th>ALCANCE BRUTO</th>
+                <th>PORCENTAJE DE LA INVERSIÓN</th>
+              </tr>
+            </thead>
+            <tbody id="summary-platform-body"></tbody>
+            <tfoot id="summary-platform-foot"></tfoot>
+          </table>
+        </div>
+      </article>
+
+      <!-- EVOLUCIÓN DE IMPRESIONES & SHARE DE IMPRESIONES (Facebook e Instagram) -->
+      <div class="grid two-grid subsection" id="summary-charts-grid"
+        style="grid-template-columns: 1.55fr 1fr; gap: 20px;" hidden>
+        <article class="card chart-card" id="summary-evolution-card">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+            <h3 class="card-title"
+              style="color:var(--dark); margin:0; font-size:13px; font-weight:800; letter-spacing:0.05em; text-transform:uppercase;">
+              Evolución de Impresiones</h3>
+            <div id="summary-evolution-legend"
+              style="display:flex; gap:16px; font-size:12px; font-weight:700; color:var(--muted);"></div>
+          </div>
+          <div class="chart-frame" style="min-height:260px;">
+            <svg id="summary-evolution-chart" style="width:100%; height:260px; overflow:visible;" role="img"
+              aria-label="Evolución de Impresiones"></svg>
+          </div>
+        </article>
+        <article class="card chart-card" id="summary-share-card">
+          <h3 class="card-title"
+            style="color:var(--dark); margin:0 0 16px 0; font-size:13px; font-weight:800; letter-spacing:0.05em; text-transform:uppercase;">
+            Share de Impresiones por Red</h3>
+          <div class="chart-frame"
+            style="min-height:260px; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+            <svg id="summary-share-chart" width="190" height="190" viewBox="0 0 190 190" role="img"
+              aria-label="Share de Impresiones por Red"></svg>
+            <div id="summary-share-legend"
+              style="display:flex; flex-wrap:wrap; justify-content:center; gap:16px; margin-top:20px; font-size:12px; font-weight:700;">
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <!-- EVOLUCIÓN DE ALCANCE & SHARE DE ALCANCE (Facebook e Instagram) -->
+      <div class="grid two-grid subsection" id="summary-reach-grid"
+        style="grid-template-columns: 1.55fr 1fr; gap: 20px;" hidden>
+        <article class="card chart-card" id="summary-reach-evolution-card">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+            <h3 class="card-title"
+              style="color:var(--dark); margin:0; font-size:13px; font-weight:800; letter-spacing:0.05em; text-transform:uppercase;">
+              Evolución de Alcance</h3>
+            <div id="summary-reach-evolution-legend"
+              style="display:flex; gap:16px; font-size:12px; font-weight:700; color:var(--muted);"></div>
+          </div>
+          <div class="chart-frame" style="min-height:260px;">
+            <svg id="summary-reach-evolution-chart" style="width:100%; height:260px; overflow:visible;" role="img"
+              aria-label="Evolución de Alcance"></svg>
+          </div>
+        </article>
+        <article class="card chart-card" id="summary-reach-share-card">
+          <h3 class="card-title"
+            style="color:var(--dark); margin:0 0 16px 0; font-size:13px; font-weight:800; letter-spacing:0.05em; text-transform:uppercase;">
+            Share de Alcance por Red</h3>
+          <div class="chart-frame"
+            style="min-height:260px; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+            <svg id="summary-reach-share-chart" width="190" height="190" viewBox="0 0 190 190" role="img"
+              aria-label="Share de Alcance por Red"></svg>
+            <div id="summary-reach-share-legend"
+              style="display:flex; flex-wrap:wrap; justify-content:center; gap:16px; margin-top:20px; font-size:12px; font-weight:700;">
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <div id="summary-narratives"></div>
+    </section>
+    <section class="report-panel" id="competition-panel" hidden>
+      <div class="section-head">
+        <div>
+          <div class="section-kicker accent-text">Benchmarking digital</div>
+          <h2 class="section-title">Análisis de competencia</h2>
+        </div>
+        <p class="section-desc">Comparativa del ecosistema digital frente a marcas y competidores de la categoría.</p>
+      </div>
+
+      <!-- MATRIZ COMPETITIVA INSTAGRAM -->
+      <article class="card" id="competition-ig-card" data-family="table" style="margin-bottom:24px;" hidden>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+          <h3 class="card-title"
+            style="color:var(--dark); margin:0; font-size:13px; font-weight:800; text-transform:uppercase;">
+            <span style="color:#E1306C; margin-right:6px;">●</span> Matriz Competitiva (Instagram)
+          </h3>
+          <span style="font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase;">Ordenado por
+            Seguidores</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <caption>Matriz Competitiva Instagram</caption>
+            <thead>
+              <tr>
+                <th>Competidor</th>
+                <th>Seguidores</th>
+                <th>Posts</th>
+                <th>Reels</th>
+                <th>Media Likes</th>
+                <th>Media Comentarios</th>
+                <th>Engagement</th>
+              </tr>
+            </thead>
+            <tbody id="competition-ig-body"></tbody>
+          </table>
+        </div>
+      </article>
+
+      <!-- MATRIZ COMPETITIVA FACEBOOK -->
+      <article class="card" id="competition-fb-card" data-family="table" style="margin-bottom:24px;" hidden>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+          <h3 class="card-title"
+            style="color:var(--dark); margin:0; font-size:13px; font-weight:800; text-transform:uppercase;">
+            <span style="color:#1877F2; margin-right:6px;">●</span> Matriz Competitiva (Facebook)
+          </h3>
+          <span style="font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase;">Ordenado por
+            Seguidores</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <caption>Matriz Competitiva Facebook</caption>
+            <thead>
+              <tr>
+                <th>Competidor</th>
+                <th>Seguidores</th>
+                <th>Me gusta</th>
+                <th>Hablando de esto</th>
+                <th>Anuncios Activos</th>
+              </tr>
+            </thead>
+            <tbody id="competition-fb-body"></tbody>
+          </table>
+        </div>
+      </article>
+
+      <!-- TABLA GENÉRICA (Fallback) -->
+      <article class="card" id="competition-generic-card" data-family="table" hidden>
+        <h3 class="card-title">Matriz competitiva</h3>
+        <div class="table-wrap">
+          <table>
+            <caption>Matriz competitiva</caption>
+            <thead>
+              <tr id="competition-head"></tr>
+            </thead>
+            <tbody id="competition-body"></tbody>
+          </table>
+        </div>
+      </article>
+    </section>
+    <section class="report-panel" id="facebook-panel" hidden>
+      <div class="panel-banner facebook">
+        <div class="platform-banner-content">
+          <strong>Facebook Performance Center</strong>
+          <span>Análisis de engagement, demografía de la fanpage y rendimiento del pilar visual en la plataforma de
+            mayor interacción digital.</span>
+        </div>
+      </div>
+      <div class="section-head">
+        <div>
+          <div class="section-kicker accent-text">Data Oficial Facebook Ads</div>
+          <h2 class="section-title">Rendimiento Facebook</h2>
+        </div>
+        <p class="section-desc">Métricas aisladas de la fanpage de Facebook y sus ubicaciones publicitarias (Datos
+          Verificados).</p>
+      </div>
+      <div class="grid stats-grid" id="facebook-kpis"></div>
+      <p class="narrative" id="facebook-shared-meta" hidden></p>
+
+      <!-- DEMOGRAFÍA Y GEOGRAFÍA FACEBOOK -->
+      <article class="card subsection" id="facebook-demographics" data-family="demographics" hidden>
+        <h3 class="card-title"
+          style="color:var(--dark); font-size:13px; font-weight:800; letter-spacing:0.05em; text-transform:uppercase; margin-bottom:16px;">
+          Demografía y geografía Facebook</h3>
+        <div class="grid breakdown-grid" id="facebook-breakdowns"></div>
+      </article>
+
+      <!-- RANKING DE CONTENIDO FACEBOOK (POSTS DESTACADOS) -->
+      <div id="facebook-posts-content" data-family="content" hidden>
+        <!-- RANKING DE POST POR CLIENTES POTENCIALES (TOP 3) -->
+        <article class="card subsection" id="facebook-top-lead-card"
+          style="margin-top: 24px; border-top: 3px solid #1877F2;" hidden>
+          <div class="card-title"
+            style="color: var(--dark); font-size: 13px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 16px;">
+            Ranking de post por Clientes potenciales</div>
+          <div class="post-grid" id="facebook-top-lead-grid"></div>
+        </article>
+
+        <!-- RANKING DE POST POR ALCANCE (TOP 3) -->
+        <article class="card subsection" id="facebook-top-reach-card"
+          style="margin-top: 24px; border-top: 3px solid #1877F2;">
+          <div class="card-title"
+            style="color: var(--dark); font-size: 13px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 16px;">
+            Ranking de post por Alcance</div>
+          <div class="post-grid" id="facebook-top-reach-grid"></div>
+        </article>
+
+        <!-- POST CON MAYOR INTERACCIÓN (TOP 3) -->
+        <article class="card subsection" id="facebook-top-engagement-card"
+          style="margin-top: 24px; border-top: 3px solid #1877F2;">
+          <div class="card-title"
+            style="color: var(--dark); font-size: 13px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 16px;">
+            Post con mayor interacción</div>
+          <div class="post-grid" id="facebook-top-engagement-grid"></div>
+        </article>
+
+        <!-- PUBLICACIONES CON MENOR RENDIMIENTO (FACEBOOK) -->
+        <article class="card subsection" id="facebook-lowest-card"
+          style="margin-top: 24px; border-top: 3px solid #64748B;">
+          <div class="card-title"
+            style="color: #64748B; font-size: 13px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 16px;">
+            Publicaciones con Menor Rendimiento (Facebook)</div>
+          <div style="display: flex; justify-content: center; gap: 24px; margin-top: 20px; flex-wrap: wrap;"
+            id="facebook-lowest-grid"></div>
+        </article>
+      </div>
+
+      <!-- RANKING GENÉRICO DE CONTENIDO (FALLBACK) -->
+      <article class="card subsection" id="facebook-content" data-family="content" hidden>
+        <h3 class="card-title">Ranking de contenido Facebook</h3>
+        <div class="table-wrap" data-family="table">
+          <table>
+            <caption>Contenido Facebook</caption>
+            <thead>
+              <tr id="facebook-content-head"></tr>
+            </thead>
+            <tbody id="facebook-content-body"></tbody>
+          </table>
+        </div>
+      </article>
+
+      <div id="facebook-narratives"></div>
+    </section>
+    <section class="report-panel" id="instagram-panel" hidden>
+      <div class="panel-banner instagram"><strong>Instagram &amp; Reels Performance</strong><span>Rendimiento, contenido
+          y audiencia disponibles para Instagram.</span></div>
+      <div class="section-head">
+        <div>
+          <div class="section-kicker accent-text">Instagram</div>
+          <h2 class="section-title">Rendimiento Instagram</h2>
+        </div>
+        <p class="section-desc">Métricas aisladas de esta red.</p>
+      </div>
+      <div class="grid stats-grid" id="instagram-kpis"></div>
+      <p class="narrative" id="instagram-shared-meta" hidden></p>
+      <div id="instagram-posts-content" data-family="content" hidden>
+        <article class="card subsection" id="instagram-top-lead-card"
+          style="margin-top: 24px; border-top: 3px solid #E1306C;" hidden>
+          <div class="card-title"
+            style="color: var(--dark); font-size: 13px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 16px;">
+            Ranking de post por Clientes potenciales</div>
+          <div class="post-grid" id="instagram-top-lead-grid"></div>
+        </article>
+        <article class="card subsection" id="instagram-top-reach-card"
+          style="margin-top: 24px; border-top: 3px solid #E1306C;">
+          <div class="card-title"
+            style="color: var(--dark); font-size: 13px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 16px;">
+            Ranking de post por Alcance</div>
+          <div class="post-grid" id="instagram-top-reach-grid"></div>
+        </article>
+        <article class="card subsection" id="instagram-top-engagement-card"
+          style="margin-top: 24px; border-top: 3px solid #E1306C;">
+          <div class="card-title"
+            style="color: var(--dark); font-size: 13px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 16px;">
+            Post con mayor interacción</div>
+          <div class="post-grid" id="instagram-top-engagement-grid"></div>
+        </article>
+        <article class="card subsection" id="instagram-lowest-card"
+          style="margin-top: 24px; border-top: 3px solid #64748B;">
+          <div class="card-title"
+            style="color: #64748B; font-size: 13px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 16px;">
+            Publicaciones con Menor Rendimiento (Instagram)</div>
+          <div style="display: flex; justify-content: center; gap: 24px; margin-top: 20px; flex-wrap: wrap;"
+            id="instagram-lowest-grid"></div>
+        </article>
+      </div>
+      <article class="card chart-card subsection" id="instagram-trend" data-family="trend-chart" hidden>
+        <h3 class="card-title">Evolución diaria Instagram</h3>
+        <div class="chart-frame"><svg id="instagram-chart" role="img" aria-label="Evolución diaria Instagram"></svg>
+        </div>
+        <div class="table-wrap" data-family="trend-table">
+          <table>
+            <caption>Serie diaria Instagram</caption>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th id="instagram-trend-label">Valor</th>
+              </tr>
+            </thead>
+            <tbody id="instagram-trend-body"></tbody>
+          </table>
+        </div>
+      </article>
+      <article class="card subsection" id="instagram-content" data-family="content" hidden>
+        <h3 class="card-title">Ranking de contenido Instagram</h3>
+        <div class="table-wrap" data-family="table">
+          <table>
+            <caption>Contenido Instagram</caption>
+            <thead>
+              <tr id="instagram-content-head"></tr>
+            </thead>
+            <tbody id="instagram-content-body"></tbody>
+          </table>
+        </div>
+      </article>
+      <article class="card subsection" id="instagram-demographics" data-family="demographics" hidden>
+        <h3 class="card-title">Demografía y geografía Instagram</h3>
+        <div class="grid breakdown-grid" id="instagram-breakdowns"></div>
+      </article>
+      <div id="instagram-narratives"></div>
+    </section>
+    <section class="report-panel" id="tiktok-panel" hidden>
+      <div class="panel-banner tiktok"><strong>TikTok Creative Center</strong><span>Rendimiento, contenido y audiencia
+          disponibles para TikTok.</span></div>
+      <div class="section-head">
+        <div>
+          <div class="section-kicker accent-text">TikTok</div>
+          <h2 class="section-title">Rendimiento TikTok</h2>
+        </div>
+        <p class="section-desc">Métricas aisladas de esta red.</p>
+      </div>
+      <div class="grid stats-grid" id="tiktok-kpis"></div>
+      <article class="card chart-card subsection" id="tiktok-trend" data-family="trend-chart" hidden>
+        <h3 class="card-title">Evolución diaria TikTok</h3>
+        <div class="chart-frame"><svg id="tiktok-chart" role="img" aria-label="Evolución diaria TikTok"></svg></div>
+        <div class="table-wrap" data-family="trend-table">
+          <table>
+            <caption>Serie diaria TikTok</caption>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th id="tiktok-trend-label">Valor</th>
+              </tr>
+            </thead>
+            <tbody id="tiktok-trend-body"></tbody>
+          </table>
+        </div>
+      </article>
+      <article class="card subsection" id="tiktok-content" data-family="content" hidden>
+        <h3 class="card-title">Ranking de contenido TikTok</h3>
+        <div class="table-wrap" data-family="table">
+          <table>
+            <caption>Contenido TikTok</caption>
+            <thead>
+              <tr id="tiktok-content-head"></tr>
+            </thead>
+            <tbody id="tiktok-content-body"></tbody>
+          </table>
+        </div>
+      </article>
+      <article class="card subsection" id="tiktok-demographics" data-family="demographics" hidden>
+        <h3 class="card-title">Demografía y geografía TikTok</h3>
+        <div class="grid breakdown-grid" id="tiktok-breakdowns"></div>
+      </article>
+      <div id="tiktok-narratives"></div>
+    </section>
+    <section class="report-panel" id="investment-panel" hidden>
+      <div class="section-head">
+        <div>
+          <div class="section-kicker accent-text">KPI e inversión</div>
+          <h2 class="section-title">Inversión y optimización</h2>
+        </div>
+        <p class="section-desc">Distribución observada y señales calculadas; no incluye presupuestos, comisiones ni
+          metas no provistas.</p>
+      </div>
+      <div class="grid two-grid">
+        <article class="card" id="investment-table" data-family="table" hidden>
+          <h3 class="card-title">Resumen de inversión por plataforma</h3>
+          <div class="table-wrap">
+            <table>
+              <caption>Inversión por plataforma</caption>
+              <thead>
+                <tr>
+                  <th>Plataforma</th>
+                  <th>Inversión</th>
+                  <th>Distribución</th>
+                </tr>
+              </thead>
+              <tbody id="investment-body"></tbody>
+            </table>
+          </div>
+        </article>
+        <article class="card" id="optimization-card" data-family="optimization" hidden>
+          <h3 class="card-title">Indicadores de optimización</h3>
+          <div class="breakdown-list" id="optimization-list"></div>
+        </article>
+      </div>
+    </section>
+  </main>
+  <footer><span id="footer-company"></span> · <span id="footer-period"></span></footer>
+  <!-- REPORT_DATA -->
+  <script src="script.js"></script>
+</body>
+
+</html>

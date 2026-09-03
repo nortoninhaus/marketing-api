@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reporte ejecutivo de marketing</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav class="topbar" aria-label="Secciones del reporte">
+    <span class="brand">Reporte ejecutivo</span>
+    <button class="nav-button" data-target="season-report" hidden>Campaña regional</button>
+    <button class="nav-button" data-target="summer-report" hidden>Rendimiento consolidado</button>
+    <button class="nav-button" data-target="ao2-report" hidden>Tráfico multicanal</button>
+    <button class="nav-button" data-target="insights-report" hidden>Hallazgos</button>
+  </nav>
+  <header class="hero" id="cover-section">
+    <div class="hero-main"><div class="eyebrow">Reporte de pauta y tráfico</div><h1>Resultados digitales <span id="company-name"></span></h1><p class="hero-copy">Una lectura por campaña, mercado y fuente construida únicamente con la información disponible para la cuenta seleccionada.</p></div>
+    <div class="hero-card"><div class="hero-label">Período analizado</div><div class="hero-period" id="report-period"></div><div class="chip-row" id="platform-chips" aria-label="Fuentes incluidas"></div></div>
+  </header>
+  <main>
+    <section class="report-section" id="season-report" hidden>
+      <div class="section-band"><strong id="season-company"></strong><span id="season-period"></span></div>
+      <div class="section-head"><div><div class="section-kicker accent-text">Campaña regional</div><h2 class="section-title">Resultados por ciudad y campaña</h2></div><p class="section-desc">Embudo medible, distribución geográfica y detalle de campañas con datos actuales.</p></div>
+      <div class="stack">
+        <article class="card" id="season-funnel-card" hidden><h3 class="card-title">Embudo de resultados</h3><div class="funnel" id="season-funnel"></div></article>
+        <div class="two-grid grid">
+          <article class="card" id="season-city-card" hidden><h3 class="card-title">Desglose por ciudad</h3><div class="table-wrap"><table><thead><tr><th>Ciudad</th><th>Resultado disponible</th></tr></thead><tbody id="season-city-body"></tbody></table></div></article>
+          <article class="card" id="season-campaign-card" hidden><h3 class="card-title">Segmentación por campaña</h3><div class="table-wrap"><table><thead><tr><th>Campaña</th><th>Resultado disponible</th></tr></thead><tbody id="season-campaign-body"></tbody></table></div></article>
+        </div>
+      </div>
+    </section>
+    <section class="report-section" id="summer-report" hidden>
+      <div class="section-head"><div><div class="section-kicker accent-text">Rendimiento consolidado</div><h2 class="section-title">Campaña y evolución diaria</h2></div><p class="section-desc">Totales del período, tendencia diaria y campañas ordenadas por el primer resultado medible.</p></div>
+      <div class="stack">
+        <div class="grid stats-grid" id="summer-kpis"></div>
+        <article class="card" id="summer-trend-card" hidden><h3 class="card-title">Tendencia diaria de impresiones</h3><div class="chart" id="summer-chart" data-family="daily-chart" role="img" aria-label="Tendencia diaria de impresiones"></div><div class="table-wrap"><table><caption>Detalle diario por fuente</caption><thead><tr><th>Fecha</th><th>Fuente</th><th>Impresiones</th></tr></thead><tbody id="summer-daily-body"></tbody></table></div></article>
+        <article class="card" id="summer-campaign-card" hidden><h3 class="card-title">Rendimiento de campañas</h3><div class="table-wrap"><table><thead><tr id="summer-campaign-head"></tr></thead><tbody id="summer-campaign-body"></tbody></table></div></article>
+      </div>
+    </section>
+    <section class="report-section" id="ao2-report" hidden>
+      <div class="section-head"><div><div class="section-kicker accent-text">Tráfico multicanal</div><h2 class="section-title">Pauta, producto y analítica</h2></div><p class="section-desc">Fuentes de tráfico, campañas de descubrimiento, productos medidos y segmentación por país.</p></div>
+      <div class="stack">
+        <div class="grid channel-grid" id="ao2-channels"></div>
+        <article class="card" id="traffic-chart-card" hidden><h3 class="card-title">Distribución de tráfico medible</h3><div class="traffic-chart" id="traffic-chart" data-family="traffic-chart"></div></article>
+        <article class="card" id="pinterest-card" hidden><h3 class="card-title">Resultados de descubrimiento visual</h3><div class="table-wrap"><table><thead><tr id="pinterest-head"></tr></thead><tbody id="pinterest-body"></tbody></table></div></article>
+        <article class="card" id="product-card" hidden><h3 class="card-title">Rendimiento por producto</h3><div class="table-wrap"><table><thead><tr><th>Producto</th><th>Sesiones</th><th>Usuarios</th><th>Páginas vistas</th></tr></thead><tbody id="product-body"></tbody></table></div></article>
+        <div class="two-grid grid">
+          <article class="card" id="traffic-card" hidden><h3 class="card-title">Resumen por fuente</h3><div class="table-wrap"><table><thead><tr><th>Fuente</th><th>Sesiones o clics</th><th>Inversión</th></tr></thead><tbody id="traffic-body"></tbody></table></div></article>
+          <article class="card" id="country-card" hidden><h3 class="card-title">Segmentación por país</h3><div class="table-wrap"><table><thead><tr><th>País</th><th>Resultado disponible</th></tr></thead><tbody id="country-body"></tbody></table></div></article>
+        </div>
+      </div>
+    </section>
+    <section class="report-section" id="insights-report" hidden><div class="section-head"><div><div class="section-kicker accent-text">Insights del período</div><h2 class="section-title">Hallazgos respaldados por datos</h2></div><p class="section-desc">Narrativas generadas para la cuenta y el período seleccionados, sin recomendaciones inventadas.</p></div><div class="narrative-list" id="insights-list"></div></section>
+  </main>
+  <footer><span id="footer-company"></span> · <span id="footer-period"></span></footer>
+  <!-- REPORT_DATA -->
+  <script src="script.js"></script>
+</body>
+</html>

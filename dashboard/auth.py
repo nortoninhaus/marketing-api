@@ -84,6 +84,7 @@ def authenticate_dashboard_user(username, password):
         "client_id": data.get("client_id"),
         "user_id": data.get("user_id") or data.get("api_user_id") or username,
         "accounts": normalize_dashboard_accounts(data.get("accounts", {})),
+        "can_download": bool(data.get("can_download", False)),
     }
 
 
@@ -196,6 +197,14 @@ def require_dashboard_login(theme_icon, on_theme_change):
     token = session_token or query_token
     user = decode_dashboard_token(token) if token else None
     if user:
+        if "can_download" not in user:
+            try:
+                doc = get_firestore_client().collection(DASHBOARD_USERS_COLLECTION).document(user.get("username", "")).get()
+                user["can_download"] = bool(doc.to_dict().get("can_download", False)) if doc.exists else False
+                token = create_dashboard_token(user)
+                dashboard_auth_cookie_bridge(token)
+            except Exception:
+                user["can_download"] = False
         st.session_state["dashboard_auth_token"] = token
         st.session_state["dashboard_user"] = user
         if query_token:

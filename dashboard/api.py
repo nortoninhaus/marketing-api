@@ -79,7 +79,12 @@ def fetch_schema_from_api(platform_key, api_key):
             # Ensure core metrics are available in schema
             extra_known_metrics = {
                 "meta_ads": ["followers", "follows", "video_views", "views", "video_play_actions"],
-                "tiktok_ads": ["video_views", "video_play_actions", "followers", "follows"],
+                "tiktok_ads": [
+                    "follows", "profile_visits", "likes", "comments", "shares",
+                    "video_play_actions", "video_watched_2s", "video_watched_6s",
+                    "video_views_p25", "video_views_p50", "video_views_p75", "video_views_p100",
+                    "average_video_play", "average_video_play_per_user"
+                ],
                 "google_ads": ["video_views"],
             }
             existing_names = {m["name"] for m in norm_metrics}
@@ -124,7 +129,12 @@ def fetch_campaign_data_from_api(platform_key, client_id, user_id, account_id, s
     try:
         res = requests.post(url, headers=headers, json=payload, timeout=timeout)
         if res.status_code == 200:
-            return res.json().get("data", [])
+            body = res.json()
+            if body.get("errors") and show_errors and not body.get("data"):
+                error_msgs = [e.get("message", "") for e in body.get("errors", []) if isinstance(e, dict)]
+                if error_msgs:
+                    st.error(f"Error de API: {' | '.join(error_msgs)}")
+            return body.get("data", [])
         else:
             if show_errors:
                 st.error(f"Error de API ({res.status_code}): {res.text}")
@@ -231,7 +241,7 @@ def fetch_meta_aggregate_insights(
     api_key,
 ):
     account_edge = account_id if str(account_id).startswith("act_") else f"act_{account_id}"
-    fields = ["impressions", "reach", "results", "cost_per_result"]
+    fields = ["impressions", "reach", "clicks", "spend", "results", "cost_per_result"]
     if level in ("campaign", "adset", "ad"):
         fields += ["campaign_id", "campaign_name"]
     if level in ("adset", "ad"):
@@ -239,12 +249,14 @@ def fetch_meta_aggregate_insights(
     if level == "ad":
         fields += ["ad_id", "ad_name", "actions"]
 
+    s_iso = start_date.isoformat() if hasattr(start_date, "isoformat") else str(start_date)
+    e_iso = end_date.isoformat() if hasattr(end_date, "isoformat") else str(end_date)
     params = {
         "fields": ",".join(fields),
         "level": level,
         "time_range": json.dumps({
-            "since": start_date.isoformat(),
-            "until": end_date.isoformat(),
+            "since": s_iso[:10] if len(s_iso) >= 10 else s_iso,
+            "until": e_iso[:10] if len(e_iso) >= 10 else e_iso,
         }),
         "limit": 500,
     }
@@ -293,6 +305,8 @@ def fetch_meta_aggregate_insights(
                     "ad_name": insight.get("ad_name") or "",
                     "impressions": extract_metric(insight, ["impressions"]),
                     "reach": extract_metric(insight, ["reach"]),
+                    "spend": extract_metric(insight, ["spend"]),
+                    "clicks": extract_metric(insight, ["clicks"]),
                     "result_indicator": result_indicator,
                     "results": result_value,
                     "cost_per_result": result_cost,
@@ -341,7 +355,7 @@ def fetch_meta_ad_previews(client_id, account_id, preview_targets, api_key):
                     {
                         "fields": (
                             "id,name,campaign{id,name},"
-                            "creative{effective_object_story_id,object_story_spec}"
+                            "creative{effective_object_story_id,object_story_spec,image_url,thumbnail_url,link_url,instagram_permalink_url}"
                         )
                     },
                 )
@@ -368,31 +382,84 @@ def fetch_meta_ad_previews(client_id, account_id, preview_targets, api_key):
                 post_text = " ".join(filter(None, (
                     story.get("message"),
                     (story.get("link_data") or {}).get("message"),
+                    (story.get("link_data") or {}).get("name"),
                     (story.get("video_data") or {}).get("message"),
-                )))
+                    (story.get("video_data") or {}).get("title"),
+                    (story.get("photo_data") or {}).get("caption"),
+                    (story.get("template_data") or {}).get("message"),
+                ))).strip()
+                instagram_url = creative.get("instagram_permalink_url") or ""
+                facebook_url = ""
+
+                image_url = (
+                    creative.get("image_url")
+                    or creative.get("thumbnail_url")
+                    or (story.get("link_data") or {}).get("picture")
+                    or (story.get("link_data") or {}).get("image_url")
+                    or (story.get("video_data") or {}).get("image_url")
+                    or (story.get("photo_data") or {}).get("url")
+                    or ""
+                )
                 post_id = creative.get("effective_object_story_id")
+                post_created_time = ""
+                if post_id and "_" in str(post_id):
+                    p_parts = str(post_id).split("_", 1)
+                    facebook_url = f"https://www.facebook.com/{p_parts[0]}/posts/{p_parts[1]}"
+
                 if post_id:
                     post_response = _meta_proxy_get(
                         client_id,
                         account_id,
                         api_key,
                         post_id,
-                        {"fields": "message,story,caption,created_time"},
+                        {"fields": "message,story,caption,created_time,permalink_url,full_picture,picture,attachments{title,description,media,url}"},
                         timeout=20,
                     )
                     if post_response.status_code == 200:
                         post = post_response.json()
-                        post_text = " ".join(filter(None, (
-                            post_text,
+                        post_created_time = post.get("created_time") or ""
+                        attachments = (post.get("attachments") or {}).get("data") or []
+                        published_parts = [
                             post.get("message"),
                             post.get("story"),
                             post.get("caption"),
-                        )))
+                            *(attachment.get(key) for attachment in attachments for key in ("title", "description")),
+                        ]
+                        published_parts = [str(value).strip() for value in published_parts if str(value or "").strip()]
+                        post_text = " ".join(dict.fromkeys(published_parts)) or post_text
+                        if post.get("permalink_url"):
+                            permalink = post["permalink_url"]
+                            if "instagram.com" in permalink.lower():
+                                instagram_url = permalink
+                            elif "facebook.com" in permalink.lower():
+                                facebook_url = permalink
+                        attachment_image = next((
+                            ((attachment.get("media") or {}).get("image") or {}).get("src")
+                            for attachment in attachments
+                            if ((attachment.get("media") or {}).get("image") or {}).get("src")
+                        ), "")
+                        if post.get("full_picture") or attachment_image:
+                            image_url = post.get("full_picture") or attachment_image
+                        elif post.get("picture") and not image_url:
+                            image_url = post["picture"]
 
+                post_url = instagram_url or facebook_url
+                post_url_lower = post_url.lower()
+                post_platform = (
+                    "instagram" if "instagram.com" in post_url_lower
+                    else "facebook" if "facebook.com" in post_url_lower or post_id
+                    else ""
+                )
                 hydrated_ads[ad_id] = {
                     "ad_name": ad.get("name") or fallback_ad_name or "",
                     "body": body,
                     "post_message": post_text,
+                    "url": post_url,
+                    "facebook_url": facebook_url,
+                    "instagram_url": instagram_url,
+                    "image_url": image_url,
+                    "post_created_time": post_created_time,
+                    "post_platform": post_platform,
                 }
 
             hydrated = hydrated_ads[ad_id]
@@ -484,6 +551,11 @@ def process_api_response(api_data, platform_key, client_id, user_id):
         metrics = item.get("metrics", {})
 
         spend = extract_metric(metrics, ["spend", "social_spend", "cost"])
+        if not spend and "cost_micros" in metrics:
+            try:
+                spend = float(metrics["cost_micros"]) / 1_000_000.0
+            except (ValueError, TypeError):
+                spend = 0.0
         impressions = extract_metric(metrics, ["impressions", "views", "reach"])
         clicks = extract_metric(metrics, ["clicks", "unique_clicks"])
         conversions = extract_metric(metrics, ["conversions", "actions", "purchase", "lead", "add_to_cart"])
@@ -508,8 +580,11 @@ def process_api_response(api_data, platform_key, client_id, user_id):
         engagement = extract_metric(metrics, ["engagement", "total_interactions", "accounts_engaged"])
         if not engagement:
             engagement = likes + comments + extract_metric(metrics, ["shares", "saved"])
-        followers = extract_metric(metrics, ["followers"])
+        followers = extract_metric(metrics, ["followers", "follows"])
         reach = extract_metric(metrics, ["reach", "impressions", "views"])
+        video_views = extract_metric(metrics, ["video_views", "views", "video_play_actions"])
+        profile_visits = extract_metric(metrics, ["profile_visits"])
+        shares = extract_metric(metrics, ["shares"])
 
         # Include dynamic fields from dimensions if present
         row = {
@@ -540,7 +615,27 @@ def process_api_response(api_data, platform_key, client_id, user_id):
             "reach": int(reach),
             "likes": int(likes),
             "comments": int(comments),
+            "shares": int(shares),
+            "video_views": int(video_views),
+            "profile_visits": int(profile_visits),
         }
+        KNOWN_METRIC_ALIASES = {
+            "social_spend", "cost", "cost_micros",
+            "unique_clicks",
+            "actions", "add_to_cart", "purchase", "lead",
+            "fan_count", "follower_count", "follows", "page_fans", "page_follows",
+            "views", "page_media_view", "plays", "video_play_actions", "video_watched_2s", "video_watched_6s", "view_count",
+            "total_interactions", "accounts_engaged", "saved",
+            "like_count", "comment_count",
+        }
+        for m_key, m_val in metrics.items():
+            if m_key not in row and m_key not in KNOWN_METRIC_ALIASES:
+                try:
+                    s = str(m_val).strip()
+                    row[m_key] = float(s) if "." in s else int(s)
+                except (ValueError, TypeError):
+                    row[m_key] = m_val
+
         # Add dimensions to the row dict dynamically
         protected_source_fields = {"source_platform", "source_metrics"}
         for key, val in item.get("dimensions", {}).items():

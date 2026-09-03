@@ -17,10 +17,13 @@ def main():
     if not password:
         raise SystemExit("El password no puede estar vacío.")
 
+    can_dl = input("Permitir descargas de reportes (s/N): ").strip().lower() in ("s", "si", "y", "yes", "true")
+
     user = {
         "active": True,
         "client_id": "client_1",
         "user_id": "user_1",
+        "can_download": can_dl,
         "password_hash": hash_dashboard_password(password),
         "accounts": {
             "meta_ads": ["act_1314422010193648"],
