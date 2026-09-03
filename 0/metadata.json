@@ -1,0 +1,103 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "01M1KV9GE4V94M1J9EBNMJ3XRF",
+  "session_id": "ses_f984bc952ffe3SrDZQjr8Wb4y9",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-03T14:38:15.292899Z",
+  "branch": "feat/add-templates",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    ".gitignore",
+    "create_dashboard_user.py",
+    "dashboard.py",
+    "dashboard/api.py",
+    "dashboard/auth.py",
+    "dashboard/config.py",
+    "dashboard/report_templates/adriana_hoyos/template.html",
+    "dashboard/report_templates/artz/script.js",
+    "dashboard/report_templates/artz/template.html",
+    "dashboard/report_templates/nutri/script.js",
+    "dashboard/report_templates/nutri/style.css",
+    "dashboard/report_templates/nutri/template.html",
+    "dashboard/report_templates/shamuna/script.js",
+    "dashboard/report_templates/shamuna/template.html",
+    "dashboard/reporting.py",
+    "dashboard/utils.py",
+    "manage_dashboard_users.py",
+    "tests/test_dashboard_exports.py",
+    "tests/test_dashboard_reporting.py",
+    "tests/test_dashboard_ui.py"
+  ],
+  "agent": "OpenCode",
+  "model": "gemini-3.6-flash",
+  "turn_id": "7814906167c2",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 148356,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 136,
+    "api_call_count": 1
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-03T14:38:15.03737Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 2154,
+    "total_committed": 0,
+    "total_lines_changed": 2154,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 5500,
+      "user_lines_removed": 2154,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".gitignore": 5,
+        "create_dashboard_user.py": 3,
+        "dashboard.py": 1791,
+        "dashboard/api.py": 107,
+        "dashboard/auth.py": 9,
+        "dashboard/config.py": 42,
+        "dashboard/report_templates/adriana_hoyos/template.html": 60,
+        "dashboard/report_templates/artz/script.js": 2,
+        "dashboard/report_templates/artz/template.html": 25,
+        "dashboard/report_templates/nutri/script.js": 1351,
+        "dashboard/report_templates/nutri/style.css": 663,
+        "dashboard/report_templates/nutri/template.html": 468,
+        "dashboard/report_templates/shamuna/script.js": 2,
+        "dashboard/report_templates/shamuna/template.html": 201,
+        "dashboard/reporting.py": 7,
+        "dashboard/utils.py": 43,
+        "manage_dashboard_users.py": 104,
+        "tests/test_dashboard_exports.py": 8,
+        "tests/test_dashboard_reporting.py": 363,
+        "tests/test_dashboard_ui.py": 246
+      },
+      "user_removed_per_file": {
+        ".gitignore": 1,
+        "dashboard.py": 1075,
+        "dashboard/api.py": 12,
+        "dashboard/report_templates/artz/script.js": 2,
+        "dashboard/report_templates/nutri/script.js": 508,
+        "dashboard/report_templates/nutri/style.css": 526,
+        "dashboard/report_templates/shamuna/script.js": 2,
+        "dashboard/reporting.py": 1,
+        "dashboard/utils.py": 2,
+        "tests/test_dashboard_exports.py": 2,
+        "tests/test_dashboard_reporting.py": 4,
+        "tests/test_dashboard_ui.py": 19
+      }
+    }
+  ]
+}
