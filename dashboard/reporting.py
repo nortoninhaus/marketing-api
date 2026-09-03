@@ -541,6 +541,7 @@ def build_report_payload(
     }
     narratives = _narratives(company_name, summary, period)
     breakdowns = _json_value((optional or {}).get("breakdowns", {}))
+    content_rows = _json_value((optional or {}).get("content_rows", []))
 
     return {
         "meta": {
@@ -552,7 +553,12 @@ def build_report_payload(
             "previous_period": _period(query_context, "previous_"),
             "generated_at": datetime.now(timezone.utc).isoformat(),
         },
-        "rows": {"current": current_rows, "prior": previous_rows, "supplemental": supplemental_rows},
+        "rows": {
+            "current": current_rows,
+            "prior": previous_rows,
+            "supplemental": supplemental_rows,
+            "content": content_rows if isinstance(content_rows, list) else [],
+        },
         "summary": summary,
         "summary_previous": summary_previous,
         "rates": _rates(summary),

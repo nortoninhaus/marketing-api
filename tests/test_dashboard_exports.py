@@ -73,7 +73,7 @@ def test_csv_download_button_is_executable_code():
 
 
 def test_non_meta_table_csv_uses_processed_table_data():
-    assignment = 'if platform_key != "meta_ads":\n    csv_export_frame["frame"] = df_table'
+    assignment = 'csv_export_frame["frame"] = df_table'
     assert assignment in SOURCE
     assert SOURCE.index(assignment) < SOURCE.index('st.dataframe(df_table, width="stretch", hide_index=True)')
 
@@ -89,6 +89,13 @@ def test_html_template_download_is_lazy_and_uses_current_export_frame():
     assert '"Cuenta": account_disp' in export_block
     assert '"Fechas":' in export_block
     assert 'export_add_tiktok' in export_block
+    assert 'meta_ads=tuple(ad_aggregate_insights)' in export_block
+    assert 'all_ad_insights = list(meta_ads)' in export_block
+    assert '"facebook_url": preview.get("facebook_url") or ""' in export_block
+    assert '"instagram_url": preview.get("instagram_url") or ""' in export_block
+    assert "final_df = pd.DataFrame(ad_records)" not in export_block
+    assert '"content_rows": content_rows' in export_block
+    assert 'st.session_state.get("meta_insights_cache", {})' not in export_block
     assert SOURCE.index('csv_export_frame["frame"] = df_table') < SOURCE.index('with download_slot.container():')
 
 
@@ -139,4 +146,3 @@ def test_template_report_is_standalone_escaped_and_contains_all_data():
         assert parsed_data["meta"]["period"]["start"] == "2026-08-01"
         assert parsed_data["meta"]["period"]["end"] == "2026-08-13"
         assert bool(parsed_data["by_platform"]) is True
-

@@ -72,6 +72,24 @@ def select_meta_ad_winners(ad_rows, ranked_campaigns_by_metric):
     return winners
 
 
+def select_meta_top_ads(ad_rows, metrics, limit=3):
+    tops = {}
+    for metric in metrics:
+        ranked = sorted(
+            (row for row in ad_rows if row.get("ad_id")),
+            key=lambda row: (
+                -extract_metric(row, [metric]),
+                -extract_metric(row, ["impressions"]),
+                str(row.get("ad_id")),
+            ),
+        )
+        unique = {}
+        for row in ranked:
+            unique.setdefault(str(row["ad_id"]), row)
+        tops[metric] = list(unique.values())[:limit]
+    return tops
+
+
 def fetch_meta_detail_rows(
     fetch_data,
     platform_key,
@@ -255,6 +273,10 @@ def enrich_meta_campaign_summary(frame, aggregate_rows, filter_rows, level):
     native_by_key, native_by_id = index_values(
         aggregate_rows, lambda row: row.get("cost_per_result")
     )
+    native_metric_indexes = {
+        metric: index_values(aggregate_rows, lambda row, key=metric: row.get(key))
+        for metric in ("results", "spend", "impressions", "clicks")
+    }
     budget_by_key, budget_by_id = index_values(
         filter_rows, lambda row: meta_budget_display(level, row)
     )
@@ -271,9 +293,20 @@ def enrich_meta_campaign_summary(frame, aggregate_rows, filter_rows, level):
         ambiguous = len(native_ids) > 1 or (
             not native_ids and len(budget_ids) > 1
         )
+        stable_id = next(iter(native_ids or budget_ids), None) if not ambiguous else None
+        if not ambiguous:
+            for metric, (metric_by_key, metric_by_id) in native_metric_indexes.items():
+                metric_val = source_value(
+                    metric_by_key.get(key, []) if key is not None else [],
+                    metric_by_id,
+                    stable_id,
+                    None,
+                )
+                if metric_val is not None and not pd.isna(metric_val):
+                    result.at[result.index[idx], metric] = metric_val
+
         cost_val = None
         if not ambiguous:
-            stable_id = next(iter(native_ids or budget_ids), None)
             cost_val = source_value(
                 native_matches,
                 native_by_id,
@@ -293,7 +326,7 @@ def enrich_meta_campaign_summary(frame, aggregate_rows, filter_rows, level):
             source_value(
                 budget_matches,
                 budget_by_id,
-                next(iter(native_ids or budget_ids), None) if not ambiguous else None,
+                stable_id,
                 ("N/D", 0.0),
             ) if not ambiguous else ("N/D", 0.0)
         )
@@ -301,6 +334,14 @@ def enrich_meta_campaign_summary(frame, aggregate_rows, filter_rows, level):
     result["cost_per_result"] = costs
     result["budget_display"] = [value[0] for value in budget_values]
     result["budget_total"] = [value[1] for value in budget_values]
+    if {"spend", "impressions"}.issubset(result.columns):
+        result["cpm"] = result["spend"].mul(1000).div(result["impressions"]).where(
+            result["impressions"].gt(0), 0
+        )
+    if {"spend", "clicks"}.issubset(result.columns):
+        result["cpc"] = result["spend"].div(result["clicks"]).where(
+            result["clicks"].gt(0), 0
+        )
     return result
 
 

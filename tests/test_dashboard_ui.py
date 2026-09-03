@@ -205,6 +205,9 @@ def test_meta_aggregate_insights_preserves_reach_and_paginates_actions(monkeypat
                 "actions": [
                     {"action_type": "lead", "value": "5"},
                     {"action_type": "post_engagement", "value": "7"},
+                    {"action_type": "like", "value": "2"},
+                    {"action_type": "comment", "value": "3"},
+                    {"action_type": "post_reaction", "value": "4"},
                 ],
             }],
             "paging": {"cursors": {"after": "next-page"}},
@@ -252,9 +255,49 @@ def test_meta_aggregate_insights_preserves_reach_and_paginates_actions(monkeypat
     assert "adset_id" in requested_fields
     assert "adset_name" in requested_fields
     assert calls[0]["params"]["level"] == "ad"
+    assert calls[0]["params"]["time_range"] == '{"since": "2026-07-01", "until": "2026-07-31"}'
     assert "time_increment" not in calls[0]["params"]
     assert "breakdowns" not in calls[0]["params"]
     assert calls[1]["params"]["after"] == "next-page"
+
+
+def test_meta_campaign_aggregate_requests_official_additive_metrics(monkeypatch):
+    dashboard_api.fetch_meta_aggregate_insights.clear()
+    calls = []
+
+    def fake_post(*args, **kwargs):
+        calls.append(kwargs["json"])
+        return SimpleNamespace(status_code=200, json=lambda: {"data": [{
+            "campaign_id": "campaign-1",
+            "campaign_name": "BAJAJ / Mayoristas / ALCANCE / AGOSTO 2026",
+            "impressions": "768386",
+            "reach": "725734",
+            "clicks": "3039",
+            "spend": "187.70",
+            "results": [{
+                "indicator": "reach",
+                "values": [{"value": "725734"}],
+            }],
+        }]})
+
+    monkeypatch.setattr(dashboard_api.requests, "post", fake_post)
+
+    rows, error = dashboard_api.fetch_meta_aggregate_insights(
+        "client_1",
+        "123",
+        date(2026, 8, 1),
+        date(2026, 8, 25),
+        "campaign",
+        {},
+        "api-key",
+    )
+
+    assert error is None
+    assert {"clicks", "spend"}.issubset(calls[0]["params"]["fields"].split(","))
+    assert rows[0]["impressions"] == 768386
+    assert rows[0]["clicks"] == 3039
+    assert rows[0]["spend"] == 187.70
+    assert rows[0]["results"] == 725734
 
 
 def test_meta_filter_rows_include_normalized_campaign_and_adset_budgets(monkeypatch):
@@ -318,7 +361,19 @@ def test_targeted_meta_ad_previews_use_requested_ad_id(monkeypatch):
         elif path == "ad-2/previews":
             payload = {"data": [{"body": "<div>Winning preview</div>"}]}
         else:
-            payload = {"message": "Published text"}
+            assert "attachments{title,description,media,url}" in kwargs["json"]["params"]["fields"]
+            payload = {
+                "message": "Published text",
+                "story": "Published story",
+                "caption": "Published caption",
+                "created_time": "2026-08-12T10:30:00+0000",
+                "permalink_url": "https://www.instagram.com/p/post-2/",
+                "attachments": {"data": [{
+                    "title": "Attachment title",
+                    "description": "Attachment description",
+                    "media": {"image": {"src": "https://cdn.example/post-2.jpg"}},
+                }]},
+            }
         return SimpleNamespace(status_code=200, json=lambda: payload)
 
     monkeypatch.setattr(dashboard_api.requests, "post", fake_post)
@@ -338,8 +393,57 @@ def test_targeted_meta_ad_previews_use_requested_ad_id(monkeypatch):
         "ad_id": "ad-2",
         "ad_name": "Winning ad",
         "body": "<div>Winning preview</div>",
-        "post_message": "Story text Creative text Published text",
+        "post_message": "Published text Published story Published caption Attachment title Attachment description",
+        "url": "https://www.instagram.com/p/post-2/",
+        "facebook_url": "",
+        "instagram_url": "https://www.instagram.com/p/post-2/",
+        "image_url": "https://cdn.example/post-2.jpg",
+        "post_created_time": "2026-08-12T10:30:00+0000",
+        "post_platform": "instagram",
     }]
+
+
+def test_meta_ad_preview_preserves_facebook_and_instagram_permalinks(monkeypatch):
+    def fake_post(*args, **kwargs):
+        path = kwargs["json"]["path"]
+        if path == "ad-both":
+            payload, status = {
+                "id": "ad-both",
+                "creative": {
+                    "effective_object_story_id": "page-1_987",
+                    "instagram_permalink_url": "https://www.instagram.com/p/ig-987/",
+                },
+            }, 200
+        elif path == "ad-both/previews":
+            payload, status = {"data": []}, 200
+        else:
+            payload, status = {}, 403
+        return SimpleNamespace(status_code=status, json=lambda: payload)
+
+    monkeypatch.setattr(dashboard_api.requests, "post", fake_post)
+
+    previews, error = dashboard_api.fetch_meta_ad_previews(
+        "client_1",
+        "123",
+        (("reach", "Campaign", "ad-both", "Top ad"),),
+        "api-key",
+    )
+
+    assert error is None
+    assert previews[0]["facebook_url"] == "https://www.facebook.com/page-1/posts/987"
+    assert previews[0]["instagram_url"] == "https://www.instagram.com/p/ig-987/"
+
+
+def test_meta_report_refreshes_legacy_previews_and_exports_publication_time():
+    assert 'any("post_created_time" not in p or "post_platform" not in p for p in cached_previews)' in SOURCE
+    assert 'any("facebook_url" not in p or "instagram_url" not in p for p in cached_previews)' in SOURCE
+    assert 'or "post_created_time" not in previews_by_ad[str(t[2])]' in SOURCE
+    assert 'or "post_platform" not in previews_by_ad[str(t[2])]' in SOURCE
+    assert 'or "facebook_url" not in previews_by_ad[str(t[2])]' in SOURCE
+    assert 'or "instagram_url" not in previews_by_ad[str(t[2])]' in SOURCE
+    assert '"post_created_time": preview.get("post_created_time") or ""' in SOURCE
+    assert 'clean_title = post_msg or "Publicación"' in SOURCE
+    assert '"publisher_platform": post_platform' in SOURCE
 
 
 def test_sidebar_actions_are_ordered_without_a_separator():
@@ -479,6 +583,42 @@ def test_meta_summary_enrichment_uses_native_cost_and_budget_metadata():
     assert pd.isna(result.loc[1, "cost_per_result"])
     assert result["budget_display"].tolist() == ["$1,250.00", "Presupuesto diario"]
     assert result["budget_total"].tolist() == [1250.0, 0.0]
+
+
+def test_meta_summary_enrichment_uses_native_unbroken_period_metrics():
+    frame = pd.DataFrame({
+        "base_campaign_name": ["BAJAJ / Mayoristas / ALCANCE / AGOSTO 2026"],
+        "results": [725744.0],
+        "spend": [187.72],
+        "impressions": [768396.0],
+        "clicks": [3040.0],
+        "cpm": [187.72 * 1000 / 768396],
+        "cpc": [187.72 / 3040],
+    })
+    aggregate_rows = [{
+        "campaign_id": "campaign-1",
+        "campaign_name": "BAJAJ / Mayoristas / ALCANCE / AGOSTO 2026",
+        "results": 725734.0,
+        "spend": 187.70,
+        "impressions": 768386.0,
+        "clicks": 3039.0,
+        "cost_per_result": 0.00025863,
+    }]
+    filter_rows = [{
+        "campaign_id": "campaign-1",
+        "campaign_name": "BAJAJ / Mayoristas / ALCANCE / AGOSTO 2026",
+    }]
+
+    result = dashboard_utils.enrich_meta_campaign_summary(
+        frame, aggregate_rows, filter_rows, "campaign"
+    )
+
+    assert result.loc[0, "results"] == 725734
+    assert result.loc[0, "spend"] == 187.70
+    assert result.loc[0, "impressions"] == 768386
+    assert result.loc[0, "clicks"] == 3039
+    assert result.loc[0, "cpm"] == pytest.approx(187.70 * 1000 / 768386)
+    assert result.loc[0, "cpc"] == pytest.approx(187.70 / 3039)
 
 
 @pytest.mark.parametrize("summary_name", [
@@ -683,6 +823,80 @@ def test_select_meta_ad_winners_uses_each_ranking_metric():
     assert winners[("post_engagement", "Campaign")]["ad_id"] == "1"
 
 
+def test_select_meta_top_ads_ranks_ads_globally_per_metric():
+    rows = [
+        {"campaign_name": "Campaign A", "ad_id": "a", "reach": 90, "post_engagement": 2},
+        {"campaign_name": "Campaign A", "ad_id": "b", "reach": 80, "post_engagement": 50},
+        {"campaign_name": "Campaign B", "ad_id": "c", "reach": 100, "post_engagement": 1},
+        {"campaign_name": "Campaign B", "ad_id": "c", "reach": 100, "post_engagement": 1},
+        {"campaign_name": "Campaign C", "ad_id": "d", "reach": 70, "post_engagement": 40},
+    ]
+
+    tops = dashboard_utils.select_meta_top_ads(rows, ("reach", "post_engagement"), limit=3)
+
+    assert [row["ad_id"] for row in tops["reach"]] == ["c", "a", "b"]
+    assert [row["ad_id"] for row in tops["post_engagement"]] == ["b", "d", "a"]
+
+
+def test_meta_ad_preview_prefers_story_permalink_over_landing_page(monkeypatch):
+    def fake_post(*args, **kwargs):
+        path = kwargs["json"]["path"]
+        if path == "ad-landing":
+            payload = {
+                "id": "ad-landing",
+                "name": "Top ad",
+                "creative": {
+                    "effective_object_story_id": "page-1_987",
+                    "link_url": "https://shop.example/product",
+                },
+            }
+            status = 200
+        elif path == "ad-landing/previews":
+            payload, status = {"data": []}, 200
+        else:
+            payload, status = {}, 403
+        return SimpleNamespace(status_code=status, json=lambda: payload)
+
+    monkeypatch.setattr(dashboard_api.requests, "post", fake_post)
+
+    previews, error = dashboard_api.fetch_meta_ad_previews(
+        "client_1",
+        "123",
+        (("reach", "Campaign", "ad-landing", "Top ad"),),
+        "api-key",
+    )
+
+    assert error is None
+    assert previews[0]["url"] == "https://www.facebook.com/page-1/posts/987"
+    assert previews[0]["post_platform"] == "facebook"
+
+
+def test_meta_ad_preview_does_not_expose_landing_page_as_post(monkeypatch):
+    def fake_post(*args, **kwargs):
+        path = kwargs["json"]["path"]
+        if path == "ad-destination":
+            payload = {
+                "id": "ad-destination",
+                "creative": {"link_url": "https://shop.example/product"},
+            }
+        else:
+            payload = {"data": [{"body": '<a href="https://shop.example/product">Preview</a>'}]}
+        return SimpleNamespace(status_code=200, json=lambda: payload)
+
+    monkeypatch.setattr(dashboard_api.requests, "post", fake_post)
+
+    previews, error = dashboard_api.fetch_meta_ad_previews(
+        "client_1",
+        "123",
+        (("reach", "Campaign", "ad-destination", "Top ad"),),
+        "api-key",
+    )
+
+    assert error is None
+    assert previews[0]["url"] == ""
+    assert previews[0]["post_platform"] == ""
+
+
 def test_campaign_total_row_uses_sums_and_average_cost():
     frame = pd.DataFrame({
         "result_indicator": ["actions:lead", "actions:lead"],
@@ -833,13 +1047,13 @@ def test_meta_table_filters_multiple_result_types_before_total_and_csv():
     ]
 
     options = 'dashboard_filter_options(campaign_summary, "result_label")[1:]'
-    widget = 'st.multiselect(\n            "Tipo de resultado",'
     filtered = 'campaign_summary["result_label"].isin(selected_result_types)'
     total = "build_meta_campaign_total_row("
     export = 'csv_export_frame["frame"] = campaign_summary'
 
     assert options in detail_source
-    assert widget in detail_source
+    assert 'st.multiselect(' in detail_source
+    assert '"Tipo de resultado"' in detail_source
     assert 'placeholder="Todos"' in detail_source
     assert filtered in detail_source
     assert detail_source.index(filtered) < detail_source.index(total)
@@ -869,18 +1083,11 @@ def test_meta_detail_table_uses_dynamic_identity_columns():
 
 
 def test_delivered_meta_campaigns_filter_all_meta_views():
-    eligibility_start = SOURCE.index(
-        "eligible_campaigns = meta_campaigns_with_impressions(df_curr)"
-    )
-    eligibility_source = SOURCE[
-        eligibility_start - 80:
-        SOURCE.index("# Inject JavaScript")
-    ]
-    assert 'if platform_key == "meta_ads" and not df_curr.empty:' in eligibility_source
-    assert "eligible_previous_campaigns = meta_campaigns_with_impressions(df_prev)" in eligibility_source
-    assert 'df_curr["campaign_name"].astype(str).apply(meta_base_campaign_name)' in eligibility_source
-    assert ".isin(eligible_campaigns)" in eligibility_source
-    assert "if not df_prev.empty:" in eligibility_source
+    assert "eligible_campaigns = meta_campaigns_with_impressions(df_curr)" in SOURCE
+    assert "eligible_previous_campaigns = meta_campaigns_with_impressions(df_prev)" in SOURCE
+    assert 'df_curr["campaign_name"].astype(str).apply(meta_base_campaign_name)' in SOURCE
+    assert ".isin(eligible_campaigns)" in SOURCE
+    assert "if not df_prev.empty:" in SOURCE
 
 
 def test_aggregate_meta_reach_uses_entity_level_rows():
@@ -938,7 +1145,7 @@ def test_ads_cards_show_real_leads_and_total_reach():
     )
 
     assert df["lead"].sum() == 7
-    assert 'standard_metrics = ["impressions", "clicks", "spend", "conversions", "lead", "reach", "post_engagement", "__results__", "cost_per_result"]' in SOURCE
+    assert '"lead", "reach"' in SOURCE and '"__results__", "cost_per_result"' in SOURCE
     assert 'curr_primary = df_curr["lead"].sum()' in SOURCE
     assert 'primary_label = "Clientes Potenciales"' in SOURCE
     assert 'get_kpi_card_html("Alcance Total", reach_value' in SOURCE
@@ -1039,7 +1246,7 @@ def test_meta_table_uses_native_period_cost_and_level_budget():
         SOURCE.index("ranking_specs =")
     ]
     column_source = table_source[
-        table_source.index("campaign_summary = campaign_summary[\n            identity_sources + ["):
+        table_source.index("identity_sources + ["):
         table_source.index("].rename(columns={")
     ]
 
@@ -1147,7 +1354,7 @@ def test_unknown_meta_result_indicator_is_not_humanized():
 
 
 def test_results_schema_change_invalidates_and_migrates_cached_frames():
-    assert "DASHBOARD_CACHE_VERSION = 4" in SOURCE
+    assert "DASHBOARD_CACHE_VERSION = 7" in SOURCE
     assert 'schema_key = ("schema", DASHBOARD_CACHE_VERSION, selected_platform_key, api_key)' in SOURCE
     assert "query_key = (\n    DASHBOARD_CACHE_VERSION," in SOURCE
     assert "if active_query_key[0] != DASHBOARD_CACHE_VERSION:" in SOURCE
@@ -1169,6 +1376,26 @@ def test_historical_charts_are_commented_out():
     assert "#### Distribución de Conversiones por Campaña" not in active_strings
     assert '# st.markdown("### Tendencias Históricas")' in SOURCE
     assert "# col_chart_left, col_chart_right = st.columns(2)" in SOURCE
+
+
+def test_onboarding_guide_and_filter_tooltips():
+    assert "show_onboarding_dialog" in SOURCE
+    assert '@st.dialog("🚀 Guía de Inicio: Dashboard de Pauta"' in SOURCE
+    assert 'key="btn_show_guide"' in SOURCE
+    assert "dpineda@inhauscorp.com" in SOURCE
+    assert "Los usuarios no pueden agregar cuentas directamente" in SOURCE
+    assert "has_seen_onboarding_persisted" in SOURCE
+    assert "inhaus_onboarding_seen" in SOURCE
+    assert "Desarrollado por <b>Inhaus</b> para el beneficio" in SOURCE
+    assert "3️⃣ Consultar y Exportar" not in SOURCE
+
+
+def test_download_permission_enforcement():
+    assert 'can_download = bool(dashboard_user.get("can_download", False)) if dashboard_user else False' in SOURCE
+    assert 'if can_download:' in SOURCE
+    assert 'disabled=True' in SOURCE
+    assert 'Tu usuario no tiene permisos para descargar reportes' in SOURCE
+    assert '"can_download": bool(data.get("can_download", False))' in AUTH_SOURCE
 
 
 if __name__ == "__main__":

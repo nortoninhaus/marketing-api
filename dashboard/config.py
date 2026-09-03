@@ -75,5 +75,47 @@ DIMENSION_VALUE_LABELS = {
         "unknown": "Desconocido",
         "unmapped": "Desconocido",
         "not_specified": "No especificado",
+    },
+    "campaign.advertising_channel_type": {
+        "search": "Búsqueda (Search)",
+        "performance_max": "Rendimiento Máximo (PMax)",
+        "demand_gen": "Generación de Demanda",
+        "video": "Video",
+        "display": "Display",
+        "smart": "Inteligente",
+    },
+    "advertising_channel_type": {
+        "search": "Búsqueda (Search)",
+        "performance_max": "Rendimiento Máximo (PMax)",
+        "demand_gen": "Generación de Demanda",
+        "video": "Video",
+        "display": "Display",
+        "smart": "Inteligente",
+    },
+    "campaign.status": {
+        "enabled": "Habilitada",
+        "paused": "En pausa",
+        "removed": "Retirada",
+    },
+    "campaign.bidding_strategy_type": {
+        "maximize_clicks": "Maximizar Clics",
+        "maximize_conversions": "Maximizar Conversiones",
+        "target_cpa": "CPA Objetivo",
+        "target_cpm": "CPM Objetivo",
+        "max_cpv": "CPV Máximo",
+        "target_cpv": "CPV Objetivo",
+    },
+    "objective_type": {
+        "traffic": "Tráfico (Traffic)",
+        "conversions": "Conversiones",
+        "reach": "Alcance (Reach)",
+        "video_views": "Visualizaciones de Video",
+        "lead_generation": "Generación de Leads",
+        "app_promotion": "Promoción de App",
+        "engagement": "Interacción",
+    },
+    "campaign_type": {
+        "regular_campaign": "Campaña Estándar",
+        "ios14_campaign": "Campaña iOS 14+",
     }
 }

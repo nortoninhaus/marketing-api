@@ -91,6 +91,57 @@ def test_payload_uses_explicit_fallback_and_deterministic_multiple_names():
     assert payload["rows"]["current"][1]["source_platform"] == "google_ads"
 
 
+@pytest.mark.parametrize("template", ["nutri", "artz", "shamuna"])
+def test_html_meta_publishers_keep_identity_and_route_to_facebook_or_instagram(template):
+    current = pd.DataFrame([
+        {**_row("meta_ads", 1, 10, 1), "publisher_platform": "audience_network"},
+        {**_row("meta_ads", 2, 20, 2), "publisher_platform": "messenger"},
+        {**_row("meta_ads", 3, 30, 3), "publisher_platform": "threads"},
+    ])
+    payload = build_report_payload(
+        template,
+        current,
+        query_context=_context({"platform": "meta_ads", "account_id": "act_1"}),
+    )
+    compact_html = re.sub(r"\s+", "", render_report(template, payload))
+
+    assert [row["publisher_platform"] for row in payload["rows"]["current"]] == [
+        "audience_network",
+        "messenger",
+        "threads",
+    ]
+    assert 'source==="instagram"||source==="threads"' in compact_html
+    assert 'isMeta(source)?metaPublisher(publisher||row.platform||source)' in compact_html
+
+
+def test_html_content_rows_do_not_replace_publisher_metric_rows():
+    current = pd.DataFrame([
+        {**_row("meta_ads", 10, 100, 5), "publisher_platform": "facebook"},
+        {**_row("meta_ads", 20, 200, 10), "publisher_platform": "instagram"},
+    ])
+    content_rows = [{
+        "source_platform": "meta_ads",
+        "publisher_platform": "facebook",
+        "ad_id": "top-ad",
+        "source_metrics": {"spend": 999, "impressions": 9999},
+    }]
+
+    payload = build_report_payload(
+        "nutri",
+        current,
+        query_context=_context({"platform": "meta_ads", "account_id": "act_1"}),
+        optional={"content_rows": content_rows},
+    )
+
+    assert payload["summary"]["spend"] == 30
+    assert payload["summary"]["impressions"] == 300
+    assert payload["rows"]["content"] == content_rows
+    assert {row["publisher_platform"] for row in payload["rows"]["current"]} == {
+        "facebook",
+        "instagram",
+    }
+
+
 def test_payload_handles_previous_deltas_and_zero_denominator():
     current = pd.DataFrame([_row("meta_ads", 30, 150, 10)])
     previous = pd.DataFrame([_row("meta_ads", 0, 100, 5)])
@@ -996,12 +1047,321 @@ def test_nutri_browser_preserves_reference_panels_and_dynamic_content(tmp_path):
     assert dom["competitionRows"] == 2
     for platform in ("facebook", "instagram", "tiktok"):
         assert dom["platforms"][platform] == {
-            "kpis": 6, "charts": 1, "tables": 1, "content": 1, "demographics": 1, "narratives": 1,
+            "kpis": 6, "charts": 0 if platform == "facebook" else 1, "tables": 0 if platform == "facebook" else 1, "content": 1, "demographics": 1, "narratives": 1,
         }
     assert dom["investment"] == {"tables": 1, "optimization": 1}
     assert dom["maxTrendTicks"] <= 7
     assert dom["minTrendRows"] == 31
     assert dom["minAccentContrast"] >= 4.5
+
+
+def test_nutri_browser_rankings_use_delivery_period_even_for_older_posts(tmp_path):
+    def post(name, reach, publisher="facebook", **extra):
+        return {
+            "name": name,
+            "source_platform": "meta_ads",
+            "publisher_platform": publisher,
+            "source_metrics": {
+                "spend": 1,
+                "impressions": reach,
+                "reach": reach,
+                "engagement": reach,
+            },
+            **extra,
+        }
+
+    payload = {
+        "meta": {"company_name": "Acme", "platforms": ["meta_ads"], "period": {"start": "2026-08-01", "end": "2026-08-31"}},
+        "summary": {}, "summary_previous": {}, "rates": {}, "deltas": {}, "by_platform": {},
+        "daily_series": [],
+        "rows": {"current": [
+            post("Evergreen old post", 1000, post_message="Evergreen old post", created_time="2026-07-31T23:59:59+0000", url="https://www.facebook.com/acme/posts/old"),
+            post("PROMOCIÓN DICIEMBRE 2025", 900, post_message="PROMOCIÓN DICIEMBRE 2025", url="https://www.facebook.com/acme/posts/december"),
+            post("Agosto actual", 30, post_message="Texto real de agosto", post_created_time="2026-08-12T10:30:00+0000", url="https://www.facebook.com/acme/posts/august"),
+            post("CAMPAÑA AGOSTO 2026", 20, post_title="Contenido de agosto"),
+            post("Internal row", 10, ad_name="AD NAME", campaign_name="CAMPAIGN NAME", post_created_time="2026-08-15T10:30:00+0000"),
+            post("Instagram actual", 2000, publisher="instagram", post_title="Instagram actual", post_created_time="2026-08-14T10:30:00+0000", url="https://www.instagram.com/p/ig-1/"),
+        ], "prior": [], "supplemental": []},
+        "breakdowns": {}, "tables": {"export": []}, "narratives": [], "availability": {},
+    }
+    probe = r"""
+<script>
+(() => {
+  const output = document.createElement("script");
+  output.id = "browser-result";
+  output.type = "application/json";
+  output.textContent = JSON.stringify({
+    reachPosts: [...document.querySelectorAll("#facebook-top-reach-grid .post-caption")].map(node => node.textContent),
+    spend: document.querySelector('#facebook-kpis [data-metric="spend"] .stat-value')?.textContent,
+    iframeCount: document.querySelectorAll("#facebook-top-reach-grid iframe").length,
+    errors: [...window.__browserErrors, ...window.__browserConsoleErrors],
+  });
+  document.body.append(output);
+})();
+</script>
+"""
+
+    dom = _browser_dom(render_report("nutri", payload), tmp_path, probe, "nutri-period-posts.html")
+
+    assert dom == {
+        "reachPosts": ["Evergreen old post", "PROMOCIÓN DICIEMBRE 2025", "Texto real de agosto"],
+        "spend": "$5,00",
+        "iframeCount": 3,
+        "errors": [],
+    }
+
+
+def test_nutri_ad_rankings_are_not_filtered_by_post_publication_date():
+    source = (Path(__file__).parents[1] / "dashboard/report_templates/nutri/script.js").read_text(encoding="utf-8")
+
+    assert "const rankingContentRows = Array.isArray(rows.content) && rows.content.length ? rows.content : metricRows;" in source
+    assert "const contentInPeriod" not in source
+
+
+def test_nutri_template_has_lead_ranking_containers_before_reach():
+    rendered = render_report("nutri", {})
+    element_ids = set(re.findall(r'\bid="([^"]+)"', rendered))
+
+    assert {
+        "facebook-top-lead-card",
+        "facebook-top-lead-grid",
+        "instagram-posts-content",
+        "instagram-top-lead-card",
+        "instagram-top-lead-grid",
+        "instagram-top-reach-card",
+        "instagram-top-reach-grid",
+        "instagram-top-engagement-card",
+        "instagram-top-engagement-grid",
+        "instagram-lowest-card",
+        "instagram-lowest-grid",
+    } <= element_ids
+    for network in ("facebook", "instagram"):
+        lead_index = rendered.index(f'id="{network}-top-lead-card"')
+        reach_index = rendered.index(f'id="{network}-top-reach-card"')
+        assert lead_index < reach_index
+        assert rendered[lead_index:reach_index].count("<article") == 1
+
+
+def test_nutri_browser_renders_separate_top_three_meta_rankings_with_embeds(tmp_path):
+    def post(network, rank, reach, engagement):
+        slug = f"{network}-{rank}"
+        url = (
+            f"https://www.facebook.com/acme/posts/{slug}"
+            if network == "facebook"
+            else f"https://www.instagram.com/p/{slug}/"
+        )
+        body = (
+            ""
+            if network == "facebook"
+            else f'<iframe src="https://www.instagram.com/p/{slug}/embed/captioned/"></iframe>'
+        )
+        return {
+            "name": f"{network.title()} post {rank}",
+            "post_message": f"{network.title()} post {rank}",
+            "source_platform": "meta_ads",
+            "publisher_platform": network,
+            "url": url,
+            "body": body,
+            "source_metrics": {
+                "impressions": reach,
+                "reach": reach,
+                "engagement": engagement,
+                "views": reach,
+            },
+        }
+
+    payload = {
+        "meta": {
+            "company_name": "Acme",
+            "platforms": ["meta_ads"],
+            "period": {"start": "2026-08-01", "end": "2026-08-31"},
+        },
+        "summary": {},
+        "summary_previous": {},
+        "rates": {},
+        "deltas": {},
+        "by_platform": {},
+        "daily_series": [],
+        "rows": {
+            "current": [
+                post("facebook", 1, 900, 10),
+                post("instagram", 1, 800, 11),
+                post("facebook", 2, 700, 20),
+                post("instagram", 2, 600, 21),
+                post("facebook", 3, 500, 30),
+                post("instagram", 3, 400, 31),
+                post("facebook", 4, 100, 40),
+                post("instagram", 4, 200, 41),
+            ],
+            "prior": [],
+            "supplemental": [],
+        },
+        "breakdowns": {},
+        "tables": {"export": []},
+        "narratives": [],
+        "availability": {},
+    }
+    probe = r"""
+<script>
+(() => {
+  const ranking = network => ({
+    reach: [...document.querySelectorAll(`#${network}-top-reach-grid .post-caption`)].map(node => node.textContent),
+    engagement: [...document.querySelectorAll(`#${network}-top-engagement-grid .post-caption`)].map(node => node.textContent),
+    iframeSources: [...document.querySelectorAll(`#${network}-top-reach-grid iframe`)].map(node => node.src),
+  });
+  const output = document.createElement("script");
+  output.id = "browser-result";
+  output.type = "application/json";
+  output.textContent = JSON.stringify({
+    facebook: ranking("facebook"),
+    instagram: ranking("instagram"),
+    errors: [...window.__browserErrors, ...window.__browserConsoleErrors],
+  });
+  document.body.append(output);
+})();
+</script>
+"""
+
+    dom = _browser_dom(render_report("nutri", payload), tmp_path, probe, "nutri-network-rankings.html")
+
+    assert dom["facebook"]["reach"] == ["Facebook post 1", "Facebook post 2", "Facebook post 3"]
+    assert dom["instagram"]["reach"] == ["Instagram post 1", "Instagram post 2", "Instagram post 3"]
+    assert dom["facebook"]["engagement"] == ["Facebook post 4", "Facebook post 3", "Facebook post 2"]
+    assert dom["instagram"]["engagement"] == ["Instagram post 4", "Instagram post 3", "Instagram post 2"]
+    assert len(dom["facebook"]["iframeSources"]) == 3
+    assert len(dom["instagram"]["iframeSources"]) == 3
+    assert all("facebook.com/plugins/post.php" in url for url in dom["facebook"]["iframeSources"])
+    assert all("instagram.com/" in url for url in dom["instagram"]["iframeSources"])
+    assert dom["errors"] == []
+
+
+def test_nutri_browser_lead_rankings_are_independent_stable_and_lead_first(tmp_path):
+    def post(network, name, reach, source_lead=None, top_lead=None):
+        slug = name.lower().replace(" ", "-")
+        url = (
+            f"https://www.facebook.com/acme/posts/{slug}"
+            if network == "facebook"
+            else f"https://www.instagram.com/p/{slug}/"
+        )
+        metrics = {"impressions": reach, "reach": reach, "engagement": reach}
+        if source_lead is not None:
+            metrics["lead"] = source_lead
+        item = {
+            "post_message": name,
+            "source_platform": "meta_ads",
+            "publisher_platform": network,
+            "url": url,
+            "source_metrics": metrics,
+        }
+        if top_lead is not None:
+            item["lead"] = top_lead
+        return item
+
+    payload = {
+        "meta": {"company_name": "Acme", "platforms": ["meta_ads"], "period": {}},
+        "summary": {}, "summary_previous": {}, "rates": {}, "deltas": {}, "by_platform": {},
+        "daily_series": [],
+        "rows": {"current": [
+            post("facebook", "Facebook missing", 900),
+            post("facebook", "Facebook source", 800, source_lead=7, top_lead=99),
+            post("facebook", "Facebook invalid", 700, source_lead="11", top_lead="8"),
+            post("facebook", "Facebook fallback", 600, top_lead=9),
+            post("instagram", "Instagram zero one", 400, source_lead=0),
+            post("instagram", "Instagram missing", 300),
+            post("instagram", "Instagram invalid", 200, source_lead="5"),
+            post("instagram", "Instagram zero four", 100, top_lead=0),
+        ], "prior": [], "supplemental": []},
+        "breakdowns": {}, "tables": {"export": []}, "narratives": [], "availability": {},
+    }
+    probe = r"""
+<script>
+(() => {
+  const ranking = network => ({
+    lead: [...document.querySelectorAll(`#${network}-top-lead-grid .post-caption`)].map(node => node.textContent),
+    firstKpis: [...document.querySelectorAll(`#${network}-top-lead-grid .post-card`)].map(card => card.querySelector(".kpi-row span")?.textContent),
+    leadValues: [...document.querySelectorAll(`#${network}-top-lead-grid .post-card`)].map(card => card.querySelector(".kpi-row strong")?.textContent),
+    iframeSources: [...document.querySelectorAll(`#${network}-top-lead-grid iframe`)].map(node => node.src),
+    links: [...document.querySelectorAll(`#${network}-top-lead-grid .kpi-row:last-child a`)].map(node => node.href),
+    reach: [...document.querySelectorAll(`#${network}-top-reach-grid .post-caption`)].map(node => node.textContent),
+  });
+  const output = document.createElement("script");
+  output.id = "browser-result";
+  output.type = "application/json";
+  output.textContent = JSON.stringify({
+    facebook: ranking("facebook"),
+    instagram: ranking("instagram"),
+    errors: [...window.__browserErrors, ...window.__browserConsoleErrors],
+  });
+  document.body.append(output);
+})();
+</script>
+"""
+
+    dom = _browser_dom(render_report("nutri", payload), tmp_path, probe, "nutri-lead-rankings.html")
+
+    assert dom["facebook"]["lead"] == ["Facebook fallback", "Facebook source", "Facebook missing"]
+    assert dom["facebook"]["leadValues"] == ["9", "7", "0"]
+    assert dom["facebook"]["reach"] == ["Facebook missing", "Facebook source", "Facebook invalid"]
+    assert dom["instagram"]["lead"] == ["Instagram zero one", "Instagram missing", "Instagram invalid"]
+    assert dom["instagram"]["leadValues"] == ["0", "0", "0"]
+    for network in ("facebook", "instagram"):
+        assert dom[network]["firstKpis"] == ["Clientes potenciales"] * 3
+        assert len(dom[network]["iframeSources"]) == 3
+        assert all(network + ".com" in url for url in dom[network]["iframeSources"])
+        assert len(dom[network]["links"]) == 3
+        assert all(dom[network]["links"])
+        for caption, url in zip(dom[network]["lead"], dom[network]["links"], strict=True):
+            slug = caption.lower().replace(" ", "-")
+            expected = (
+                f"https://www.facebook.com/acme/posts/{slug}"
+                if network == "facebook"
+                else f"https://www.instagram.com/p/{slug}/"
+            )
+            assert url == expected
+    assert dom["errors"] == []
+
+    empty_payload = {**payload, "rows": {"current": [], "prior": [], "supplemental": []}}
+    empty_probe = r"""
+<script>
+(() => {
+  const output = document.createElement("script");
+  output.id = "browser-result";
+  output.type = "application/json";
+  output.textContent = JSON.stringify(Object.fromEntries(["facebook", "instagram"].map(network => [network, {
+    hidden: document.getElementById(`${network}-top-lead-card`).hidden,
+    cards: document.querySelectorAll(`#${network}-top-lead-grid .post-card`).length,
+  }])));
+  document.body.append(output);
+})();
+</script>
+"""
+    empty_dom = _browser_dom(render_report("nutri", empty_payload), tmp_path, empty_probe, "nutri-empty-lead-rankings.html")
+    assert empty_dom == {
+        "facebook": {"hidden": True, "cards": 0},
+        "instagram": {"hidden": True, "cards": 0},
+    }
+
+
+def test_nutri_facebook_embed_uses_facebook_plugin_in_downloaded_html():
+    source = (Path(__file__).parents[1] / "dashboard/report_templates/nutri/script.js").read_text(encoding="utf-8")
+
+    assert 'contentPlatform === "facebook" && directPostUrl.startsWith("http") && directPostUrl.includes("facebook.com")' in source
+    assert "isFacebookPreviewUrl(item.iframe_url)" in source
+    assert "if (supportedEmbed)" in source
+    assert '!window.location.protocol.startsWith("file")' not in source
+    assert 'contentPlatform === "facebook" && !isFacebookPreviewUrl(iframeEmbedUrl)' in source
+    assert "const isPublicPostUrl" in source
+    assert ".some(isPublicPostUrl)" in source
+    assert 'item.name !== "Publicación" ? item.name : "Publicación " + (item.platform === "facebook" ? "Facebook" : "Instagram")' in source
+    assert 'const postTitle = postCopy || item.post_name || item.content_name || "Publicación"' in source
+
+
+def test_nutri_facebook_preview_prefers_meta_ad_preview_for_dynamic_posts():
+    source = (Path(__file__).parents[1] / "dashboard/report_templates/nutri/script.js").read_text(encoding="utf-8")
+
+    assert "const isFacebookPreviewUrl" in source
+    assert "business.facebook.com/ads/api/preview_iframe.php" in source
+    assert "isFacebookPreviewUrl(iframeEmbedUrl)" in source
 
 
 def test_nutri_browser_hides_empty_panels_and_does_not_show_investment_for_summary_spend(tmp_path):
@@ -1064,7 +1424,7 @@ def test_nutri_browser_maps_builder_meta_publishers_without_double_counting(tmp_
     assert dom["visible"]["tiktok-panel"] is False
     assert dom["platformKpis"]["facebook"]["spend"] == "$30,00"
     assert dom["platformKpis"]["instagram"]["spend"] == "$70,00"
-    assert dom["platformTrendRows"]["facebook"] == ["1.000", "2.000"]
+    assert dom["platformTrendRows"]["facebook"] == []
     assert dom["platformTrendRows"]["instagram"] == ["3.000", "4.000"]
     assert dom["platformContentRows"]["facebook"] == ["Meta launch 2-20", "Meta launch 1-10"]
     assert dom["platformContentRows"]["instagram"] == ["Meta launch 2-40", "Meta launch 1-30"]
@@ -1108,7 +1468,7 @@ def test_nutri_browser_normalizes_numeric_string_meta_publisher_metrics(tmp_path
         "engagement": "700",
         "clicks": "7",
     }
-    assert dom["platformTrendRows"]["facebook"] == ["1.000", "2.000"]
+    assert dom["platformTrendRows"]["facebook"] == []
     assert dom["platformTrendRows"]["instagram"] == ["3.000", "4.000"]
     assert dom["platformContentRows"]["facebook"] == ["Meta launch 2-20", "Meta launch 1-10"]
     assert dom["platformContentRows"]["instagram"] == ["Meta launch 2-40", "Meta launch 1-30"]
@@ -1784,4 +2144,3 @@ def test_shamuna_template_has_no_reference_facts_assets_requests_or_controls():
         "dra. gaby", "la toña", "yogurt fresa", "cumbayá", "feed normal", "modo agencia",
     ):
         assert leaked_identity not in rendered.casefold()
-
