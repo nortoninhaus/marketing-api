@@ -1,0 +1,65 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "01M1KY1MSTCR2SD2DNDF9WG19E",
+  "session_id": "ses_f9820840effeq7AE3oeRnPs6lY",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-03T15:26:23.019443Z",
+  "branch": "feat/add-templates",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "create_dashboard_user.py",
+    "dashboard.py",
+    "dashboard/auth.py",
+    "manage_dashboard_users.py",
+    "tests/test_dashboard_ui.py"
+  ],
+  "agent": "OpenCode",
+  "model": "gemini-3.6-flash",
+  "turn_id": "82cefab7bc12",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 9911,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 89725,
+    "output_tokens": 169,
+    "api_call_count": 1
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-03T15:26:22.881891Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 30,
+    "total_committed": 0,
+    "total_lines_changed": 30,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 59,
+      "user_lines_removed": 30,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "create_dashboard_user.py": 2,
+        "dashboard.py": 17,
+        "dashboard/auth.py": 14,
+        "manage_dashboard_users.py": 19,
+        "tests/test_dashboard_ui.py": 7
+      },
+      "user_removed_per_file": {
+        "dashboard.py": 23,
+        "dashboard/auth.py": 5,
+        "manage_dashboard_users.py": 1,
+        "tests/test_dashboard_ui.py": 1
+      }
+    }
+  ]
+}
