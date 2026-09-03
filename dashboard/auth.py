@@ -85,6 +85,7 @@ def authenticate_dashboard_user(username, password):
         "user_id": data.get("user_id") or data.get("api_user_id") or username,
         "accounts": normalize_dashboard_accounts(data.get("accounts", {})),
         "can_download": bool(data.get("can_download", False)),
+        "can_benchmark": bool(data.get("can_benchmark", data.get("can_view_benchmarking", False))),
     }
 
 
@@ -197,14 +198,22 @@ def require_dashboard_login(theme_icon, on_theme_change):
     token = session_token or query_token
     user = decode_dashboard_token(token) if token else None
     if user:
-        if "can_download" not in user:
+        needs_refresh = False
+        if "can_download" not in user or "can_benchmark" not in user:
             try:
                 doc = get_firestore_client().collection(DASHBOARD_USERS_COLLECTION).document(user.get("username", "")).get()
-                user["can_download"] = bool(doc.to_dict().get("can_download", False)) if doc.exists else False
-                token = create_dashboard_token(user)
-                dashboard_auth_cookie_bridge(token)
+                user_data = doc.to_dict() if doc.exists else {}
+                if "can_download" not in user:
+                    user["can_download"] = bool(user_data.get("can_download", False))
+                if "can_benchmark" not in user:
+                    user["can_benchmark"] = bool(user_data.get("can_benchmark", user_data.get("can_view_benchmarking", False)))
+                needs_refresh = True
             except Exception:
-                user["can_download"] = False
+                user.setdefault("can_download", False)
+                user.setdefault("can_benchmark", False)
+        if needs_refresh:
+            token = create_dashboard_token(user)
+            dashboard_auth_cookie_bridge(token)
         st.session_state["dashboard_auth_token"] = token
         st.session_state["dashboard_user"] = user
         if query_token:

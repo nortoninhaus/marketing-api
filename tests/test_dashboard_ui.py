@@ -1393,9 +1393,15 @@ def test_onboarding_guide_and_filter_tooltips():
 def test_download_permission_enforcement():
     assert 'can_download = bool(dashboard_user.get("can_download", False)) if dashboard_user else False' in SOURCE
     assert 'if can_download:' in SOURCE
-    assert 'disabled=True' in SOURCE
+    assert 'key="btn_download_modal"' in SOURCE
     assert 'Tu usuario no tiene permisos para descargar reportes' in SOURCE
     assert '"can_download": bool(data.get("can_download", False))' in AUTH_SOURCE
+
+
+def test_benchmark_permission_enforcement():
+    assert 'can_benchmark = bool(dashboard_user.get("can_benchmark", False)) if dashboard_user else False' in SOURCE
+    assert 'if can_benchmark:' in SOURCE
+    assert '"can_benchmark": bool(data.get("can_benchmark"' in AUTH_SOURCE
 
 
 if __name__ == "__main__":
