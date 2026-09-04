@@ -2552,7 +2552,6 @@ def render_meta_ads_platform_tab(
                     st.session_state["meta_applied_api_filters"] = applied_api_filters
                 else:
                     st.session_state.pop("meta_applied_api_filters", None)
-                st.session_state.force_query_fetch = True
                 st.rerun()
 
         applied_campaign_filter = st.session_state.get("meta_applied_campaign_filter", [])
