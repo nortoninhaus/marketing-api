@@ -19,7 +19,7 @@ from dashboard.utils import (
 )
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
 def fetch_connections_from_api(platform_key, client_id, api_key):
     try:
         url = f"{DEFAULT_API_URL}/api/v1/oauth/connections"
@@ -98,7 +98,7 @@ def fetch_schema_from_api(platform_key, api_key):
         return {"metrics": [], "dimensions": []}
 
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=900, show_spinner=False)
 def fetch_campaign_data_from_api(platform_key, client_id, user_id, account_id, start_date, end_date, metrics, dimensions, opt_filters, write_to_bq, api_key, show_errors=True, timeout=CAMPAIGN_DATA_TIMEOUT):
     url = f"{DEFAULT_API_URL}/api/v1/campaign-data"
     headers = {
@@ -230,7 +230,7 @@ def _meta_minor_currency(value):
         return None
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=900, show_spinner=False)
 def fetch_meta_aggregate_insights(
     client_id,
     account_id,

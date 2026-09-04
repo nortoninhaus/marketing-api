@@ -1414,6 +1414,14 @@ def test_query_execution_requires_complete_date_range_and_button_click():
     assert 'start_date = st.session_state.get("applied_start_date", start_date)' in SOURCE
 
 
+def test_query_cache_is_preserved_unless_force_refresh_enabled():
+    assert 'force_refresh = st.sidebar.checkbox("🔄 Forzar actualización en vivo"' in SOURCE
+    assert 'if force_refresh:' in SOURCE
+    assert 'st.session_state.force_query_fetch = False' in SOURCE
+    assert '@st.cache_data(ttl=900, show_spinner=False)' in API_SOURCE
+    assert '@st.cache_data(ttl=600, show_spinner=False)' in API_SOURCE
+
+
 if __name__ == "__main__":
     test_dashboard_has_light_dark_and_spanish_meta_labels()
     test_theme_change_does_not_refetch_official_meta_data()

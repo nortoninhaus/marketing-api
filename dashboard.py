@@ -2033,6 +2033,7 @@ if can_benchmark:
 
 # Execute Button in Sidebar to prevent auto-loading until clicked
 execute_query = st.sidebar.button("🚀 Consultar API", width="stretch", help="Ejecuta la consulta en tiempo real contra las APIs oficiales de cada plataforma seleccionada.")
+force_refresh = st.sidebar.checkbox("🔄 Forzar actualización en vivo", value=False, help="Ignora el caché existente y consulta datos frescos directamente desde las APIs oficiales.")
 
 if st.session_state.get("query_run", False):
     applied_start = st.session_state.get("applied_start_date")
@@ -2081,8 +2082,18 @@ if execute_query:
         end_date.isoformat(),
         write_to_bq,
     )
-    fetch_campaign_data_from_api.clear()
-    st.session_state["dashboard_query_cache"] = {}
+
+    st.session_state.setdefault("dashboard_query_cache", {})
+    if force_refresh:
+        fetch_campaign_data_from_api.clear()
+        st.session_state["dashboard_query_cache"].clear()
+        st.session_state["meta_official_cache"] = {}
+        st.session_state["meta_detail_cache"] = {}
+        st.session_state["meta_insights_cache"] = {}
+        st.session_state.force_query_fetch = True
+    else:
+        st.session_state.force_query_fetch = False
+
     st.session_state["applied_start_date"] = start_date
     st.session_state["applied_end_date"] = end_date
     st.session_state["applied_platform_configs"] = platform_configs
@@ -2090,7 +2101,6 @@ if execute_query:
     st.session_state["applied_platform_key"] = platform_key
     st.session_state["applied_account_id"] = account_id
     st.session_state.query_run = True
-    st.session_state.force_query_fetch = True
     st.rerun()
 
 if not st.session_state.get("query_run", False):
