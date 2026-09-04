@@ -1404,6 +1404,16 @@ def test_benchmark_permission_enforcement():
     assert '"can_benchmark": bool(data.get("can_benchmark"' in AUTH_SOURCE
 
 
+def test_query_execution_requires_complete_date_range_and_button_click():
+    assert "is_date_range_complete = False" in SOURCE
+    assert "if isinstance(date_range, (list, tuple)) and len(date_range) == 2:" in SOURCE
+    assert "elif isinstance(date_range, (list, tuple)) and len(date_range) == 1:" in SOURCE
+    assert 'st.sidebar.info("🗓️ Selecciona la fecha de fin en el calendario para completar el rango.")' in SOURCE
+    assert "if not is_date_range_complete:" in SOURCE
+    assert 'st.session_state["applied_start_date"] = start_date' in SOURCE
+    assert 'start_date = st.session_state.get("applied_start_date", start_date)' in SOURCE
+
+
 if __name__ == "__main__":
     test_dashboard_has_light_dark_and_spanish_meta_labels()
     test_theme_change_does_not_refetch_official_meta_data()

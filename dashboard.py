@@ -1999,12 +1999,19 @@ date_range = st.sidebar.date_input(
     [default_start, today],
     help="Periodo a auditar. Las métricas del dashboard compararán automáticamente estas cifras contra el mes anterior completo equivalente.",
 )
+is_date_range_complete = False
 if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
     start_date, end_date = date_range[0], date_range[1]
+    is_date_range_complete = True
 elif isinstance(date_range, (list, tuple)) and len(date_range) == 1:
     start_date = end_date = date_range[0]
+    is_date_range_complete = False
 else:
     start_date, end_date = default_start, today
+    is_date_range_complete = True
+
+if not is_date_range_complete:
+    st.sidebar.info("🗓️ Selecciona la fecha de fin en el calendario para completar el rango.")
 
 # Benchmarking / Competitors Section
 can_benchmark = bool(dashboard_user.get("can_benchmark", False)) if dashboard_user else False
@@ -2026,6 +2033,12 @@ if can_benchmark:
 
 # Execute Button in Sidebar to prevent auto-loading until clicked
 execute_query = st.sidebar.button("🚀 Consultar API", width="stretch", help="Ejecuta la consulta en tiempo real contra las APIs oficiales de cada plataforma seleccionada.")
+
+if st.session_state.get("query_run", False):
+    applied_start = st.session_state.get("applied_start_date")
+    applied_end = st.session_state.get("applied_end_date")
+    if is_date_range_complete and (start_date != applied_start or end_date != applied_end):
+        st.sidebar.caption("⚡ Haz clic en **Consultar API** para aplicar las nuevas fechas.")
 
 if st.sidebar.button("🔒 Cerrar Sesión", key="logout_button", width="stretch"):
     st.session_state.pop("dashboard_auth_token", None)
@@ -2053,6 +2066,13 @@ with header_left:
 """, unsafe_allow_html=True)
 
 if execute_query:
+    if not is_date_range_complete:
+        st.sidebar.warning("⚠️ Debes seleccionar ambas fechas (inicio y fin) en el calendario antes de consultar.")
+        st.stop()
+    if start_date > end_date:
+        st.sidebar.error("⚠️ La fecha de inicio no puede ser posterior a la fecha de fin.")
+        st.stop()
+
     log_query_execution(
         current_username,
         platform_key,
@@ -2063,6 +2083,12 @@ if execute_query:
     )
     fetch_campaign_data_from_api.clear()
     st.session_state["dashboard_query_cache"] = {}
+    st.session_state["applied_start_date"] = start_date
+    st.session_state["applied_end_date"] = end_date
+    st.session_state["applied_platform_configs"] = platform_configs
+    st.session_state["applied_write_to_bq"] = write_to_bq
+    st.session_state["applied_platform_key"] = platform_key
+    st.session_state["applied_account_id"] = account_id
     st.session_state.query_run = True
     st.session_state.force_query_fetch = True
     st.rerun()
@@ -2071,6 +2097,14 @@ if not st.session_state.get("query_run", False):
     render_dashboard_empty_state("Configura tus parámetros de consulta en el menú lateral y presiona Consultar API.")
     st.stop()
 else:
+    # Use the parameters committed when "Consultar API" was clicked
+    start_date = st.session_state.get("applied_start_date", start_date)
+    end_date = st.session_state.get("applied_end_date", end_date)
+    platform_configs = st.session_state.get("applied_platform_configs", platform_configs)
+    write_to_bq = st.session_state.get("applied_write_to_bq", write_to_bq)
+    platform_key = st.session_state.get("applied_platform_key", platform_key)
+    account_id = st.session_state.get("applied_account_id", account_id)
+
     # Render the fullscreen loading overlay first to block the screen
     loading_placeholder = st.empty()
 
