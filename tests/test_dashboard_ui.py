@@ -1396,6 +1396,14 @@ def test_download_permission_enforcement():
     assert 'key="btn_download_modal"' in SOURCE
     assert 'Tu usuario no tiene permisos para descargar reportes' in SOURCE
     assert '"can_download": bool(data.get("can_download", False))' in AUTH_SOURCE
+    assert '"can_download_reports": bool(data.get("can_download_reports"' in AUTH_SOURCE
+    assert '"can_download_csv": bool(data.get("can_download_csv"' in AUTH_SOURCE
+    assert 'can_download_reports = bool(' in SOURCE
+    assert 'can_download_csv = bool(' in SOURCE
+    assert 'if can_download_reports:' in SOURCE
+    assert 'if can_download_csv:' in SOURCE
+    assert 'if not can_download_reports and not can_download_csv:' in SOURCE
+    assert 'if not can_download_reports:' in SOURCE
 
 
 def test_benchmark_permission_enforcement():

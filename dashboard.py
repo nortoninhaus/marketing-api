@@ -3358,20 +3358,50 @@ def render_meta_ads_platform_tab(
             if not bool(dashboard_user.get("can_download", False)):
                 st.error("Tu usuario no tiene permisos para descargar reportes. Solicita acceso a dpineda@inhauscorp.com.")
                 return
-            st.html(
-                segmented_pdf_download_html(export_name, chart_bg),
-                unsafe_allow_javascript=True,
-                width="stretch",
+
+            can_download_reports = bool(
+                dashboard_user.get(
+                    "can_download_reports",
+                    dashboard_user.get("can_download_reportes", dashboard_user.get("puede_descargar_reportes", False)),
+                )
             )
-            st.download_button(
-                "Descargar CSV",
-                data=lambda: csv_export_frame["frame"].to_csv(index=False).encode("utf-8-sig"),
-                file_name=f"{export_name}.csv",
-                mime="text/csv;charset=utf-8",
-                on_click="ignore",
-                icon=":material/download:",
-                width="stretch",
+            can_download_csv = bool(
+                dashboard_user.get(
+                    "can_download_csv",
+                    dashboard_user.get("puede_descargar_csv", False),
+                )
             )
+
+            if not can_download_reports and not can_download_csv:
+                st.info("Tu usuario no tiene permisos habilitados para descargar reportes ni archivos CSV. Solicita acceso a dpineda@inhauscorp.com.")
+                return
+
+            if can_download_reports:
+                st.markdown("#### Reportes")
+                st.caption("Descarga el reporte ejecutivo consolidado en formato PDF o HTML interactivo.")
+                st.html(
+                    segmented_pdf_download_html(export_name, chart_bg),
+                    unsafe_allow_javascript=True,
+                    width="stretch",
+                )
+
+            if can_download_csv:
+                st.markdown("#### Exportación CSV")
+                st.caption("Descarga la tabla de datos procesados en formato CSV compatible con Excel.")
+                st.download_button(
+                    "Descargar CSV",
+                    data=lambda: csv_export_frame["frame"].to_csv(index=False).encode("utf-8-sig"),
+                    file_name=f"{export_name}.csv",
+                    mime="text/csv;charset=utf-8",
+                    on_click="ignore",
+                    icon=":material/download:",
+                    width="stretch",
+                )
+
+            if not can_download_reports:
+                return
+
+            st.markdown("##### Plantilla HTML")
             report_template = st.selectbox("Template HTML", list(REPORT_TEMPLATES.keys()))
             html_export_context = {
                 "Plataformas": selected_platform_label,

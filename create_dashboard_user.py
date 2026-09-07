@@ -17,7 +17,9 @@ def main():
     if not password:
         raise SystemExit("El password no puede estar vacío.")
 
-    can_dl = input("Permitir descargas de reportes (s/N): ").strip().lower() in ("s", "si", "y", "yes", "true")
+    can_dl = input("Permitir descargas generales (can_download) (s/N): ").strip().lower() in ("s", "si", "y", "yes", "true")
+    can_dl_reports = input("Permitir descargar reportes (can_download_reports) (s/N): ").strip().lower() in ("s", "si", "y", "yes", "true")
+    can_dl_csv = input("Permitir descargar CSV (can_download_csv) (s/N): ").strip().lower() in ("s", "si", "y", "yes", "true")
     can_bench = input("Permitir ver competidores/benchmarking (s/N): ").strip().lower() in ("s", "si", "y", "yes", "true")
 
     user = {
@@ -25,6 +27,8 @@ def main():
         "client_id": "client_1",
         "user_id": "user_1",
         "can_download": can_dl,
+        "can_download_reports": can_dl_reports,
+        "can_download_csv": can_dl_csv,
         "can_benchmark": can_bench,
         "password_hash": hash_dashboard_password(password),
         "accounts": {

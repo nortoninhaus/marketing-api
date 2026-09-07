@@ -23,6 +23,8 @@ def list_users():
         print(f"  Client ID: {data.get('client_id')}")
         print(f"  User ID: {data.get('user_id')}")
         print(f"  Descargas permitidas (can_download): {data.get('can_download', False)}")
+        print(f"  Descargar reportes (can_download_reports): {data.get('can_download_reports', data.get('can_download_reportes', data.get('puede_descargar_reportes', False)))}")
+        print(f"  Descargar CSV (can_download_csv): {data.get('can_download_csv', data.get('puede_descargar_csv', False))}")
         print(f"  Ver competidores (can_benchmark): {data.get('can_benchmark', data.get('can_view_benchmarking', False))}")
         print(f"  Cuentas / Permisos: {json.dumps(data.get('accounts', {}), indent=4)}")
 
@@ -36,6 +38,28 @@ def update_user_download_permission(username: str, can_download: bool):
         sys.exit(1)
     doc_ref.update({"can_download": can_download})
     print(f"Permiso de descargas actualizado: {username} -> can_download = {can_download}")
+
+
+def update_user_download_reports_permission(username: str, can_download_reports: bool):
+    db = get_firestore_client()
+    doc_ref = db.collection(DASHBOARD_USERS_COLLECTION).document(username)
+    doc = doc_ref.get()
+    if not doc.exists:
+        print(f"Error: El usuario '{username}' no existe en Firestore.")
+        sys.exit(1)
+    doc_ref.update({"can_download_reports": can_download_reports})
+    print(f"Permiso de descarga de reportes actualizado: {username} -> can_download_reports = {can_download_reports}")
+
+
+def update_user_download_csv_permission(username: str, can_download_csv: bool):
+    db = get_firestore_client()
+    doc_ref = db.collection(DASHBOARD_USERS_COLLECTION).document(username)
+    doc = doc_ref.get()
+    if not doc.exists:
+        print(f"Error: El usuario '{username}' no existe en Firestore.")
+        sys.exit(1)
+    doc_ref.update({"can_download_csv": can_download_csv})
+    print(f"Permiso de descarga de CSV actualizado: {username} -> can_download_csv = {can_download_csv}")
 
 
 def update_user_benchmark_permission(username: str, can_benchmark: bool):
@@ -90,6 +114,8 @@ def main():
     parser.add_argument("--add-account", nargs=2, metavar=("PLATFORM", "ACCOUNT_ID"), help="Agregar cuenta a una plataforma")
     parser.add_argument("--set-all", action="store_true", help="Dar acceso total a todas las plataformas y cuentas (*)")
     parser.add_argument("--set-download", choices=["true", "false"], help="Habilitar o deshabilitar descargas (can_download)")
+    parser.add_argument("--set-download-reports", choices=["true", "false"], help="Habilitar o deshabilitar descarga de reportes (can_download_reports)")
+    parser.add_argument("--set-download-csv", choices=["true", "false"], help="Habilitar o deshabilitar descarga de CSV (can_download_csv)")
     parser.add_argument("--set-benchmark", choices=["true", "false"], help="Habilitar o deshabilitar sección de competidores/benchmarking (can_benchmark)")
     
     args = parser.parse_args()
@@ -102,6 +128,12 @@ def main():
         modified_something = False
         if args.set_download is not None:
             update_user_download_permission(args.user, args.set_download.lower() == "true")
+            modified_something = True
+        if args.set_download_reports is not None:
+            update_user_download_reports_permission(args.user, args.set_download_reports.lower() == "true")
+            modified_something = True
+        if args.set_download_csv is not None:
+            update_user_download_csv_permission(args.user, args.set_download_csv.lower() == "true")
             modified_something = True
         if args.set_benchmark is not None:
             update_user_benchmark_permission(args.user, args.set_benchmark.lower() == "true")

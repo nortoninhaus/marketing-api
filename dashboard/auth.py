@@ -85,6 +85,8 @@ def authenticate_dashboard_user(username, password):
         "user_id": data.get("user_id") or data.get("api_user_id") or username,
         "accounts": normalize_dashboard_accounts(data.get("accounts", {})),
         "can_download": bool(data.get("can_download", False)),
+        "can_download_reports": bool(data.get("can_download_reports", data.get("can_download_reportes", data.get("puede_descargar_reportes", False)))),
+        "can_download_csv": bool(data.get("can_download_csv", data.get("puede_descargar_csv", False))),
         "can_benchmark": bool(data.get("can_benchmark", data.get("can_view_benchmarking", False))),
     }
 
@@ -199,17 +201,28 @@ def require_dashboard_login(theme_icon, on_theme_change):
     user = decode_dashboard_token(token) if token else None
     if user:
         needs_refresh = False
-        if "can_download" not in user or "can_benchmark" not in user:
+        if (
+            "can_download" not in user
+            or "can_benchmark" not in user
+            or "can_download_reports" not in user
+            or "can_download_csv" not in user
+        ):
             try:
                 doc = get_firestore_client().collection(DASHBOARD_USERS_COLLECTION).document(user.get("username", "")).get()
                 user_data = doc.to_dict() if doc.exists else {}
                 if "can_download" not in user:
                     user["can_download"] = bool(user_data.get("can_download", False))
+                if "can_download_reports" not in user:
+                    user["can_download_reports"] = bool(user_data.get("can_download_reports", user_data.get("can_download_reportes", user_data.get("puede_descargar_reportes", False))))
+                if "can_download_csv" not in user:
+                    user["can_download_csv"] = bool(user_data.get("can_download_csv", user_data.get("puede_descargar_csv", False)))
                 if "can_benchmark" not in user:
                     user["can_benchmark"] = bool(user_data.get("can_benchmark", user_data.get("can_view_benchmarking", False)))
                 needs_refresh = True
             except Exception:
                 user.setdefault("can_download", False)
+                user.setdefault("can_download_reports", False)
+                user.setdefault("can_download_csv", False)
                 user.setdefault("can_benchmark", False)
         if needs_refresh:
             token = create_dashboard_token(user)
