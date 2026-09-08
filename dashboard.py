@@ -2,20 +2,9 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
-import requests
 import json
 import os
-import re
-import textwrap
-import calendar
-import html
-import time
-import math
-import numpy as np
-import altair as alt
-from typing import Any, Optional
-from contextlib import nullcontext
-from datetime import datetime, date, timedelta
+from datetime import date
 from dotenv import load_dotenv
 
 # Load env variables for local defaults
@@ -24,31 +13,10 @@ load_dotenv()
 # Import configurations, authenticators, API wrappers, and utilities
 from dashboard.config import (
     DEFAULT_API_KEY,
-    DEFAULT_API_URL,
-    CAMPAIGN_DATA_TIMEOUT,
-    FIREBASE_PROJECT_ID,
-    DASHBOARD_USERS_COLLECTION,
-    DASHBOARD_JWT_SECRET,
-    DASHBOARD_JWT_HOURS,
-    DASHBOARD_AUTH_COOKIE,
-    DASHBOARD_AUTH_QUERY_PARAM,
-    PASSWORD_ALGORITHM,
-    PASSWORD_ITERATIONS,
     PLATFORM_TYPES,
-    META_PUBLISHER_LABELS,
-    DIMENSION_VALUE_LABELS,
 )
 
 from dashboard.auth import (
-    get_firestore_client,
-    hash_dashboard_password,
-    verify_dashboard_password,
-    normalize_dashboard_accounts,
-    authenticate_dashboard_user,
-    create_dashboard_token,
-    decode_dashboard_token,
-    dashboard_query_token,
-    clear_dashboard_query_token,
     dashboard_auth_cookie_bridge,
     dashboard_allowed_account_ids,
     filter_dashboard_connections,
@@ -61,45 +29,21 @@ from dashboard.api import (
     fetch_connections_from_api,
     fetch_schema_from_api,
     fetch_campaign_data_from_api,
-    fetch_benchmarking_from_api,
-    fetch_meta_aggregate_insights,
-    fetch_meta_ad_previews,
-    fetch_meta_filter_rows,
     process_api_response,
 )
 
 from dashboard.utils import (
-    extract_metric,
-    translate_dimension_value,
-    translate_meta_result_indicator,
-    clean_region_name,
-    clean_campaign_name,
-    meta_base_campaign_name,
-    meta_campaigns_with_impressions,
-    select_meta_ad_winners,
-    select_meta_top_ads,
-    fetch_meta_detail_rows,
-    enrich_meta_campaign_summary,
-    build_meta_campaign_total_row,
-    meta_detail_table_config,
-    dashboard_filter_options,
-    apply_dashboard_filters,
-    campaign_title,
     get_prior_month_range,
     get_current_month_range,
 )
 
 from dashboard.ui import (
-    theme_chart,
-    show_theme_table,
-    get_kpi_card_html,
     render_dashboard_empty_state,
 )
 
 from dashboard.analytics import (
     inject_gtag_script,
     log_query_execution,
-    log_filter_application,
     log_demographics_check,
 )
 from dashboard.styles import inject_dashboard_styles
@@ -113,7 +57,6 @@ from dashboard.views.meta_ads import render_meta_ads_platform_tab
 
 DASHBOARD_CACHE_VERSION = 7
 
-
 if os.getenv("DASHBOARD_AUTH_SELF_CHECK") == "1":
     dashboard_auth_self_check()
     raise SystemExit("dashboard auth self-check passed")
@@ -126,7 +69,6 @@ def toggle_theme():
 def log_demographics_toggle(user_id, platform_key, account_id):
     if st.session_state.get("load_demographics"):
         log_demographics_check(user_id, platform_key, account_id)
-
 
 
 # Determine sidebar collapse state dynamically to hide it automatically once query runs
@@ -146,13 +88,11 @@ chart_bg = "#FFFFFF" if theme_mode == "Claro" else "#0A0D13"
 text_color = "#0F172A" if theme_mode == "Claro" else "#EAF0F7"
 grid_color = "rgba(15,23,42,0.10)" if theme_mode == "Claro" else "rgba(255,255,255,0.05)"
 
-
 inject_dashboard_styles(theme_mode)
 inject_gtag_script()
 theme_icon = "☾" if theme_mode == "Oscuro" else "☀"
 dashboard_user = require_dashboard_login(theme_icon, toggle_theme)
 current_username = dashboard_user.get("username") if dashboard_user else None
-
 
 if not has_seen_onboarding_persisted(dashboard_user):
     persist_onboarding_seen_to_client(current_username)
@@ -565,7 +505,6 @@ for cfg in platform_configs:
         json.dumps(cfg["opt_filters"], sort_keys=True, default=str),
     ))
 
-
 query_key = (
     DASHBOARD_CACHE_VERSION,
     client_id, user_id,
@@ -648,7 +587,6 @@ for frame in (df_curr, df_prev):
         frame["post_engagement"] = 0
 
 # Inject JavaScript to automatically collapse the sidebar menu if it is expanded
-import streamlit.components.v1 as components
 components.html("""
     <script>
     (function() {
@@ -665,7 +603,6 @@ components.html("""
     })();
     </script>
 """, height=0, width=0)
-
 
 if df_curr.empty:
     st.error("No se recibió información de la API para el periodo actual. Verifica las credenciales, plataforma o ID de cuenta en el menú lateral.")
