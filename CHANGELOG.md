@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [5.3.0] - 2026-09-07
+
+### Changed
+- **Streamlit Dashboard Modularization**: Refactored `dashboard.py` from 3,945 lines down to 745 lines (~81% reduction), turning it into a pure high-level orchestrator for session state, authentication, sidebar controls, query caching, and view routing.
+- **Dedicated Presentation Views (`dashboard/views/`)**:
+  - `dashboard/views/meta_ads.py`: Isolated Meta Ads (Facebook/Instagram) analytics, demographic/geographic breakdown charts, creative rankings, and detailed export workflows.
+  - `dashboard/views/generic_ads.py`: Isolated multi-platform rendering for Google Ads, TikTok Ads, LinkedIn, etc., including automatic campaign type classification.
+- **Isolated Styles & Client Scripts (`dashboard/styles.py`)**: Extracted over 1,100 lines of inline CSS, light/dark themes, and View Transition JavaScript into `inject_dashboard_styles()`.
+- **Decoupled User Onboarding (`dashboard/onboarding.py`)**: Extracted first-run guide dialogs and client-side cookie/localStorage synchronization.
+- **Consolidated Export & Reporting Engine (`dashboard/reporting.py`)**: Centralized HTML template generation (`template_report_html`) and segmented PDF canvas capture (`segmented_pdf_download_html`).
+- **Test Suite Alignment**: Updated `tests/test_dashboard_exports.py` and `tests/test_dashboard_ui.py` to inspect modular view and style sources, maintaining 100% green test pass rates.
+
 ## [5.2.0] - 2026-09-02
 
 ### Added

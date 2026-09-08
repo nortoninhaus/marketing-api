@@ -5,33 +5,37 @@ from pathlib import Path
 import pandas as pd
 
 
-SOURCE = Path(__file__).resolve().parents[1].joinpath("dashboard.py").read_text()
+DASHBOARD_PATH = Path(__file__).resolve().parents[1].joinpath("dashboard.py")
+SOURCE = DASHBOARD_PATH.read_text()
+REPORTING_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("reporting.py").read_text()
+VIEWS_META_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("views", "meta_ads.py").read_text()
+STYLES_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("styles.py").read_text()
 
 
 def test_dashboard_offers_segmented_pdf_and_csv_downloads():
     assert "download_slot = st.empty()" in SOURCE
     assert SOURCE.index("download_slot = st.empty()") < SOURCE.index('<div class="custom-header">')
-    export_block = SOURCE[SOURCE.index('with download_slot.container():'):]
+    export_block = VIEWS_META_SOURCE[VIEWS_META_SOURCE.index('with download_slot.container():'):]
 
     assert '@st.dialog("Descargar Reporte", width="small")' in export_block
     assert 'st.button("", icon=":material/download:"' in export_block
     assert "segmented_pdf_download_html(export_name, chart_bg)" in export_block
     assert "unsafe_allow_javascript=True" in export_block
     assert "Descargar CSV" in export_block
-    assert 'csv_export_frame["frame"].to_csv(index=False).encode("utf-8-sig")' in SOURCE
-    assert 'on_click="ignore"' in SOURCE
+    assert 'csv_export_frame["frame"].to_csv(index=False).encode("utf-8-sig")' in VIEWS_META_SOURCE
+    assert 'on_click="ignore"' in VIEWS_META_SOURCE
     assert 'icon=":material/download:"' in export_block
     assert 'width="stretch"' in export_block
     assert "use_container_width" not in export_block
-    assert '[data-testid="stPopoverBody"] {' in SOURCE
-    assert '[data-testid="stPopoverBody"] > div {' in SOURCE
-    assert '[data-testid="stPopoverButton"] *' in SOURCE
-    assert '[data-testid="stDownloadButton"] button *' in SOURCE
+    assert '[data-testid="stPopoverBody"] {' in STYLES_SOURCE
+    assert '[data-testid="stPopoverBody"] > div {' in STYLES_SOURCE
+    assert '[data-testid="stPopoverButton"] *' in STYLES_SOURCE
+    assert '[data-testid="stDownloadButton"] button *' in STYLES_SOURCE
 
 
 def test_pdf_capture_uses_page_sized_canvases():
-    pdf_source = SOURCE[
-        SOURCE.index("def segmented_pdf_download_html"):SOURCE.index("# Determine sidebar collapse state")
+    pdf_source = REPORTING_SOURCE[
+        REPORTING_SOURCE.index("def segmented_pdf_download_html"):
     ]
 
     assert "html2canvas/1.4.1/html2canvas.min.js" in pdf_source
@@ -50,16 +54,16 @@ def test_meta_campaign_csv_uses_the_displayed_table_data():
     total_append = "pd.concat([campaign_summary, pd.DataFrame([total_row])], ignore_index=True)"
     export_assignment = 'csv_export_frame["frame"] = campaign_summary'
 
-    assert 'csv_export_frame = {"frame": df_curr}' in SOURCE
-    assert "data=lambda:" in SOURCE
-    assert export_assignment in SOURCE
-    assert SOURCE.index(total_append) < SOURCE.index(export_assignment)
-    assert '"budget_display": "Presupuesto"' in SOURCE
-    assert '"spend": "Importe gastado"' in SOURCE
+    assert 'csv_export_frame = {"frame": df_curr}' in VIEWS_META_SOURCE
+    assert "data=lambda:" in VIEWS_META_SOURCE
+    assert export_assignment in VIEWS_META_SOURCE
+    assert VIEWS_META_SOURCE.index(total_append) < VIEWS_META_SOURCE.index(export_assignment)
+    assert '"budget_display": "Presupuesto"' in VIEWS_META_SOURCE
+    assert '"spend": "Importe gastado"' in VIEWS_META_SOURCE
 
 
 def test_csv_download_button_is_executable_code():
-    tree = ast.parse(SOURCE)
+    tree = ast.parse(VIEWS_META_SOURCE)
 
     assert any(
         isinstance(node, ast.Call)
@@ -74,12 +78,12 @@ def test_csv_download_button_is_executable_code():
 
 def test_non_meta_table_csv_uses_processed_table_data():
     assignment = 'csv_export_frame["frame"] = df_table'
-    assert assignment in SOURCE
-    assert SOURCE.index(assignment) < SOURCE.index('st.dataframe(df_table, width="stretch", hide_index=True)')
+    assert assignment in VIEWS_META_SOURCE
+    assert VIEWS_META_SOURCE.index(assignment) < VIEWS_META_SOURCE.index('st.dataframe(df_table, width="stretch", hide_index=True)')
 
 
 def test_html_template_download_is_lazy_and_uses_current_export_frame():
-    export_block = SOURCE[SOURCE.index('with download_slot.container():'):]
+    export_block = VIEWS_META_SOURCE[VIEWS_META_SOURCE.index('with download_slot.container():'):]
 
     assert 'st.selectbox("Template HTML", list(REPORT_TEMPLATES.keys()))' in export_block
     assert 'data=_build_download_html' in export_block
@@ -96,12 +100,12 @@ def test_html_template_download_is_lazy_and_uses_current_export_frame():
     assert "final_df = pd.DataFrame(ad_records)" not in export_block
     assert '"content_rows": content_rows' in export_block
     assert 'st.session_state.get("meta_insights_cache", {})' not in export_block
-    assert SOURCE.index('csv_export_frame["frame"] = df_table') < SOURCE.index('with download_slot.container():')
+    assert VIEWS_META_SOURCE.index('csv_export_frame["frame"] = df_table') < VIEWS_META_SOURCE.index('with download_slot.container():')
 
 
 def test_template_report_is_standalone_escaped_and_contains_all_data():
     from dashboard.reporting import build_report_payload, render_report
-    tree = ast.parse(SOURCE)
+    tree = ast.parse(REPORTING_SOURCE)
     nodes = [
         node for node in tree.body
         if isinstance(node, (ast.Assign, ast.FunctionDef))
@@ -118,7 +122,7 @@ def test_template_report_is_standalone_escaped_and_contains_all_data():
         "render_report": render_report,
         "Any": __import__("typing").Any,
     }
-    exec(compile(ast.Module(body=nodes, type_ignores=[]), "dashboard.py", "exec"), namespace)
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), "reporting.py", "exec"), namespace)
     frame = pd.DataFrame({"campaign_name": ["Campaign Alpha", "Campaign Beta"], "spend": [1234.56, 20.0], "impressions": [50000, 1200]})
 
     assert set(namespace["REPORT_TEMPLATES"]) == {"Nutri", "Adriana Hoyos", "ARTZ", "Shamuna"}

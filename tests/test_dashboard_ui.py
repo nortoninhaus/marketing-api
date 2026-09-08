@@ -16,11 +16,24 @@ from dashboard import ui as dashboard_ui
 from dashboard import utils as dashboard_utils
 
 DASHBOARD_PATH = Path(__file__).resolve().parents[1] / "dashboard.py"
-SOURCE = DASHBOARD_PATH.read_text()
 CONFIG_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("config.py").read_text()
 API_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("api.py").read_text()
 UTILS_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("utils.py").read_text()
 AUTH_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("auth.py").read_text()
+STYLES_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("styles.py").read_text()
+VIEWS_META_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("views", "meta_ads.py").read_text()
+VIEWS_GENERIC_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("views", "generic_ads.py").read_text()
+ONBOARDING_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("onboarding.py").read_text()
+REPORTING_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("reporting.py").read_text()
+
+SOURCE = (
+    STYLES_SOURCE
+    + "\n" + ONBOARDING_SOURCE
+    + "\n" + DASHBOARD_PATH.read_text()
+    + "\n" + VIEWS_GENERIC_SOURCE
+    + "\n" + VIEWS_META_SOURCE
+    + "\n" + REPORTING_SOURCE
+)
 
 
 def test_dashboard_has_light_dark_and_spanish_meta_labels():

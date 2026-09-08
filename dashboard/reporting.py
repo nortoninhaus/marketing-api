@@ -578,3 +578,266 @@ def build_report_payload(
             "narratives": bool(narratives),
         },
     }
+
+
+REPORT_TEMPLATES = {
+    "Nutri": "nutri",
+    "Adriana Hoyos": "adriana_hoyos",
+    "ARTZ": "artz",
+    "Shamuna": "shamuna",
+}
+
+
+def template_report_html(
+    frame: pd.DataFrame,
+    template_name: str,
+    report_context: dict[str, Any],
+    previous_frame: pd.DataFrame | None = None,
+    export_table: pd.DataFrame | None = None,
+    optional: dict[str, Any] | None = None,
+) -> str:
+    template_key = REPORT_TEMPLATES.get(template_name, template_name.lower().replace(" ", "_"))
+    account_name = str(report_context.get("Cuenta", report_context.get("account_name", "")))
+    account_id = str(report_context.get("account_id", ""))
+    platform = str(report_context.get("platform", "meta_ads"))
+    start_date = str(report_context.get("start_date", ""))
+    end_date = str(report_context.get("end_date", ""))
+    connections = report_context.get("connections")
+    if not connections:
+        connections = [{
+            "account_id": account_id or "default",
+            "account_name": account_name,
+            "platform": platform,
+        }] if account_name else []
+    platforms = report_context.get("platforms") or ([platform] if platform else [])
+    query_context = {
+        "connections": connections,
+        "account_id": account_id,
+        "account_name": account_name,
+        "platform": platform,
+        "start_date": start_date,
+        "end_date": end_date,
+        "period": {
+            "start": start_date,
+            "end": end_date,
+        },
+        "platforms": platforms,
+    }
+    payload = build_report_payload(
+        template_key,
+        current=frame,
+        previous=previous_frame,
+        export_table=export_table if export_table is not None else frame,
+        query_context=query_context,
+        optional=optional,
+    )
+    return render_report(template_key, payload)
+
+
+def segmented_pdf_download_html(export_name, background_color):
+    return f"""
+    <div data-pdf-export-control="true" data-pdf-export-name="{export_name}">
+        <button type="button">Descargar PDF</button>
+        <p role="status" aria-live="polite"></p>
+    </div>
+    <style>
+    [data-pdf-export-name="{export_name}"] button {{
+        width: 100%;
+        padding: 0.55rem 0.75rem;
+        border: 1px solid #02569e;
+        border-radius: 0.5rem;
+        background: #02569e;
+        color: #FFFFFF;
+        font-weight: 700;
+        cursor: pointer;
+    }}
+    [data-pdf-export-name="{export_name}"] button:disabled {{
+        cursor: wait;
+        opacity: 0.65;
+    }}
+    [data-pdf-export-name="{export_name}"] p {{
+        min-height: 1rem;
+        margin: 0.3rem 0 0;
+        color: #02569e;
+        font-size: 0.75rem;
+    }}
+    </style>
+    <script>
+    (() => {{
+        const controls = document.querySelectorAll(
+            '[data-pdf-export-name="{export_name}"]'
+        );
+        const root = controls[controls.length - 1];
+        if (!root || root.dataset.ready === "true") return;
+        root.dataset.ready = "true";
+
+        const button = root.querySelector("button");
+        const status = root.querySelector('[role="status"]');
+        const trigger = document.querySelector('[data-testid="stPopoverButton"]');
+        trigger?.closest('[data-testid="stPopover"]')
+            ?.setAttribute("data-pdf-export-control", "true");
+
+        const loadScript = (src, isReady) => {{
+            if (isReady()) return Promise.resolve();
+            return new Promise((resolve, reject) => {{
+                const existing = document.querySelector(`script[src="${{src}}"]`);
+                const script = existing || document.createElement("script");
+                script.addEventListener("load", resolve, {{ once: true }});
+                script.addEventListener(
+                    "error",
+                    () => reject(new Error(`Failed to load ${{src}}`)),
+                    {{ once: true }},
+                );
+                if (!existing) {{
+                    script.src = src;
+                    document.head.appendChild(script);
+                }}
+            }});
+        }};
+
+        button.addEventListener("click", async () => {{
+            button.disabled = true;
+            status.style.color = "#02569e";
+            status.textContent = "Preparando PDF…";
+
+            try {{
+                await loadScript(
+                    "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js",
+                    () => Boolean(window.html2canvas),
+                );
+                await loadScript(
+                    "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
+                    () => Boolean(window.jspdf?.jsPDF),
+                );
+
+                const target = document.querySelector(
+                    '[data-testid="stMainBlockContainer"]'
+                );
+                if (!target) throw new Error("Dashboard report container not found");
+
+                const pageWidthMm = 281;
+                const pageHeightMm = 194;
+                const captureWidth = Math.ceil(target.scrollWidth);
+                const reportHeight = Math.ceil(target.scrollHeight);
+                const pageHeightPx = Math.max(
+                    1,
+                    Math.floor(captureWidth * pageHeightMm / pageWidthMm),
+                );
+                const pageCount = Math.ceil(reportHeight / pageHeightPx);
+                if (!captureWidth || !reportHeight || !pageCount) {{
+                    throw new Error("Dashboard report is empty");
+                }}
+
+                const pdf = new window.jspdf.jsPDF({{
+                    orientation: "landscape",
+                    unit: "mm",
+                    format: "a4",
+                    compress: true,
+                }});
+                let renderedPageCount = 0;
+
+                const canvasHasContent = (canvas) => {{
+                    const sample = document.createElement("canvas");
+                    sample.width = 64;
+                    sample.height = Math.max(
+                        1,
+                        Math.round(64 * canvas.height / canvas.width),
+                    );
+                    const context = sample.getContext("2d", {{ willReadFrequently: true }});
+                    context.drawImage(canvas, 0, 0, sample.width, sample.height);
+                    const pixels = context.getImageData(
+                        0,
+                        0,
+                        sample.width,
+                        sample.height,
+                    ).data;
+                    const background = pixels.slice(0, 4);
+                    for (let index = 4; index < pixels.length; index += 4) {{
+                        if (
+                            Math.abs(pixels[index] - background[0]) > 8 ||
+                            Math.abs(pixels[index + 1] - background[1]) > 8 ||
+                            Math.abs(pixels[index + 2] - background[2]) > 8 ||
+                            Math.abs(pixels[index + 3] - background[3]) > 8
+                        ) return true;
+                    }}
+                    return false;
+                }};
+
+                // ponytail: one page-sized canvas avoids browser limits from one giant report canvas.
+                for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {{
+                    const pageTop = pageIndex * pageHeightPx;
+                    const sliceHeight = Math.min(
+                        pageHeightPx,
+                        reportHeight - pageTop,
+                    );
+                    status.textContent = `Generando página ${{pageIndex + 1}} de ${{pageCount}}…`;
+
+                    const canvas = await window.html2canvas(target, {{
+                        scale: 1.5,
+                        useCORS: true,
+                        allowTaint: false,
+                        backgroundColor: "{background_color}",
+                        width: captureWidth,
+                        height: sliceHeight,
+                        x: 0,
+                        y: pageTop,
+                        scrollX: 0,
+                        scrollY: 0,
+                        windowWidth: captureWidth,
+                        windowHeight: reportHeight,
+                        logging: false,
+                        onclone: (clonedDoc) => {{
+                            clonedDoc.querySelectorAll(
+                                '[data-testid="stHeader"], [data-testid="stSidebar"], ' +
+                                '[data-testid="stPopoverBody"], [data-pdf-export-control="true"], ' +
+                                '[data-testid^="stElementToolbar"], ' +
+                                '[data-testid="stTooltipHoverTarget"], ' +
+                                '[data-testid="stBaseButton-elementToolbar"], ' +
+                                '[data-testid="stVegaLiteChart"] details'
+                            ).forEach((element) => element.remove());
+                        }},
+                        ignoreElements: (element) => Boolean(
+                            element.closest?.('[data-pdf-export-control="true"]')
+                        ),
+                    }});
+                    if (!canvas.width || !canvas.height) {{
+                        throw new Error(`PDF page ${{pageIndex + 1}} is empty`);
+                    }}
+                    if (!canvasHasContent(canvas)) continue;
+
+                    if (renderedPageCount > 0) pdf.addPage();
+                    const imageHeightMm = Math.min(
+                        pageHeightMm,
+                        pageWidthMm * canvas.height / canvas.width,
+                    );
+                    pdf.addImage(
+                        canvas,
+                        "JPEG",
+                        8,
+                        8,
+                        pageWidthMm,
+                        imageHeightMm,
+                        undefined,
+                        "FAST",
+                    );
+                    renderedPageCount += 1;
+                }}
+                if (!renderedPageCount) throw new Error("Dashboard capture is empty");
+
+                await pdf.save("{export_name}.pdf", {{ returnPromise: true }});
+                status.style.color = "#10B981";
+                status.textContent = `PDF generado correctamente (${{renderedPageCount}} páginas).`;
+                setTimeout(() => {{ status.textContent = ""; }}, 3000);
+            }} catch (error) {{
+                console.error("PDF export failed", error);
+                status.style.color = "#FF4B4B";
+                status.textContent = "No se pudo generar el PDF.";
+            }} finally {{
+                button.disabled = false;
+            }}
+        }});
+    }})();
+    </script>
+    """
+
+
