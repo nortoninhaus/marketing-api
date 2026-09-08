@@ -149,3 +149,8 @@ def log_demographics_check(user_id: str, platform_key: str, account_id: str):
             "account_id": account_id,
         }
     )
+
+
+def log_demographics_toggle(user_id: str, platform_key: str, account_id: str):
+    if st.session_state.get("load_demographics"):
+        log_demographics_check(user_id, platform_key, account_id)

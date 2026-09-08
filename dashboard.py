@@ -102,17 +102,6 @@ from dashboard.analytics import (
     log_filter_application,
     log_demographics_check,
 )
-
-from dashboard.reporting import (
-    build_report_payload,
-    render_report,
-)
-
-from dashboard.reporting import (
-    REPORT_TEMPLATES,
-    template_report_html,
-    segmented_pdf_download_html,
-)
 from dashboard.styles import inject_dashboard_styles
 from dashboard.onboarding import (
     has_seen_onboarding_persisted,
@@ -121,7 +110,6 @@ from dashboard.onboarding import (
 )
 from dashboard.views.generic_ads import render_generic_ads_platform_tab
 from dashboard.views.meta_ads import render_meta_ads_platform_tab
-from dashboard.analytics import log_query_execution
 
 DASHBOARD_CACHE_VERSION = 7
 
