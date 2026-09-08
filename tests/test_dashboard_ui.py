@@ -16,11 +16,24 @@ from dashboard import ui as dashboard_ui
 from dashboard import utils as dashboard_utils
 
 DASHBOARD_PATH = Path(__file__).resolve().parents[1] / "dashboard.py"
-SOURCE = DASHBOARD_PATH.read_text()
 CONFIG_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("config.py").read_text()
 API_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("api.py").read_text()
 UTILS_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("utils.py").read_text()
 AUTH_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("auth.py").read_text()
+STYLES_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("styles.py").read_text()
+VIEWS_META_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("views", "meta_ads.py").read_text()
+VIEWS_GENERIC_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("views", "generic_ads.py").read_text()
+ONBOARDING_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("onboarding.py").read_text()
+REPORTING_SOURCE = DASHBOARD_PATH.with_name("dashboard").joinpath("reporting.py").read_text()
+
+SOURCE = (
+    STYLES_SOURCE
+    + "\n" + ONBOARDING_SOURCE
+    + "\n" + DASHBOARD_PATH.read_text()
+    + "\n" + VIEWS_GENERIC_SOURCE
+    + "\n" + VIEWS_META_SOURCE
+    + "\n" + REPORTING_SOURCE
+)
 
 
 def test_dashboard_has_light_dark_and_spanish_meta_labels():
@@ -1396,12 +1409,37 @@ def test_download_permission_enforcement():
     assert 'key="btn_download_modal"' in SOURCE
     assert 'Tu usuario no tiene permisos para descargar reportes' in SOURCE
     assert '"can_download": bool(data.get("can_download", False))' in AUTH_SOURCE
+    assert '"can_download_reports": bool(data.get("can_download_reports"' in AUTH_SOURCE
+    assert '"can_download_csv": bool(data.get("can_download_csv"' in AUTH_SOURCE
+    assert 'can_download_reports = bool(' in SOURCE
+    assert 'can_download_csv = bool(' in SOURCE
+    assert 'if can_download_reports:' in SOURCE
+    assert 'if can_download_csv:' in SOURCE
+    assert 'if not can_download_reports and not can_download_csv:' in SOURCE
+    assert 'if not can_download_reports:' in SOURCE
 
 
 def test_benchmark_permission_enforcement():
     assert 'can_benchmark = bool(dashboard_user.get("can_benchmark", False)) if dashboard_user else False' in SOURCE
     assert 'if can_benchmark:' in SOURCE
     assert '"can_benchmark": bool(data.get("can_benchmark"' in AUTH_SOURCE
+
+
+def test_query_execution_requires_complete_date_range_and_button_click():
+    assert "is_date_range_complete = False" in SOURCE
+    assert "if isinstance(date_range, (list, tuple)) and len(date_range) == 2:" in SOURCE
+    assert "elif isinstance(date_range, (list, tuple)) and len(date_range) == 1:" in SOURCE
+    assert 'st.sidebar.info("🗓️ Selecciona la fecha de fin en el calendario para completar el rango.")' in SOURCE
+    assert "if not is_date_range_complete:" in SOURCE
+    assert 'st.session_state["applied_start_date"] = start_date' in SOURCE
+    assert 'start_date = st.session_state.get("applied_start_date", start_date)' in SOURCE
+
+
+def test_query_cache_is_preserved():
+    assert 'st.session_state.setdefault("dashboard_query_cache", {})' in SOURCE
+    assert 'st.session_state.force_query_fetch = False' in SOURCE
+    assert '@st.cache_data(ttl=900, show_spinner=False)' in API_SOURCE
+    assert '@st.cache_data(ttl=600, show_spinner=False)' in API_SOURCE
 
 
 if __name__ == "__main__":
