@@ -48,7 +48,10 @@ from dashboard.ui import (
     show_theme_table,
     get_kpi_card_html,
 )
-from dashboard.analytics import log_filter_application
+from dashboard.analytics import (
+    log_filter_application,
+    log_demographics_toggle,
+)
 from dashboard.reporting import (
     REPORT_TEMPLATES,
     template_report_html,
@@ -80,6 +83,9 @@ def render_meta_ads_platform_tab(
     plat_label = cfg.get("platform_label", "Meta Ads (Facebook/IG)")
     account_id = cfg.get("account_id", "")
     platform_type = cfg.get("platform_type", "ads")
+    selected_dimensions = cfg.get("request_dimensions", [])
+    can_benchmark = bool(dashboard_user.get("can_benchmark", False)) if dashboard_user else False
+    active_context = cfg
 
     meta_platforms = set(META_PUBLISHER_LABELS.values()) | {"meta_ads"}
     if "source_platform" in df_curr_all.columns:
