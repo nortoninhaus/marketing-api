@@ -278,6 +278,67 @@ class CredentialStore:
 
         return data
 
+    async def _refresh_tiktok_token(self, data: Dict[str, Any], doc_ref) -> Dict[str, Any]:
+        """
+        Refreshes a TikTok Organic access token using the stored refresh_token.
+        Updates the Firestore document with the new access_token, refresh_token, and expiry.
+        Returns the updated credential dict.
+        """
+        refresh_token = data.get("refresh_token")
+        if not refresh_token:
+            logger.warning("No refresh_token available for TikTok token refresh")
+            return data
+
+        client_key = settings.tiktok_organic_sandbox_client_key if settings.use_tiktok_sandbox else settings.tiktok_client_key
+        client_secret = settings.tiktok_organic_sandbox_secret if settings.use_tiktok_sandbox else settings.tiktok_client_secret
+
+        if not client_key or not client_secret:
+            logger.warning("TikTok client_key/client_secret not configured for token refresh")
+            return data
+
+        base_url = "https://open-sandbox.tiktokapis.com" if settings.use_tiktok_sandbox else "https://open.tiktokapis.com"
+
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{base_url}/v2/oauth/token/",
+                    data={
+                        "client_key": client_key,
+                        "client_secret": client_secret,
+                        "grant_type": "refresh_token",
+                        "refresh_token": refresh_token,
+                    },
+                    headers={"Content-Type": "application/x-www-form-urlencoded"}
+                )
+                if resp.status_code == 200:
+                    token_data = resp.json()
+                    new_access_token = token_data.get("access_token")
+                    new_refresh_token = token_data.get("refresh_token", refresh_token)
+                    expires_in = token_data.get("expires_in", 86400)
+                    new_expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+
+                    if new_access_token:
+                        # Update Firestore document
+                        update_payload = {
+                            "access_token": new_access_token,
+                            "refresh_token": new_refresh_token,
+                            "token_expires_at": new_expiry.isoformat(),
+                        }
+                        await doc_ref.update(update_payload)
+
+                        data["access_token"] = new_access_token
+                        data["refresh_token"] = new_refresh_token
+                        data["token_expires_at"] = new_expiry.isoformat()
+                        logger.info(f"Successfully refreshed TikTok Organic access token for doc {doc_ref.id}")
+                    else:
+                        logger.error(f"TikTok token refresh returned 200 but missing access_token: {token_data}")
+                else:
+                    logger.error(f"TikTok token refresh failed: {resp.status_code} - {resp.text}")
+        except Exception as e:
+            logger.error(f"Error refreshing TikTok token: {e}")
+
+        return data
+
     async def resolve_credentials(self, client_id: str, platform: str, account_id: str) -> Optional[Dict[str, Any]]:
         """
         Resolves credentials for a specific request.
@@ -286,6 +347,7 @@ class CredentialStore:
         3. For Google platforms, refreshes access_token if expired.
         4. For Meta and Threads platforms, refreshes access_token if close to expiry.
         5. For GHL, refreshes access_token if expired.
+        6. For TikTok Organic, refreshes access_token if expired.
         """
         if not self.db:
             return None
@@ -317,6 +379,11 @@ class CredentialStore:
                 elif platform == "ghl" and self._is_token_expired(data):
                     logger.info(f"Access token expired for GHL {account_id}, refreshing...")
                     data = await self._refresh_ghl_token(data, doc_ref)
+
+                # Refresh TikTok Organic tokens if expired
+                elif platform == "tiktok_organic" and data.get("refresh_token") and self._is_token_expired(data):
+                    logger.info(f"Access token expired for TikTok Organic {account_id}, refreshing...")
+                    data = await self._refresh_tiktok_token(data, doc_ref)
 
                 return data  # Returns full dict including access_token, refresh_token, etc.
         except Exception as e:
