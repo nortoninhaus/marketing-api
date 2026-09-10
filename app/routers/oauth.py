@@ -53,20 +53,24 @@ async def tiktok_site_verification():
 
 
 # ─── Google OAuth Scopes ───────────────────────────────────────────
-GOOGLE_SCOPES = {
-    "openid": "openid",
-    "email": "https://www.googleapis.com/auth/userinfo.email",
-    "profile": "https://www.googleapis.com/auth/userinfo.profile",
-    "google_ads": "https://www.googleapis.com/auth/adwords",
-    "ga4": "https://www.googleapis.com/auth/analytics.readonly",
-    "youtube": " ".join([
+GOOGLE_BASE_SCOPES = [
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+]
+
+PLATFORM_GOOGLE_SCOPES = {
+    "google_ads": " ".join(GOOGLE_BASE_SCOPES + [
+        "https://www.googleapis.com/auth/adwords",
+    ]),
+    "ga4": " ".join(GOOGLE_BASE_SCOPES + [
+        "https://www.googleapis.com/auth/analytics.readonly",
+    ]),
+    "youtube": " ".join(GOOGLE_BASE_SCOPES + [
         "https://www.googleapis.com/auth/youtube.readonly",
         "https://www.googleapis.com/auth/yt-analytics.readonly",
     ]),
 }
-
-# All Google scopes combined for a single consent prompt
-ALL_GOOGLE_SCOPES = " ".join(GOOGLE_SCOPES.values())
 
 SUPPORTED_PLATFORMS = {"meta_ads", "meta_organic", "google_ads", "ga4", "youtube", "threads", "tiktok_ads", "tiktok_organic", "ghl"}
 
@@ -175,8 +179,8 @@ async def get_authorize_url(
                 detail="Google Client ID is not configured on the backend. Please set GOOGLE_CLIENT_ID or GOOGLE_ADS_CLIENT_ID."
             )
         backend_redirect_uri = _build_google_redirect_uri(request)
-        # Request all Google scopes in one consent for broad access
-        scope = ALL_GOOGLE_SCOPES
+        # Request ONLY the scopes required for the specific Google platform
+        scope = PLATFORM_GOOGLE_SCOPES.get(platform, " ".join(GOOGLE_BASE_SCOPES))
         auth_url = (
             f"https://accounts.google.com/o/oauth2/v2/auth?"
             + urlencode({
@@ -776,144 +780,163 @@ async def google_oauth_callback(
         headers = {"Authorization": f"Bearer {access_token}"}
 
         # 2. Discover Google Ads Accounts (via Google Ads SDK Customer Service)
-        try:
-            from google.oauth2.credentials import Credentials
-            from google.ads.googleads.client import GoogleAdsClient
-            
-            token_credentials = Credentials(
-                token=access_token,
-                refresh_token=refresh_token,
-                token_uri="https://oauth2.googleapis.com/token",
-                client_id=google_client_id,
-                client_secret=google_client_secret
-            )
-            
-            ads_client = GoogleAdsClient(
-                credentials=token_credentials,
-                developer_token=settings.google_ads_developer_token,
-                use_proto_plus=True
-            )
-            
-            # Offload blocking gRPC calls to a thread
-            def _discover_google_accounts_sync():
-                customer_service = ads_client.get_service("CustomerService")
-                accessible_customers = customer_service.list_accessible_customers()
-                ga_service = ads_client.get_service("GoogleAdsService")
-
-                query = """
-                    SELECT
-                        customer_client.id,
-                        customer_client.descriptive_name,
-                        customer_client.manager,
-                        customer_client.status,
-                        customer_client.hidden,
-                        customer_client.level
-                    FROM customer_client
-                    WHERE customer_client.status = 'ENABLED' AND customer_client.hidden = FALSE
-                """
-
-                discovered = []
-                seen_cids = set()
-
-                for name in accessible_customers.resource_names:
-                    top_cid = name.split("/")[-1]
-                    try:
-                        response = ga_service.search(customer_id=top_cid, query=query)
-                        for row in response:
-                            cc = row.customer_client
-                            child_cid = str(cc.id)
-                            if child_cid in seen_cids:
-                                continue
-                            seen_cids.add(child_cid)
-
-                            desc_name = cc.descriptive_name or f"Google Ads {child_cid}"
-                            is_mgr = bool(cc.manager)
-
-                            discovered.append({
-                                "account_id": child_cid,
-                                "account_name": f"{desc_name}" + (" (MCC)" if is_mgr else ""),
-                                "login_customer_id": top_cid if child_cid != top_cid else None,
-                                "is_manager": is_mgr,
-                                "descriptive_name": desc_name,
-                            })
-                    except Exception as err:
-                        logger.warning(f"Could not query customer_client hierarchy for top customer {top_cid}: {err}")
-                        if top_cid not in seen_cids:
-                            seen_cids.add(top_cid)
-                            discovered.append({
-                                "account_id": top_cid,
-                                "account_name": f"Google Ads {top_cid}",
-                                "login_customer_id": None,
-                                "is_manager": False,
-                                "descriptive_name": f"Google Ads {top_cid}",
-                            })
-                return discovered
-
-            discovered_accounts = await asyncio.to_thread(_discover_google_accounts_sync)
-
-            for acc in discovered_accounts:
-                cid = acc["account_id"]
-                extra_data = {
-                    "developer_token": settings.google_ads_developer_token,
-                    "is_manager": acc["is_manager"],
-                    "descriptive_name": acc["descriptive_name"],
-                }
-                if acc.get("login_customer_id"):
-                    extra_data["login_customer_id"] = acc["login_customer_id"]
-
-                await credential_store.save_oauth_connection(
-                    client_id=client_id,
-                    platform="google_ads",
-                    account_id=cid,
-                    account_name=acc["account_name"],
-                    access_token=access_token,
+        if platform == "google_ads":
+            try:
+                from google.oauth2.credentials import Credentials
+                from google.ads.googleads.client import GoogleAdsClient
+                
+                token_credentials = Credentials(
+                    token=access_token,
                     refresh_token=refresh_token,
-                    token_expires_at=token_expires_at,
-                    extra_data=extra_data,
+                    token_uri="https://oauth2.googleapis.com/token",
+                    client_id=google_client_id,
+                    client_secret=google_client_secret
                 )
-            logger.info(f"Discovered {len(discovered_accounts)} Google Ads accounts (MCC & individual child accounts)")
-        except Exception as e:
-            logger.warning(f"Google Ads discovery failed (non-fatal): {e}")
+                
+                ads_client = GoogleAdsClient(
+                    credentials=token_credentials,
+                    developer_token=settings.google_ads_developer_token,
+                    use_proto_plus=True
+                )
+                
+                # Offload blocking gRPC calls to a thread
+                def _discover_google_accounts_sync():
+                    customer_service = ads_client.get_service("CustomerService")
+                    accessible_customers = customer_service.list_accessible_customers()
+                    ga_service = ads_client.get_service("GoogleAdsService")
+
+                    query = """
+                        SELECT
+                            customer_client.id,
+                            customer_client.descriptive_name,
+                            customer_client.manager,
+                            customer_client.status,
+                            customer_client.hidden,
+                            customer_client.level
+                        FROM customer_client
+                        WHERE customer_client.status = 'ENABLED' AND customer_client.hidden = FALSE
+                    """
+
+                    discovered = []
+                    seen_cids = set()
+
+                    for name in accessible_customers.resource_names:
+                        top_cid = name.split("/")[-1]
+                        try:
+                            response = ga_service.search(customer_id=top_cid, query=query)
+                            for row in response:
+                                cc = row.customer_client
+                                child_cid = str(cc.id)
+                                if child_cid in seen_cids:
+                                    continue
+                                seen_cids.add(child_cid)
+
+                                desc_name = cc.descriptive_name or f"Google Ads {child_cid}"
+                                is_mgr = bool(cc.manager)
+
+                                discovered.append({
+                                    "account_id": child_cid,
+                                    "account_name": f"{desc_name}" + (" (MCC)" if is_mgr else ""),
+                                    "login_customer_id": top_cid if child_cid != top_cid else None,
+                                    "is_manager": is_mgr,
+                                    "descriptive_name": desc_name,
+                                })
+                        except Exception as err:
+                            logger.warning(f"Could not query customer_client hierarchy for top customer {top_cid}: {err}")
+                            if top_cid not in seen_cids:
+                                seen_cids.add(top_cid)
+                                discovered.append({
+                                    "account_id": top_cid,
+                                    "account_name": f"Google Ads {top_cid}",
+                                    "login_customer_id": None,
+                                    "is_manager": False,
+                                    "descriptive_name": f"Google Ads {top_cid}",
+                                })
+                    return discovered
+
+                discovered_accounts = await asyncio.to_thread(_discover_google_accounts_sync)
+
+                for acc in discovered_accounts:
+                    cid = acc["account_id"]
+                    extra_data = {
+                        "developer_token": settings.google_ads_developer_token,
+                        "is_manager": acc["is_manager"],
+                        "descriptive_name": acc["descriptive_name"],
+                    }
+                    if acc.get("login_customer_id"):
+                        extra_data["login_customer_id"] = acc["login_customer_id"]
+
+                    await credential_store.save_oauth_connection(
+                        client_id=client_id,
+                        platform="google_ads",
+                        account_id=cid,
+                        account_name=acc["account_name"],
+                        access_token=access_token,
+                        refresh_token=refresh_token,
+                        token_expires_at=token_expires_at,
+                        extra_data=extra_data,
+                    )
+                logger.info(f"Discovered {len(discovered_accounts)} Google Ads accounts (MCC & individual child accounts)")
+            except Exception as e:
+                logger.warning(f"Google Ads discovery failed (non-fatal): {e}")
 
         # 3. Discover GA4 Properties
-        try:
-            ga4_res = await client.get(
-                "https://analyticsadmin.googleapis.com/v1beta/accountSummaries",
-                headers=headers,
-            )
-            if ga4_res.status_code == 200:
-                summaries = ga4_res.json().get("accountSummaries", [])
-                for summary in summaries:
-                    for prop in summary.get("propertySummaries", []):
-                        property_id = prop.get("property", "").replace("properties/", "")
-                        display_name = prop.get("displayName", f"GA4 Property {property_id}")
-                        await credential_store.save_oauth_connection(
-                            client_id=client_id,
-                            platform="ga4",
-                            account_id=property_id,
-                            account_name=display_name,
-                            access_token=access_token,
-                            refresh_token=refresh_token,
-                            token_expires_at=token_expires_at,
-                        )
-                logger.info(f"Discovered GA4 properties from {len(summaries)} accounts")
-            else:
-                logger.warning(f"GA4 discovery returned {ga4_res.status_code}: {ga4_res.text}")
-        except Exception as e:
-            logger.warning(f"GA4 discovery failed (non-fatal): {e}")
+        elif platform == "ga4":
+            try:
+                ga4_res = await client.get(
+                    "https://analyticsadmin.googleapis.com/v1beta/accountSummaries",
+                    headers=headers,
+                )
+                if ga4_res.status_code == 200:
+                    summaries = ga4_res.json().get("accountSummaries", [])
+                    for summary in summaries:
+                        for prop in summary.get("propertySummaries", []):
+                            property_id = prop.get("property", "").replace("properties/", "")
+                            display_name = prop.get("displayName", f"GA4 Property {property_id}")
+                            await credential_store.save_oauth_connection(
+                                client_id=client_id,
+                                platform="ga4",
+                                account_id=property_id,
+                                account_name=display_name,
+                                access_token=access_token,
+                                refresh_token=refresh_token,
+                                token_expires_at=token_expires_at,
+                            )
+                    logger.info(f"Discovered GA4 properties from {len(summaries)} accounts")
+                else:
+                    logger.warning(f"GA4 discovery returned {ga4_res.status_code}: {ga4_res.text}")
+            except Exception as e:
+                logger.warning(f"GA4 discovery failed (non-fatal): {e}")
 
-        # 4. Discover YouTube Channels
-        try:
-            yt_res = await client.get(
-                "https://www.googleapis.com/youtube/v3/channels",
-                params={"part": "snippet,statistics", "mine": "true"},
-                headers=headers,
-            )
-            if yt_res.status_code == 200:
-                channels = yt_res.json().get("items", [])
+        # 4. Discover YouTube Channels & Brand Accounts
+        elif platform == "youtube":
+            try:
+                # First attempt: discover channels owned directly or delegated to the active token
+                yt_res = await client.get(
+                    "https://www.googleapis.com/youtube/v3/channels",
+                    params={"part": "snippet,statistics", "mine": "true"},
+                    headers=headers,
+                )
+                channels = []
+                if yt_res.status_code == 200:
+                    channels = yt_res.json().get("items", [])
+
+                # If no channels found with mine=true, try querying managedByMe=true (Brand Accounts / delegated channels)
+                if not channels:
+                    logger.info("No channels found with mine=true, trying managedByMe=true for Brand Accounts...")
+                    managed_res = await client.get(
+                        "https://www.googleapis.com/youtube/v3/channels",
+                        params={"part": "snippet,statistics", "managedByMe": "true"},
+                        headers=headers,
+                    )
+                    if managed_res.status_code == 200:
+                        channels = managed_res.json().get("items", [])
+
                 for ch in channels:
                     ch_id = ch.get("id")
-                    ch_title = ch.get("snippet", {}).get("title", f"YouTube Channel {ch_id}")
+                    snippet = ch.get("snippet", {})
+                    ch_title = snippet.get("title", f"YouTube Channel {ch_id}")
+                    custom_url = snippet.get("customUrl", "")
                     await credential_store.save_oauth_connection(
                         client_id=client_id,
                         platform="youtube",
@@ -922,14 +945,40 @@ async def google_oauth_callback(
                         access_token=access_token,
                         refresh_token=refresh_token,
                         token_expires_at=token_expires_at,
+                        extra_data={
+                            "custom_url": custom_url,
+                            "is_brand_account": bool(snippet.get("title")),
+                        }
                     )
-                logger.info(f"Discovered {len(channels)} YouTube channels")
-            else:
-                logger.warning(f"YouTube discovery returned {yt_res.status_code}: {yt_res.text}")
-        except Exception as e:
-            logger.warning(f"YouTube discovery failed (non-fatal): {e}")
+                logger.info(f"Discovered {len(channels)} YouTube channels for client {client_id}")
 
-    return RedirectResponse(url=f"{redirect_url}?oauth=success&platform={platform}")
+                if not channels:
+                    # Fallback if the Google profile has no channel created yet:
+                    # Query userinfo to get user email and register a placeholder connection
+                    userinfo_res = await client.get("https://www.googleapis.com/oauth2/v3/userinfo", headers=headers)
+                    user_email = ""
+                    user_name = "YouTube Account"
+                    if userinfo_res.status_code == 200:
+                        user_data = userinfo_res.json()
+                        user_email = user_data.get("email", "")
+                        user_name = user_data.get("name", user_email or "YouTube Account")
+                    
+                    fallback_id = user_email or f"user_{client_id}"
+                    await credential_store.save_oauth_connection(
+                        client_id=client_id,
+                        platform="youtube",
+                        account_id=fallback_id,
+                        account_name=f"{user_name} (Sin canal público)",
+                        access_token=access_token,
+                        refresh_token=refresh_token,
+                        token_expires_at=token_expires_at,
+                        extra_data={"email": user_email, "needs_channel_setup": True}
+                    )
+                    logger.info(f"Saved fallback YouTube profile connection for {fallback_id}")
+            except Exception as e:
+                logger.warning(f"YouTube discovery failed (non-fatal): {e}")
+
+        return RedirectResponse(url=f"{redirect_url}?oauth=success&platform={platform}")
 
 
 # ═══════════════════════════════════════════════════════════════════

@@ -551,3 +551,31 @@ def test_google_redirect_uri_builder():
     uri = _build_google_redirect_uri()
     assert "google-callback" in uri
 
+
+@pytest.mark.asyncio
+async def test_google_oauth_authorize_scopes_isolation():
+    from app.routers.oauth import get_authorize_url, PLATFORM_GOOGLE_SCOPES
+
+    # Test Google Ads isolation
+    res_ads = await get_authorize_url(platform="google_ads", client_id="c1")
+    url_ads = res_ads["url"]
+    assert "adwords" in url_ads
+    assert "youtube" not in url_ads
+    assert "analytics" not in url_ads
+
+    # Test GA4 isolation
+    res_ga4 = await get_authorize_url(platform="ga4", client_id="c1")
+    url_ga4 = res_ga4["url"]
+    assert "analytics.readonly" in url_ga4
+    assert "adwords" not in url_ga4
+    assert "youtube" not in url_ga4
+
+    # Test YouTube isolation
+    res_yt = await get_authorize_url(platform="youtube", client_id="c1")
+    url_yt = res_yt["url"]
+    assert "youtube.readonly" in url_yt
+    assert "yt-analytics.readonly" in url_yt
+    assert "adwords" not in url_yt
+    # Specifically check that GA4 scope (auth/analytics.readonly) is not in YouTube url
+    assert "auth%2Fanalytics.readonly" not in url_yt and "auth/analytics.readonly" not in url_yt
+
