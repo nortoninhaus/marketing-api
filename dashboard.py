@@ -234,6 +234,10 @@ for selected_platform_key in selected_platform_keys:
                 "cost_per_all_conversions", "all_conversions_from_interactions_rate",
                 "value_per_conversion", "value_per_all_conversion", "active_view_cpm", "active_view_ctr"
             ],
+            "youtube": [
+                "views", "likes", "comments", "shares", "watchTimeMinutes",
+                "subscribersGained", "averageViewDuration", "viewCount", "likeCount", "commentCount"
+            ],
         }
         avail_metric_names = [m["name"] for m in metrics_list]
         pref = platform_preferred_metrics.get(selected_platform_key, [])
@@ -263,6 +267,10 @@ for selected_platform_key in selected_platform_keys:
         else:
             if selected_platform_key == "tiktok_ads":
                 for essential in ("spend", "impressions", "clicks", "reach", "conversion", "follows", "profile_visits", "likes", "comments", "shares", "video_play_actions"):
+                    if essential in avail_metric_names and essential not in st.session_state[metrics_key]:
+                        st.session_state[metrics_key].append(essential)
+            elif selected_platform_key == "youtube":
+                for essential in ("views", "likes", "comments", "watchTimeMinutes"):
                     if essential in avail_metric_names and essential not in st.session_state[metrics_key]:
                         st.session_state[metrics_key].append(essential)
             else:
