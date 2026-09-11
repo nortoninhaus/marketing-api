@@ -255,12 +255,13 @@ def require_dashboard_login(theme_icon, on_theme_change):
             with st.container(horizontal_alignment="center", gap=None):
                 st.html("""
                     <img src="https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/69691ca0d848087449f86454.svg"
-                         alt="Inhaus" class="inhaus-login-logo"
+                         alt="INHAUS BRAIN" class="inhaus-login-logo"
                          style="display:block;width:180px;margin:0 auto 0.75rem;">
                 """)
-                st.markdown("## Acceso al dashboard", text_alignment="center")
+                st.markdown("## INHAUS BRAIN", text_alignment="center")
                 st.caption(
-                    "Ingresa tus credenciales para consultar tus reportes de pauta.",
+                    "**Plataforma de Inteligencia de Marketing & Analítica Unificada.**\n\n"
+                    "INHAUS BRAIN consolida métricas de rendimiento, pauta publicitaria y canales de video (Google Ads, YouTube, Meta, TikTok) en un panel de control unificado. Ingresa tus credenciales para acceder a tus reportes.",
                     text_alignment="center",
                 )
 
@@ -300,6 +301,16 @@ def require_dashboard_login(theme_icon, on_theme_change):
                         st.query_params[DASHBOARD_AUTH_QUERY_PARAM] = token
                         st.rerun()
                     st.error("Usuario o contraseña incorrectos.")
+
+            st.html("""
+                <div style="text-align: center; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid rgba(150,150,150,0.2); font-size: 0.825rem; color: #888;">
+                    <p style="margin-bottom: 0.5rem;"><strong>INHAUS BRAIN</strong> &bull; Inhaus Corp</p>
+                    <p>
+                        <a href="/privacy" target="_blank" style="color: #4f46e5; text-decoration: none; margin: 0 6px;">Política de Privacidad</a> &bull;
+                        <a href="/terms" target="_blank" style="color: #4f46e5; text-decoration: none; margin: 0 6px;">Términos de Servicio</a>
+                    </p>
+                </div>
+            """)
 
     st.stop()
 

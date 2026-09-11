@@ -76,7 +76,7 @@ initial_sidebar = "collapsed" if st.session_state.get("query_run", False) else "
 
 # Page config to force wide layout
 st.set_page_config(
-    page_title="Inhaus Marketing API - Dashboard",
+    page_title="INHAUS BRAIN - Marketing Intelligence & Analytics Platform",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state=initial_sidebar
