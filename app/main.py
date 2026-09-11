@@ -119,6 +119,10 @@ app.include_router(clients_router)
 from app.routers.benchmarking import router as benchmarking_router
 app.include_router(benchmarking_router)
 
+# Register Legal & Public Compliance router (Privacy Policy, Terms of Service, Public Landing)
+from app.routers.legal import router as legal_router
+app.include_router(legal_router)
+
 # Mount FastMCP server and protect it with middleware
 from fastapi import Request
 from fastapi.responses import JSONResponse
