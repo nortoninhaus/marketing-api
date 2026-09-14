@@ -72,6 +72,17 @@ PLATFORM_GOOGLE_SCOPES = {
     ]),
 }
 
+# Compatibility aliases
+ALL_GOOGLE_SCOPES = list(dict.fromkeys(
+    GOOGLE_BASE_SCOPES + [
+        "https://www.googleapis.com/auth/adwords",
+        "https://www.googleapis.com/auth/analytics.readonly",
+        "https://www.googleapis.com/auth/youtube.readonly",
+        "https://www.googleapis.com/auth/yt-analytics.readonly",
+    ]
+))
+GOOGLE_SCOPES = ALL_GOOGLE_SCOPES
+
 SUPPORTED_PLATFORMS = {"meta_ads", "meta_organic", "google_ads", "ga4", "youtube", "threads", "tiktok_ads", "tiktok_organic", "ghl"}
 
 
@@ -793,9 +804,10 @@ async def google_oauth_callback(
                     client_secret=google_client_secret
                 )
                 
+                dev_token = settings.google_ads_developer_token or None
                 ads_client = GoogleAdsClient(
                     credentials=token_credentials,
-                    developer_token=settings.google_ads_developer_token,
+                    developer_token=dev_token,
                     use_proto_plus=True
                 )
                 
@@ -851,7 +863,7 @@ async def google_oauth_callback(
                                     "login_customer_id": None,
                                     "is_manager": False,
                                     "descriptive_name": f"Google Ads {top_cid}",
-                                })
+                                    })
                     return discovered
 
                 discovered_accounts = await asyncio.to_thread(_discover_google_accounts_sync)
@@ -859,10 +871,11 @@ async def google_oauth_callback(
                 for acc in discovered_accounts:
                     cid = acc["account_id"]
                     extra_data = {
-                        "developer_token": settings.google_ads_developer_token,
                         "is_manager": acc["is_manager"],
                         "descriptive_name": acc["descriptive_name"],
                     }
+                    if dev_token:
+                        extra_data["developer_token"] = dev_token
                     if acc.get("login_customer_id"):
                         extra_data["login_customer_id"] = acc["login_customer_id"]
 
