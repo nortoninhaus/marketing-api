@@ -50,30 +50,38 @@ class GoogleAdsConnector(BaseConnector):
         }
 
     def _build_client(self, creds: Dict[str, Any]) -> GoogleAdsClient:
-        if creds.get("access_token"):
+        developer_token = creds.get("developer_token") or None
+        login_customer_id = creds.get("login_customer_id") or None
+
+        # If an access_token is explicitly given, or developer_token is omitted (transition to GCP project-level access),
+        # construct GoogleAdsClient using Credentials directly so developer_token is optional.
+        if creds.get("access_token") or not developer_token:
             from google.oauth2.credentials import Credentials
             token_credentials = Credentials(
-                token=creds["access_token"],
+                token=creds.get("access_token"),
                 refresh_token=creds.get("refresh_token"),
                 token_uri="https://oauth2.googleapis.com/token",
-                client_id=creds["client_id"],
-                client_secret=creds["client_secret"]
+                client_id=creds.get("client_id"),
+                client_secret=creds.get("client_secret")
             )
             return GoogleAdsClient(
                 credentials=token_credentials,
-                developer_token=creds["developer_token"],
-                login_customer_id=creds.get("login_customer_id"),
+                developer_token=developer_token,
+                login_customer_id=login_customer_id,
                 use_proto_plus=True
             )
-        client_dict = {
-            "developer_token": creds["developer_token"],
-            "client_id": creds["client_id"],
-            "client_secret": creds["client_secret"],
-            "refresh_token": creds["refresh_token"],
+
+        client_dict: Dict[str, Any] = {
+            "client_id": creds.get("client_id"),
+            "client_secret": creds.get("client_secret"),
+            "refresh_token": creds.get("refresh_token"),
             "use_proto_plus": True
         }
-        if creds.get("login_customer_id"):
-            client_dict["login_customer_id"] = creds["login_customer_id"]
+        if developer_token:
+            client_dict["developer_token"] = developer_token
+        if login_customer_id:
+            client_dict["login_customer_id"] = login_customer_id
+
         return GoogleAdsClient.load_from_dict(client_dict)
 
     def fetch_data(self, request: DataRequest) -> List[CampaignData]:

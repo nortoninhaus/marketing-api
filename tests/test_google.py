@@ -200,6 +200,49 @@ def test_google_ads_custom_conversion_metrics(mock_ads_client_class):
         assert results[0].metrics["account_created_ahorro_futuro_value"] == 80.0
 
 
+@patch("app.connectors.google_ads.GoogleAdsClient")
+def test_google_ads_fetch_data_without_developer_token(mock_ads_client_class):
+    """Verify that GoogleAdsConnector works properly when developer_token is None or omitted (GCP project level access)."""
+    mock_client = MagicMock()
+    mock_ads_client_class.return_value = mock_client
+    mock_service = MagicMock()
+    mock_client.get_service.return_value = mock_service
+
+    rows = [
+        MockAdsRow("Campaign No DevToken", "2026-05-01", 300, 30),
+    ]
+    mock_service.search_stream.return_value = [MockAdsBatch(rows)]
+
+    connector = GoogleAdsConnector()
+    with patch.object(connector, "get_credentials") as mock_get_creds:
+        mock_get_creds.return_value = {
+            "developer_token": None,
+            "client_id": "fake_client_id",
+            "client_secret": "fake_secret",
+            "refresh_token": "fake_refresh_token",
+            "customer_id": "1234567890",
+        }
+
+        req = DataRequest(
+            platform="google_ads",
+            start_date=date(2026, 5, 1),
+            end_date=date(2026, 5, 7),
+            metrics=["impressions", "clicks"],
+            client_id="test_client",
+            user_id="test_user",
+            account_id="1234567890"
+        )
+
+        results = connector.fetch_data(req)
+        assert len(results) == 1
+        assert results[0].campaign_name == "Campaign No DevToken"
+        # Confirm GoogleAdsClient was initialized with developer_token=None
+        mock_ads_client_class.assert_called_once()
+        _, kwargs = mock_ads_client_class.call_args
+        assert kwargs["developer_token"] is None
+
+
+
 
 # ═══════════════════════════════════════════════════════════════════
 # GA4 CONNECTOR TESTS
