@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "01M2TH9TWM79XTC7QMPV821JMK",
+  "strategy": "manual-commit",
+  "branch": "feat/add-templates",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".gcloudignore",
+    "README.md",
+    "app/config.py",
+    "app/connectors/search_console.py",
+    "app/main.py",
+    "app/metrics.py",
+    "app/models/requests.py",
+    "app/routers/oauth.py",
+    "app/services/credential_store.py",
+    "deploy.sh",
+    "tests/test_search_console.py",
+    "web_ui/lib/screens/query_screen.dart",
+    "web_ui/lib/screens/settings_screen.dart"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 85071,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 155,
+    "api_call_count": 1
+  }
+}
