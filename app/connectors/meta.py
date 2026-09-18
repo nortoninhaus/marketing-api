@@ -667,7 +667,7 @@ class MetaOrganicConnector(BaseConnector):
                     res = client.get(
                         url,
                         params={
-                            "fields": f"id,caption,timestamp,media_type,insights.metric({','.join(media_metrics)}){{name,values}}",
+                            "fields": f"id,caption,timestamp,media_type,permalink,insights.metric({','.join(media_metrics)}){{name,values}}",
                             "limit": request.limit or 50,
                             "access_token": access_token
                         }
@@ -678,6 +678,7 @@ class MetaOrganicConnector(BaseConnector):
                             media_id = item.get("id")
                             caption = item.get("caption", "")
                             timestamp = item.get("timestamp", request.start_date.strftime("%Y-%m-%d"))
+                            permalink = item.get("permalink", "")
                             
                             insights_data = item.get("insights", {}).get("data", [])
                             metrics_dict = {}
@@ -690,7 +691,12 @@ class MetaOrganicConnector(BaseConnector):
                             results.append(CampaignData(
                                 campaign_name=f"IG_Post_{media_id}_{caption[:20]}",
                                 date=timestamp[:10],
-                                metrics=metrics_dict
+                                metrics=metrics_dict,
+                                dimensions={
+                                    "post_id": media_id,
+                                    "permalink": permalink,
+                                    "media_type": item.get("media_type", "")
+                                }
                             ))
                 return results
             except Exception as e:
@@ -700,6 +706,18 @@ class MetaOrganicConnector(BaseConnector):
         # 3. If post_id is provided, fetch insights for specific Instagram Media
         elif request.post_id:
             media_id = request.post_id
+            single_permalink = ""
+            try:
+                with httpx.Client() as c_perm:
+                    p_res = c_perm.get(
+                        f"{GRAPH_BASE}/{media_id}",
+                        params={"fields": "id,caption,permalink,media_type", "access_token": access_token}
+                    )
+                    if p_res.status_code == 200:
+                        single_permalink = p_res.json().get("permalink", "")
+            except Exception:
+                pass
+
             url = f"{GRAPH_BASE}/{media_id}/insights"
             # Map and filter for valid Instagram Media metrics
             media_metrics = []
@@ -810,7 +828,13 @@ class MetaOrganicConnector(BaseConnector):
             CampaignData(
                 campaign_name=campaign_name,
                 date=day,
-                metrics=metrics_dict
+                metrics=metrics_dict,
+                dimensions={
+                    "post_id": request.post_id,
+                    "permalink": single_permalink,
+                } if request.post_id else {
+                    "account_id": str(ig_account_id),
+                }
             ) for day, metrics_dict in sorted(daily_data.items())
         ]
 
@@ -969,7 +993,7 @@ class MetaOrganicConnector(BaseConnector):
                     res = client.get(
                         url,
                         params={
-                            "fields": f"id,message,created_time,insights.metric({','.join(post_metrics)}){{name,values}}",
+                            "fields": f"id,message,created_time,permalink_url,insights.metric({','.join(post_metrics)}){{name,values}}",
                             "limit": request.limit or 50,
                             "access_token": creds["access_token"]
                         }
@@ -980,6 +1004,7 @@ class MetaOrganicConnector(BaseConnector):
                             pid = item.get("id")
                             message = item.get("message", "")
                             created_time = item.get("created_time", since_str)
+                            permalink = item.get("permalink_url") or f"https://www.facebook.com/{pid}"
                             
                             insights_data = item.get("insights", {}).get("data", [])
                             metrics_dict = {}
@@ -992,13 +1017,28 @@ class MetaOrganicConnector(BaseConnector):
                             results.append(CampaignData(
                                 campaign_name=f"Post_{pid}_{message[:20]}",
                                 date=created_time[:10],
-                                metrics=metrics_dict
+                                metrics=metrics_dict,
+                                dimensions={
+                                    "post_id": pid,
+                                    "permalink": permalink,
+                                }
                             ))
             except Exception as e:
                 logger.error(f"Meta Page posts batch fetch failed: {e}")
 
         # 3. Fetch specific post if requested
+        single_post_permalink = f"https://www.facebook.com/{request.post_id}" if request.post_id else ""
         if request.post_id and request.post_id != "all":
+            try:
+                with httpx.Client() as client:
+                    p_res = client.get(
+                        f"{GRAPH_BASE}/{request.post_id}",
+                        params={"fields": "id,message,permalink_url", "access_token": creds["access_token"]}
+                    )
+                    if p_res.status_code == 200:
+                        single_post_permalink = p_res.json().get("permalink_url", single_post_permalink)
+            except Exception:
+                pass
             try:
                 posts = page.get_posts(params={"ids": request.post_id})
                 if posts:
@@ -1083,11 +1123,20 @@ class MetaOrganicConnector(BaseConnector):
         if not daily_data:
             return results
 
+        page_url = f"https://www.facebook.com/{creds['page_id']}"
         results.extend([
             CampaignData(
                 campaign_name=campaign_name,
                 date=day,
-                metrics=metrics_dict
+                metrics=metrics_dict,
+                dimensions={
+                    "page_id": str(creds["page_id"]),
+                    "permalink": page_url,
+                    "url": page_url,
+                } if (not request.post_id or request.post_id == "all") else {
+                    "post_id": request.post_id,
+                    "permalink": single_post_permalink,
+                }
             ) for day, metrics_dict in sorted(daily_data.items())
         ])
         return results
