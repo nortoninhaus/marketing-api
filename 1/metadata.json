@@ -1,0 +1,85 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "01M2TH9TWM79XTC7QMPV821JMK",
+  "session_id": "ses_f4aede788ffeqsbkL5Db8yRzSo",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-18T15:14:03.011633Z",
+  "branch": "feat/add-templates",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    ".gcloudignore",
+    "README.md",
+    "app/config.py",
+    "app/connectors/search_console.py",
+    "app/main.py",
+    "app/metrics.py",
+    "app/models/requests.py",
+    "app/routers/oauth.py",
+    "app/services/credential_store.py",
+    "deploy.sh",
+    "tests/test_search_console.py",
+    "web_ui/lib/screens/query_screen.dart",
+    "web_ui/lib/screens/settings_screen.dart"
+  ],
+  "agent": "OpenCode",
+  "model": "gemini-3.6-flash",
+  "turn_id": "1226cae6f443",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 85083,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 1
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-18T15:14:02.899813Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 20,
+    "total_committed": 0,
+    "total_lines_changed": 20,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 500,
+      "user_lines_removed": 20,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".gcloudignore": 1,
+        "README.md": 33,
+        "app/config.py": 2,
+        "app/connectors/search_console.py": 63,
+        "app/main.py": 29,
+        "app/metrics.py": 9,
+        "app/models/requests.py": 51,
+        "app/routers/oauth.py": 42,
+        "app/services/credential_store.py": 20,
+        "deploy.sh": 26,
+        "tests/test_search_console.py": 218,
+        "web_ui/lib/screens/query_screen.dart": 2,
+        "web_ui/lib/screens/settings_screen.dart": 4
+      },
+      "user_removed_per_file": {
+        "app/config.py": 1,
+        "app/main.py": 1,
+        "app/models/requests.py": 1,
+        "app/routers/oauth.py": 5,
+        "app/services/credential_store.py": 5,
+        "deploy.sh": 4,
+        "web_ui/lib/screens/query_screen.dart": 1,
+        "web_ui/lib/screens/settings_screen.dart": 2
+      }
+    }
+  ]
+}
