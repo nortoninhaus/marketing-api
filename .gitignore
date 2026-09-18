@@ -56,4 +56,5 @@ real_ad_previews.json
 .entire/
 .gemini/
 .opencode/
-
+.worktrees/
+.worktrees
