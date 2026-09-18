@@ -559,5 +559,37 @@ async def test_tiktok_organic_proxy_endpoint(mock_post, mock_get, mock_resolve_c
     assert "Access-Token" not in kwargs["headers"]
 
 
+@pytest.mark.asyncio
+async def test_tiktok_organic_token_refresh():
+    from app.services.credential_store import credential_store
+    
+    mock_doc_ref = MagicMock()
+    mock_doc_ref.update = AsyncMock()
+    mock_doc_ref.id = "tiktok_organic_test_123"
 
+    old_token_data = {
+        "access_token": "expired_access_token",
+        "refresh_token": "valid_refresh_token",
+        "token_expires_at": "2026-09-01T00:00:00+00:00"
+    }
 
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "access_token": "new_refreshed_access_token",
+        "refresh_token": "new_refreshed_refresh_token",
+        "expires_in": 86400,
+        "open_id": "test_open_id"
+    }
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        mock_post.return_value = mock_resp
+        result = await credential_store._refresh_tiktok_token(old_token_data.copy(), mock_doc_ref)
+
+        assert result["access_token"] == "new_refreshed_access_token"
+        assert result["refresh_token"] == "new_refreshed_refresh_token"
+        mock_doc_ref.update.assert_called_once()
+        update_args = mock_doc_ref.update.call_args[0][0]
+        assert update_args["access_token"] == "new_refreshed_access_token"
+        assert update_args["refresh_token"] == "new_refreshed_refresh_token"
+        assert "token_expires_at" in update_args

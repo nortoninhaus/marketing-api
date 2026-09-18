@@ -134,6 +134,31 @@ def render_generic_ads_platform_tab(
         if tot_plays > 0:
             tot_plays_prev = int(pd.to_numeric(df_prev_p["video_play_actions"], errors="coerce").fillna(0).sum()) if (not df_prev_p.empty and "video_play_actions" in df_prev_p.columns) else 0
             kpis_layout += get_kpi_card_html("Reproducciones Video", f"{tot_plays:,}", "Vistas totales de video", tot_plays, tot_plays_prev) + "\n"
+    if "views" in df_curr_p.columns:
+        tot_views = int(pd.to_numeric(df_curr_p["views"], errors="coerce").fillna(0).sum())
+        if tot_views > 0:
+            tot_views_prev = int(pd.to_numeric(df_prev_p["views"], errors="coerce").fillna(0).sum()) if (not df_prev_p.empty and "views" in df_prev_p.columns) else 0
+            kpis_layout += get_kpi_card_html("Visualizaciones", f"{tot_views:,}", "Reproducciones de video", tot_views, tot_views_prev) + "\n"
+    if "watchTimeMinutes" in df_curr_p.columns:
+        tot_wt = float(pd.to_numeric(df_curr_p["watchTimeMinutes"], errors="coerce").fillna(0).sum())
+        if tot_wt > 0:
+            tot_wt_prev = float(pd.to_numeric(df_prev_p["watchTimeMinutes"], errors="coerce").fillna(0).sum()) if (not df_prev_p.empty and "watchTimeMinutes" in df_prev_p.columns) else 0.0
+            kpis_layout += get_kpi_card_html("Minutos Visualizados", f"{tot_wt:,.0f} min", "Tiempo total de reproducción", tot_wt, tot_wt_prev) + "\n"
+    if "subscribersGained" in df_curr_p.columns:
+        tot_subs = int(pd.to_numeric(df_curr_p["subscribersGained"], errors="coerce").fillna(0).sum())
+        if tot_subs > 0:
+            tot_subs_prev = int(pd.to_numeric(df_prev_p["subscribersGained"], errors="coerce").fillna(0).sum()) if (not df_prev_p.empty and "subscribersGained" in df_prev_p.columns) else 0
+            kpis_layout += get_kpi_card_html("Nuevos Suscriptores", f"{tot_subs:,}", "Suscriptores ganados en el canal", tot_subs, tot_subs_prev) + "\n"
+    if "likes" in df_curr_p.columns:
+        tot_likes = int(pd.to_numeric(df_curr_p["likes"], errors="coerce").fillna(0).sum())
+        if tot_likes > 0:
+            tot_likes_prev = int(pd.to_numeric(df_prev_p["likes"], errors="coerce").fillna(0).sum()) if (not df_prev_p.empty and "likes" in df_prev_p.columns) else 0
+            kpis_layout += get_kpi_card_html("Me Gusta", f"{tot_likes:,}", "Likes en publicaciones o videos", tot_likes, tot_likes_prev) + "\n"
+    if "comments" in df_curr_p.columns:
+        tot_comments = int(pd.to_numeric(df_curr_p["comments"], errors="coerce").fillna(0).sum())
+        if tot_comments > 0:
+            tot_comments_prev = int(pd.to_numeric(df_prev_p["comments"], errors="coerce").fillna(0).sum()) if (not df_prev_p.empty and "comments" in df_prev_p.columns) else 0
+            kpis_layout += get_kpi_card_html("Comentarios", f"{tot_comments:,}", "Comentarios recibidos", tot_comments, tot_comments_prev) + "\n"
     if "follows" in df_curr_p.columns:
         tot_follows = int(pd.to_numeric(df_curr_p["follows"], errors="coerce").fillna(0).sum())
         if tot_follows > 0:
@@ -159,7 +184,7 @@ def render_generic_ads_platform_tab(
         "clicks": "sum",
         "conversions": "sum",
     }
-    for m in ["reach", "video_play_actions", "follows", "profile_visits"]:
+    for m in ["reach", "video_play_actions", "views", "watchTimeMinutes", "subscribersGained", "likes", "comments", "follows", "profile_visits"]:
         if m in df_curr_p.columns:
             agg_dict[m] = "sum"
 

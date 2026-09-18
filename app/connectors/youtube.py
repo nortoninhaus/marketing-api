@@ -41,13 +41,17 @@ class YouTubeConnector(BaseConnector):
         end_str = request.end_date.strftime("%Y-%m-%d")
 
         # ─── YouTube Analytics API Flow (Requires OAuth) ────────────────
+        client_id = settings.google_client_id or settings.google_ads_client_id
+        client_secret = settings.google_client_secret or settings.google_ads_client_secret
+        token_credentials = None
+
         if creds.get("access_token"):
             token_credentials = Credentials(
                 token=creds["access_token"],
                 refresh_token=creds.get("refresh_token"),
                 token_uri="https://oauth2.googleapis.com/token",
-                client_id=settings.google_client_id,
-                client_secret=settings.google_client_secret
+                client_id=client_id,
+                client_secret=client_secret
             )
             try:
                 youtube_analytics = build("youtubeAnalytics", "v2", credentials=token_credentials)
@@ -77,11 +81,18 @@ class YouTubeConnector(BaseConnector):
                                 v_str = str(v)
                             filter_parts.append(f"{k}=={v_str}")
 
+                # Ensure only Analytics API supported metrics are passed
+                analytics_valid_metrics = {
+                    "views", "likes", "comments", "shares", "watchTimeMinutes",
+                    "subscribersGained", "subscribersLost", "averageViewDuration"
+                }
+                req_analytics_metrics = [m for m in request.metrics if m in analytics_valid_metrics] or ["views"]
+
                 params = {
                     "ids": f"channel=={channel_id}",
                     "startDate": start_str,
                     "endDate": end_str,
-                    "metrics": ",".join(request.metrics),
+                    "metrics": ",".join(req_analytics_metrics),
                     "dimensions": ",".join(yt_dims)
                 }
                 if filter_parts:
@@ -121,13 +132,21 @@ class YouTubeConnector(BaseConnector):
                         date=date_val,
                         metrics=metrics_dict
                     ))
-                return results
+                if results:
+                    return results
 
             except Exception as e:
-                logger.error(f"YouTube Analytics API query failed, falling back: {e}")
+                logger.error(f"YouTube Analytics API query failed, attempting Data API v3 fallback: {e}")
 
-        # ─── Fallback to Public YouTube Data API v3 ────────────────────
-        youtube = build("youtube", "v3", developerKey=creds.get("api_key"))
+        # ─── Fallback to YouTube Data API v3 (Using OAuth credentials or API key) ───
+        if token_credentials:
+            youtube = build("youtube", "v3", credentials=token_credentials)
+        elif creds.get("api_key"):
+            youtube = build("youtube", "v3", developerKey=creds.get("api_key"))
+        else:
+            logger.error("No valid credentials (OAuth or API Key) available for YouTube Data API.")
+            return []
+
         if request.video_id:
             yt_request = youtube.videos().list(part="statistics,snippet", id=request.video_id)
             response = yt_request.execute()
@@ -137,29 +156,37 @@ class YouTubeConnector(BaseConnector):
             
             metrics_dict = {}
             for m in request.metrics:
-                val = item["statistics"].get(m, 0)
+                # Support translation between analytics and data API names
+                m_key = "viewCount" if m == "views" else ("likeCount" if m == "likes" else ("commentCount" if m == "comments" else m))
+                val = item["statistics"].get(m_key, item["statistics"].get(m, 0))
                 metrics_dict[m] = int(val) if str(val).isdigit() else val
                 
             return [CampaignData(
-                campaign_name=item["snippet"]["title"],
+                campaign_name=item["snippet"].get("title", f"Video {request.video_id}") if item.get("snippet") else "YouTube_Channel",
                 date=start_str,
                 metrics=metrics_dict
             )]
         else:
-            channel_id = creds["channel_id"]
-            yt_request = youtube.channels().list(part="statistics", id=channel_id)
+            channel_id = creds.get("channel_id")
+            if channel_id and channel_id.startswith("UC"):
+                yt_request = youtube.channels().list(part="statistics,snippet", id=channel_id)
+            else:
+                yt_request = youtube.channels().list(part="statistics,snippet", mine=True)
+
             response = yt_request.execute()
             if not response.get("items"):
                 return []
             item = response["items"][0]
             
+            channel_title = item.get("snippet", {}).get("title") if item.get("snippet") else "YouTube_Channel"
             metrics_dict = {}
             for m in request.metrics:
-                val = item["statistics"].get(m, 0)
+                m_key = "viewCount" if m == "views" else ("likeCount" if m == "likes" else ("commentCount" if m == "comments" else m))
+                val = item["statistics"].get(m_key, item["statistics"].get(m, 0))
                 metrics_dict[m] = int(val) if str(val).isdigit() else val
                 
             return [CampaignData(
-                campaign_name="YouTube_Channel",
+                campaign_name=channel_title,
                 date=start_str,
                 metrics=metrics_dict
             )]
