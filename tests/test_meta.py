@@ -499,3 +499,79 @@ def test_meta_ads_exposes_post_engagement(mock_ad_account, mock_api, mock_sessio
 
     assert "post_engagement" in connector.get_schema()["metrics"]
     assert result[0].metrics["post_engagement"] == 37
+
+
+@patch("app.connectors.meta.FacebookSession")
+@patch("app.connectors.meta.FacebookAdsApi")
+@patch("app.connectors.meta.Page")
+def test_meta_organic_page_fans_deprecated_mapping(mock_page, mock_api, mock_session):
+    mock_instance = MagicMock()
+    mock_page.return_value = mock_instance
+    mock_instance.get_insights.return_value = [
+        {"name": "page_follows", "period": "day", "values": [{"value": 1005, "end_time": "2026-08-02T07:00:00+0000"}]},
+        {"name": "page_media_view", "period": "day", "values": [{"value": 500, "end_time": "2026-08-02T07:00:00+0000"}]}
+    ]
+
+    connector = MetaOrganicConnector()
+    with patch.object(connector, "get_credentials") as mock_get_creds:
+        mock_get_creds.return_value = {
+            "access_token": "fake_token",
+            "page_id": "538081779585091"
+        }
+        req = DataRequest(
+            platform="meta_organic",
+            start_date=date(2026, 8, 1),
+            end_date=date(2026, 8, 31),
+            metrics=["page_fans", "page_media_view"],
+            client_id="test_client",
+            user_id="test_user",
+            account_id="538081779585091"
+        )
+        results = connector.fetch_data(req)
+        assert len(results) == 1
+        assert results[0].metrics["page_follows"] == 1005
+        assert results[0].metrics["page_fans"] == 1005
+        assert results[0].metrics["page_media_view"] == 500
+
+
+@patch("app.connectors.meta.FacebookSession")
+@patch("app.connectors.meta.FacebookAdsApi")
+@patch("app.connectors.meta.Page")
+def test_meta_organic_batch_failure_fallback(mock_page, mock_api, mock_session):
+    mock_instance = MagicMock()
+    mock_page.return_value = mock_instance
+    
+    # First batch call fails with exception, then individual calls succeed
+    def side_effect(params=None):
+        metrics = params.get("metric", [])
+        if len(metrics) > 1:
+            raise Exception("(#100) The value must be a valid insights metric")
+        elif metrics == ["page_media_view"]:
+            return [{"name": "page_media_view", "period": "day", "values": [{"value": 800, "end_time": "2026-08-02T07:00:00+0000"}]}]
+        elif metrics == ["page_follows"]:
+            return [{"name": "page_follows", "period": "day", "values": [{"value": 950, "end_time": "2026-08-02T07:00:00+0000"}]}]
+        raise Exception("Unsupported metric")
+
+    mock_instance.get_insights.side_effect = side_effect
+
+    connector = MetaOrganicConnector()
+    with patch.object(connector, "get_credentials") as mock_get_creds:
+        mock_get_creds.return_value = {
+            "access_token": "fake_token",
+            "page_id": "538081779585091"
+        }
+        req = DataRequest(
+            platform="meta_organic",
+            start_date=date(2026, 8, 1),
+            end_date=date(2026, 8, 31),
+            metrics=["page_media_view", "page_follows"],
+            client_id="test_client",
+            user_id="test_user",
+            account_id="538081779585091"
+        )
+        results = connector.fetch_data(req)
+        assert len(results) == 1
+        assert results[0].metrics["page_media_view"] == 800
+        assert results[0].metrics["page_follows"] == 950
+
+

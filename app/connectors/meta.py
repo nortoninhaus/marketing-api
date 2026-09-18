@@ -586,8 +586,8 @@ class MetaOrganicConnector(BaseConnector):
     IG_ACCOUNT_DEMO_METRICS = {"audience_gender_age", "audience_country", "audience_city", "audience_locale"}
     IG_MEDIA_METRICS = {"views", "reach", "saved", "shares", "likes", "comments", "total_interactions", "plays", "replays", "carousel_album_saves", "carousel_album_impressions"}
 
-    PAGE_DAILY_METRICS = {"page_views_total", "page_post_engagements", "page_follows", "page_fans", "page_actions_post_reactions_total", "page_media_view", "page_total_media_view_unique"}
-    PAGE_DEMO_METRICS = {"page_fans_gender_age", "page_fans_country", "page_fans_city", "page_fans_locale"}
+    PAGE_DAILY_METRICS = {"page_views_total", "page_post_engagements", "page_follows", "page_actions_post_reactions_total", "page_media_view", "page_total_media_view_unique"}
+    PAGE_DEMO_METRICS = set()  # Meta deprecated lifetime fan demographics (page_fans_*) without API replacement
     PAGE_POST_METRICS = {"post_clicks", "post_media_view", "post_total_media_view_unique"}
 
     # ─── Instagram Organic ─────────────────────────────────────────────
@@ -934,7 +934,7 @@ class MetaOrganicConnector(BaseConnector):
         campaign_name = "Page_Insights"
 
         # 1. Fetch demographics if requested (run safely in try/except)
-        demo_metrics = [m for m in request.metrics if m in self.PAGE_DEMO_METRICS or "page_fans_" in m]
+        demo_metrics = [m for m in request.metrics if m in self.PAGE_DEMO_METRICS]
         if demo_metrics and not request.post_id:
             try:
                 insights = page.get_insights(params={
@@ -951,7 +951,7 @@ class MetaOrganicConnector(BaseConnector):
                             daily_data[day] = {}
                         daily_data[day][metric_name] = val_entry.get("value", {})
             except Exception as e:
-                logger.warning(f"Meta Page demographics fetch failed (possibly due to < 100 fans): {e}")
+                logger.warning(f"Meta Page demographics fetch failed: {e}")
 
         # 2. If post_id is "all" or dimension post_id is requested (fetch all posts with nested insights in one batch request)
         fetch_posts = False
@@ -1028,9 +1028,14 @@ class MetaOrganicConnector(BaseConnector):
 
         # 4. Fetch Page daily metrics
         if not request.post_id or request.post_id == "all":
-            page_metrics = [m for m in request.metrics if m in self.PAGE_DAILY_METRICS]
+            req_metrics = list(request.metrics)
+            wants_page_fans = "page_fans" in req_metrics
+            if wants_page_fans and "page_follows" not in req_metrics:
+                req_metrics.append("page_follows")
+
+            page_metrics = [m for m in req_metrics if m in self.PAGE_DAILY_METRICS]
             if not page_metrics and not fetch_posts:
-                page_metrics = ["page_views_total", "page_post_engagements", "page_follows", "page_fans", "page_actions_post_reactions_total"]
+                page_metrics = ["page_views_total", "page_post_engagements", "page_follows", "page_actions_post_reactions_total", "page_media_view", "page_total_media_view_unique"]
             
             if page_metrics:
                 page_metrics = list(dict.fromkeys(page_metrics))
@@ -1050,7 +1055,30 @@ class MetaOrganicConnector(BaseConnector):
                                 daily_data[day] = {}
                             daily_data[day][metric_name] = val_entry.get("value", 0)
                 except Exception as e:
-                    logger.error(f"Meta Page insights fetch failed: {e}")
+                    logger.warning(f"Meta Page insights batch fetch failed ({e}); falling back to individual metrics")
+                    for single_metric in page_metrics:
+                        try:
+                            insights = page.get_insights(params={
+                                "metric": [single_metric],
+                                "since": since_str,
+                                "until": until_str
+                            })
+                            for insight in insights:
+                                metric_name = insight.get("name", "unknown")
+                                values_list = insight.get("values", [])
+                                for val_entry in values_list:
+                                    end_time = val_entry.get("end_time", since_str)
+                                    day = end_time[:10] if end_time else since_str
+                                    if day not in daily_data:
+                                        daily_data[day] = {}
+                                    daily_data[day][metric_name] = val_entry.get("value", 0)
+                        except Exception as single_err:
+                            logger.warning(f"Failed to fetch individual Page metric '{single_metric}': {single_err}")
+
+            if wants_page_fans:
+                for day in daily_data:
+                    if "page_follows" in daily_data[day]:
+                        daily_data[day]["page_fans"] = daily_data[day]["page_follows"]
 
         if not daily_data:
             return results
@@ -1067,13 +1095,12 @@ class MetaOrganicConnector(BaseConnector):
     def get_schema(self) -> Dict[str, Any]:
         return {
             "metrics": [
-                # Facebook Page metrics (migrated from deprecated impressions)
+                # Facebook Page metrics (migrated from deprecated impressions and fans)
                 "page_media_view",
                 "page_total_media_view_unique",
                 "page_post_engagements",
                 "page_views_total",
                 "page_follows",
-                "page_fans",
                 "page_actions_post_reactions_total",
                 "post_media_view",
                 "post_total_media_view_unique",
@@ -1099,17 +1126,13 @@ class MetaOrganicConnector(BaseConnector):
                 "audience_country",
                 "audience_city",
                 "audience_locale",
-                "page_fans_gender_age",
-                "page_fans_country",
-                "page_fans_city",
-                "page_fans_locale",
             ],
             "dimensions": ["post_id", "date_start", "audience_gender_age", "audience_country", "audience_city", "audience_locale"],
             "metadata": {
                 "api_version": GRAPH_API_VERSION,
                 "comment_support": True,
                 "notes": "Instagram: 'impressions' deprecated July 2024, use 'views'. "
-                         "Pages: 'page_impressions' deprecated June 2026, use 'page_media_view'.",
+                         "Pages: 'page_impressions' and 'page_fans' deprecated, use 'page_media_view' and 'page_follows'.",
             },
         }
 
