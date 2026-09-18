@@ -72,7 +72,21 @@ PLATFORM_GOOGLE_SCOPES = {
     ]),
 }
 
-SUPPORTED_PLATFORMS = {"meta_ads", "meta_organic", "google_ads", "ga4", "youtube", "threads", "tiktok_ads", "tiktok_organic", "ghl"}
+SEARCH_CONSOLE_SCOPE = "https://www.googleapis.com/auth/webmasters.readonly"
+PLATFORM_GOOGLE_SCOPES["search_console"] = SEARCH_CONSOLE_SCOPE
+
+# Kept as a compatibility view for callers that inspect the complete scope catalog.
+GOOGLE_SCOPES = {
+    "openid": GOOGLE_BASE_SCOPES[0],
+    "email": GOOGLE_BASE_SCOPES[1],
+    "profile": GOOGLE_BASE_SCOPES[2],
+    "google_ads": "https://www.googleapis.com/auth/adwords",
+    "ga4": "https://www.googleapis.com/auth/analytics.readonly",
+    "youtube": "https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/yt-analytics.readonly",
+}
+ALL_GOOGLE_SCOPES = " ".join(GOOGLE_SCOPES.values())
+
+SUPPORTED_PLATFORMS = {"search_console", "meta_ads", "meta_organic", "google_ads", "ga4", "youtube", "threads", "tiktok_ads", "tiktok_organic", "ghl"}
 
 
 def _build_meta_redirect_uri(request: Request) -> str:
@@ -171,7 +185,7 @@ async def get_authorize_url(
         return {"url": auth_url, "authorization_url": auth_url}
 
     # ─── Google Platforms ──────────────────────────────────────────
-    if platform in ("google_ads", "ga4", "youtube"):
+    if platform in ("google_ads", "ga4", "youtube", "search_console"):
         google_client_id = settings.google_client_id or settings.google_ads_client_id
         if not google_client_id:
             raise HTTPException(
@@ -572,7 +586,7 @@ async def oauth_callback(
 
             access_token = token_data.get("data", {}).get("access_token")
             advertiser_ids = token_data.get("data", {}).get("advertiser_ids", [])
-            
+
             # Retrieve advertiser names using the OAuth-specific advertiser listing endpoint
             try:
                 advertisers_url = "https://business-api.tiktok.com/open_api/v1.3/oauth2/advertiser/get/"
@@ -585,7 +599,7 @@ async def oauth_callback(
                     advertisers_data = advertisers_res.json()
                     logger.info(f"Oauth advertiser/get response: {advertisers_data}")
                     advertisers_list = advertisers_data.get("data", {}).get("list", [])
-                    
+
                     if advertisers_list:
                         for adv in advertisers_list:
                             await credential_store.save_oauth_connection(
@@ -779,12 +793,42 @@ async def google_oauth_callback(
 
         headers = {"Authorization": f"Bearer {access_token}"}
 
+        if platform == "search_console":
+            # A readonly Search Console token must never replace Ads/GA4/YouTube tokens.
+            try:
+                sites_response = await client.get("https://www.googleapis.com/webmasters/v3/sites", headers=headers, timeout=30)
+            except httpx.RequestError:
+                raise HTTPException(status_code=502, detail="Search Console discovery is temporarily unavailable.") from None
+            if sites_response.status_code != 200:
+                status_code = sites_response.status_code if sites_response.status_code in {401, 403, 429} else 502
+                raise HTTPException(status_code=status_code, detail="Search Console discovery failed. Check API enablement, readonly consent and property access.")
+            from app.models.requests import validate_search_console_site
+            try:
+                sites = [site for site in sites_response.json().get("siteEntry", [])
+                         if site.get("permissionLevel") in {"siteOwner", "siteFullUser", "siteRestrictedUser"}]
+            except (ValueError, AttributeError, TypeError):
+                raise HTTPException(status_code=502, detail="Search Console returned invalid property data.") from None
+            if not sites:
+                raise HTTPException(status_code=404, detail="No accessible Search Console properties were found for this Google account.")
+            for site in sites:
+                try:
+                    site_url = validate_search_console_site(site.get("siteUrl", ""))
+                    await credential_store.save_oauth_connection(
+                        client_id=client_id, platform="search_console", account_id=site_url,
+                        account_name=site_url, access_token=access_token, refresh_token=refresh_token,
+                        token_expires_at=token_expires_at,
+                        extra_data={"permission_level": site["permissionLevel"], "scope": SEARCH_CONSOLE_SCOPE})
+                except (ValueError, RuntimeError):
+                    raise HTTPException(status_code=502, detail="Search Console property connection could not be saved.") from None
+            separator = "&" if "?" in redirect_url else "?"
+            return RedirectResponse(url=f"{redirect_url}{separator}oauth=success&platform=search_console")
+
         # 2. Discover Google Ads Accounts (via Google Ads SDK Customer Service)
         if platform == "google_ads":
             try:
                 from google.oauth2.credentials import Credentials
                 from google.ads.googleads.client import GoogleAdsClient
-                
+
                 token_credentials = Credentials(
                     token=access_token,
                     refresh_token=refresh_token,
@@ -792,13 +836,13 @@ async def google_oauth_callback(
                     client_id=google_client_id,
                     client_secret=google_client_secret
                 )
-                
+
                 ads_client = GoogleAdsClient(
                     credentials=token_credentials,
                     developer_token=settings.google_ads_developer_token,
                     use_proto_plus=True
                 )
-                
+
                 # Offload blocking gRPC calls to a thread
                 def _discover_google_accounts_sync():
                     customer_service = ads_client.get_service("CustomerService")
@@ -962,7 +1006,7 @@ async def google_oauth_callback(
                         user_data = userinfo_res.json()
                         user_email = user_data.get("email", "")
                         user_name = user_data.get("name", user_email or "YouTube Account")
-                    
+
                     fallback_id = user_email or f"user_{client_id}"
                     await credential_store.save_oauth_connection(
                         client_id=client_id,
@@ -1006,7 +1050,7 @@ async def list_connections(
         for conn in connections
     ]
 
-@router.delete("/connections/{platform}/{account_id}")
+@router.delete("/connections/{platform}/{account_id:path}")
 async def disconnect_account(
     platform: str,
     account_id: str,
@@ -1016,5 +1060,10 @@ async def disconnect_account(
     """
     Disconnects (deletes) the specified OAuth account connection.
     """
-    await credential_store.delete_oauth_connection(client_id, platform, account_id)
+    try:
+        await credential_store.delete_oauth_connection(client_id, platform, account_id)
+    except RuntimeError:
+        if platform != "search_console":
+            raise
+        raise HTTPException(status_code=502, detail="Search Console connection could not be deleted.") from None
     return {"status": "success", "message": f"Successfully disconnected account {account_id}"}

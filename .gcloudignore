@@ -2,6 +2,7 @@
 .gcloudignore
 .git
 .gitignore
+#!include:.gitignore
 .venv/
 .pytest_cache/
 __pycache__/
