@@ -36,6 +36,8 @@ from app.services.bigquery_sink import bq_sink
 from app.connectors.meta import MetaAdsConnector, MetaOrganicConnector
 from app.connectors.google_ads import GoogleAdsConnector
 from app.connectors.ga4 import GA4Connector
+from app.connectors.search_console import SearchConsoleConnector, search_console_url, report_response
+from app.models.requests import SearchConsoleQueryRequest
 from app.connectors.tiktok import TikTokAdsConnector, TikTokOrganicConnector
 from app.connectors.linkedin import LinkedInAdsConnector, LinkedInOrganicConnector
 from app.connectors.x_twitter import XAdsConnector, XOrganicConnector
@@ -57,6 +59,7 @@ dispatcher.register(Platform.META_ADS, MetaAdsConnector())
 dispatcher.register(Platform.META_ORGANIC, MetaOrganicConnector())
 dispatcher.register(Platform.GOOGLE_ADS, GoogleAdsConnector())
 dispatcher.register(Platform.GA4, GA4Connector())
+dispatcher.register(Platform.SEARCH_CONSOLE, SearchConsoleConnector())
 dispatcher.register(Platform.TIKTOK_ADS, TikTokAdsConnector())
 dispatcher.register(Platform.TIKTOK_ORGANIC, TikTokOrganicConnector())
 dispatcher.register(Platform.LINKEDIN_ADS, LinkedInAdsConnector())
@@ -239,6 +242,7 @@ PLATFORM_API_VERSIONS = {
     "meta_organic": "v25.0",
     "google_ads": "v18",
     "ga4": "v1beta",
+    "search_console": "v3",
     "tiktok_ads": "v1.3",
     "tiktok_organic": "v1.3",
     "linkedin_ads": "202405",
@@ -501,7 +505,14 @@ async def get_campaign_data(
             except ValueError:
                 pass
                 
-        if limit is not None:
+        if request.platform == Platform.SEARCH_CONSOLE:
+            # Search Console already applies startRow/rowLimit upstream.
+            page_size = limit if limit is not None else 1000
+            sliced_data = data
+            has_next = len(data) == page_size
+            next_token = str(offset + len(data)) if has_next else None
+            total_count = None
+        elif limit is not None:
             sliced_data = data[offset : offset + limit]
             has_next = (offset + limit) < total_count
             next_token = str(offset + limit) if has_next else None
@@ -1032,3 +1043,20 @@ async def shopify_proxy(request: PlatformProxyRequest, api_key: str = Depends(ve
     return await _execute_generic_proxy("shopify", request, "https://mock.myshopify.com/admin/api/2024-04", "shopify", settings.shopify_access_token)
 
 
+
+
+@app.post("/api/v1/search-console/query")
+async def search_console_query(request: SearchConsoleQueryRequest, api_key: str = Depends(verify_api_key)):
+    """Query organic web search, preserving monthly totals and exact query filters."""
+    import httpx
+    credentials = await credential_store.resolve_credentials(request.client_id, "search_console", request.account_id)
+    token = (credentials or {}).get("access_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="Connect Search Console before querying this property.")
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(search_console_url(request.account_id), json=request.upstream_body(),
+                                         headers={"Authorization": f"Bearer {token}"})
+    except httpx.RequestError:
+        raise HTTPException(status_code=502, detail="Search Console is temporarily unreachable.") from None
+    return report_response(response)

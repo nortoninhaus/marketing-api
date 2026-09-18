@@ -34,7 +34,7 @@ class _QueryScreenState extends ConsumerState<QueryScreen> {
 
   // All OAuth-supported platforms for account discovery
   static const _oauthPlatforms = [
-    'meta_ads', 'meta_organic', 'google_ads', 'ga4',
+    'meta_ads', 'meta_organic', 'google_ads', 'ga4', 'search_console',
     'youtube', 'threads', 'tiktok_ads', 'tiktok_organic'
   ];
 
@@ -945,6 +945,7 @@ class _QueryScreenState extends ConsumerState<QueryScreen> {
       'meta_organic': 'Meta / IG',
       'google_ads': 'Google Ads',
       'ga4': 'GA4',
+      'search_console': 'Search Console',
       'youtube': 'YouTube',
       'threads': 'Threads',
       'tiktok_ads': 'TikTok Ads',

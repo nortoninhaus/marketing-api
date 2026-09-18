@@ -374,6 +374,7 @@ METRIC_TRANSLATION_MAP: dict[str, dict[str, str | None]] = {
     },
 
     # ── Analytics ──────────────────────────────────────────────────────
+    "search_console": {"clicks": "clicks", "impressions": "impressions", "ctr": "ctr", "position": "position"},
     "ga4": {
         "impressions": None,
         "clicks": None,
@@ -529,6 +530,7 @@ PLATFORM_TYPES: dict[str, str] = {
     "youtube": "organic",
     "threads": "organic",
     "ga4": "analytics",
+    "search_console": "analytics",
     "google_play": "app_store",
     "apple_app_store": "app_store",
     "spotify_ads": "ads",
@@ -711,6 +713,7 @@ def validate_platform_params(
         "meta_organic": {"post_id"},
         "google_ads": set(),
         "ga4": set(),
+        "search_console": set(),
         "tiktok_ads": set(),
         "tiktok_organic": {"video_id"},
         "linkedin_ads": set(),
@@ -751,6 +754,12 @@ def validate_platform_params(
         elif platform == "tiktok_ads":
             if not re.match(r"^\d+$", account_id):
                 errors.append("El formato de account_id para tiktok_ads debe ser un identificador numérico.")
+        elif platform == "search_console":
+            from app.models.requests import validate_search_console_site
+            try:
+                validate_search_console_site(account_id)
+            except ValueError as error:
+                errors.append(str(error))
         elif platform == "ga4":
             if not re.match(r"^(properties/)?\d+$", account_id):
                 errors.append("El formato de account_id para ga4 debe ser 'properties/xxxxxxxxx' o un número de propiedad.")

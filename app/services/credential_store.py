@@ -4,6 +4,7 @@ Supports token refresh for Google OAuth credentials.
 """
 
 import logging
+from urllib.parse import quote
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 import httpx
@@ -13,7 +14,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 # Google platforms that use OAuth and need token refresh
-GOOGLE_OAUTH_PLATFORMS = {"google_ads", "ga4", "youtube"}
+GOOGLE_OAUTH_PLATFORMS = {"google_ads", "ga4", "youtube", "search_console"}
 
 
 class CredentialStore:
@@ -291,7 +292,7 @@ class CredentialStore:
             return None
 
         try:
-            conn_id = f"{platform}_{account_id}"
+            conn_id = f"{platform}_{quote(account_id, safe='') if platform == 'search_console' else account_id}"
             doc_ref = self.db.collection("clients").document(client_id).collection("oauth_connections").document(conn_id)
             doc = await doc_ref.get()
             if doc.exists:
@@ -322,6 +323,9 @@ class CredentialStore:
         except Exception as e:
             logger.error(f"Error checking OAuth connections in Firestore: {e}")
 
+        # Search Console must use the explicitly connected property only.
+        if platform == "search_console":
+            return None
         # Fallback to general/manual credentials
         return await self.get_credentials(client_id, platform)
 
@@ -338,10 +342,12 @@ class CredentialStore:
     ):
         """Saves a dynamic OAuth connection to Firestore."""
         if not self.db:
+            if platform == "search_console":
+                raise RuntimeError("Search Console credential storage is unavailable")
             return
 
         try:
-            conn_id = f"{platform}_{account_id}"
+            conn_id = f"{platform}_{quote(account_id, safe='') if platform == 'search_console' else account_id}"
             doc_ref = self.db.collection("clients").document(client_id).collection("oauth_connections").document(conn_id)
             doc_data = {
                 "account_id": account_id,
@@ -356,10 +362,15 @@ class CredentialStore:
                 doc_data["token_expires_at"] = token_expires_at
             if extra_data:
                 doc_data.update(extra_data)
-            await doc_ref.set(doc_data)
+            if platform == "search_console":
+                await doc_ref.set(doc_data, merge=True)
+            else:
+                await doc_ref.set(doc_data)
             logger.info(f"Saved OAuth connection {conn_id} for client {client_id}")
         except Exception as e:
             logger.error(f"Error saving OAuth connection to Firestore: {e}")
+            if platform == "search_console":
+                raise RuntimeError("Search Console credentials could not be saved") from None
 
     async def list_oauth_connections(self, client_id: str, platform: str) -> List[Dict[str, Any]]:
         """Lists connected OAuth accounts for a given client and platform."""
@@ -378,15 +389,19 @@ class CredentialStore:
     async def delete_oauth_connection(self, client_id: str, platform: str, account_id: str):
         """Deletes a connected OAuth account from Firestore."""
         if not self.db:
+            if platform == "search_console":
+                raise RuntimeError("Search Console credential storage is unavailable")
             return
 
         try:
-            conn_id = f"{platform}_{account_id}"
+            conn_id = f"{platform}_{quote(account_id, safe='') if platform == 'search_console' else account_id}"
             doc_ref = self.db.collection("clients").document(client_id).collection("oauth_connections").document(conn_id)
             await doc_ref.delete()
             logger.info(f"Deleted OAuth connection {conn_id} for client {client_id}")
         except Exception as e:
             logger.error(f"Error deleting OAuth connection from Firestore: {e}")
+            if platform == "search_console":
+                raise RuntimeError("Search Console connection could not be deleted") from None
 
     async def save_credentials(self, client_id: str, platform: str, credentials: Dict[str, Any]):
         """Saves or updates credentials for a client."""

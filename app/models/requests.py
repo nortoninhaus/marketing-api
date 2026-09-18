@@ -8,7 +8,7 @@ rather than letting them reach external APIs.
 
 from datetime import date
 from enum import Enum
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -20,6 +20,7 @@ class Platform(str, Enum):
     META_ORGANIC = "meta_organic"
     GOOGLE_ADS = "google_ads"
     GA4 = "ga4"
+    SEARCH_CONSOLE = "search_console"
     TIKTOK_ADS = "tiktok_ads"
     TIKTOK_ORGANIC = "tiktok_organic"
     LINKEDIN_ADS = "linkedin_ads"
@@ -165,3 +166,52 @@ class PlatformProxyRequest(BaseModel):
 
 
 
+
+
+def validate_search_console_site(value: str) -> str:
+    """Accept Search Console domain and URL-prefix properties, not arbitrary URLs."""
+    import re
+    from urllib.parse import urlsplit
+
+    domain = value.removeprefix("sc-domain:") if value.startswith("sc-domain:") else None
+    if domain is None:
+        parsed = urlsplit(value)
+        if (parsed.scheme not in {"http", "https"} or not parsed.hostname
+                or parsed.username or parsed.password or parsed.query or parsed.fragment
+                or parsed.netloc != parsed.hostname or any(c.isspace() for c in value)):
+            raise ValueError("account_id must be a Search Console URL-prefix or sc-domain property")
+        domain = parsed.hostname
+    if not re.fullmatch(r"(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}", domain):
+        raise ValueError("account_id must contain a valid property domain")
+    return value
+
+
+class SearchConsoleQueryRequest(BaseModel):
+    """Read-only Search Analytics query; no caller-controlled upstream URL or headers."""
+
+    model_config = {"extra": "forbid"}
+    client_id: str = Field("client_1", min_length=1)
+    account_id: str
+    start_date: date
+    end_date: date
+    dimensions: List[Literal["date", "query", "country", "page", "device"]] = Field(default_factory=list, max_length=5)
+    query: Optional[str] = Field(None, min_length=1, max_length=4096, description="Exact, case-sensitive Google search query filter")
+    row_limit: int = Field(1000, ge=1, le=25000)
+    start_row: int = Field(0, ge=0)
+
+    @model_validator(mode="after")
+    def validate_query(self):
+        validate_search_console_site(self.account_id)
+        if self.start_date > self.end_date:
+            raise ValueError("start_date must be on or before end_date")
+        if len(set(self.dimensions)) != len(self.dimensions):
+            raise ValueError("dimensions must be unique")
+        return self
+
+    def upstream_body(self) -> Dict[str, Any]:
+        body = {"startDate": self.start_date.isoformat(), "endDate": self.end_date.isoformat(),
+                "dimensions": self.dimensions, "type": "web", "dataState": "final",
+                "rowLimit": self.row_limit, "startRow": self.start_row}
+        if self.query is not None:
+            body["dimensionFilterGroups"] = [{"filters": [{"dimension": "query", "operator": "equals", "expression": self.query}]}]
+        return body

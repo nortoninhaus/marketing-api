@@ -6,6 +6,7 @@ Missing required values cause an immediate, clear failure rather than
 a runtime NameError deep inside a connector.
 """
 
+import os
 from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -14,7 +15,7 @@ class Settings(BaseSettings):
     """Central configuration — loaded from .env and validated at startup."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=os.getenv("ENV_FILE", ".env"),
         env_file_encoding="utf-8",
         extra="ignore",  # Ignore env vars not defined here
     )

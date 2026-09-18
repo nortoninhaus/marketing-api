@@ -55,7 +55,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         }
         
         // Refresh the connections provider for this platform
-        const oauthPlatforms = {'meta_ads', 'meta_organic', 'google_ads', 'ga4', 'youtube', 'threads', 'tiktok_ads', 'tiktok_organic'};
+        const oauthPlatforms = {'meta_ads', 'meta_organic', 'google_ads', 'ga4', 'search_console', 'youtube', 'threads', 'tiktok_ads', 'tiktok_organic'};
         if (oauthPlatforms.contains(platform)) {
            ref.invalidate(oauthConnectionsProvider(platform));
         }
@@ -433,7 +433,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Connected Ad Accounts', style: Theme.of(context).textTheme.headlineMedium),
+            Text('Connected Accounts', style: Theme.of(context).textTheme.headlineMedium),
             const SizedBox(height: 8),
             Text(
               'Connect your personal or agency accounts to securely query data without exposing manual credentials.',
@@ -447,6 +447,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             _buildOAuthPlatformCard(context, ref, 'google_ads', 'Google Ads', Icons.search, Colors.red),
             const SizedBox(height: 16),
             _buildOAuthPlatformCard(context, ref, 'ga4', 'Google Analytics (GA4)', Icons.analytics, AppTheme.analyticsColor),
+            const SizedBox(height: 16),
+            _buildOAuthPlatformCard(context, ref, 'search_console', 'Google Search Console', Icons.manage_search, Colors.blueAccent),
             const SizedBox(height: 16),
             _buildOAuthPlatformCard(context, ref, 'youtube', 'YouTube Channels', Icons.play_circle_fill, Colors.redAccent),
             const SizedBox(height: 16),
