@@ -54,6 +54,7 @@ from dashboard.onboarding import (
 )
 from dashboard.views.generic_ads import render_generic_ads_platform_tab
 from dashboard.views.meta_ads import render_meta_ads_platform_tab
+from dashboard.views.organic import render_organic_platform_tab
 
 DASHBOARD_CACHE_VERSION = 7
 
@@ -237,6 +238,12 @@ for selected_platform_key in selected_platform_keys:
             "youtube": [
                 "views", "likes", "comments", "shares", "watchTimeMinutes",
                 "subscribersGained", "averageViewDuration", "viewCount", "likeCount", "commentCount"
+            ],
+            "meta_organic": [
+                "page_media_view", "page_total_media_view_unique", "page_post_engagements",
+                "page_views_total", "page_follows", "page_actions_post_reactions_total",
+                "views", "reach", "accounts_engaged", "total_interactions", "profile_views",
+                "follower_count", "likes", "comments", "shares",
             ],
         }
         avail_metric_names = [m["name"] for m in metrics_list]
@@ -489,7 +496,11 @@ for cfg in platform_configs:
     elif cfg["platform_type"] == "app_store":
         standard_metrics = ["downloads", "ratings"]
     else:
-        standard_metrics = ["impressions", "engagement", "followers", "reach"]
+        standard_metrics = [
+            "impressions", "engagement", "followers", "reach",
+            "page_media_view", "page_total_media_view_unique", "page_post_engagements",
+            "page_views_total", "page_follows", "views", "total_interactions",
+        ]
     for metric in standard_metrics:
         if metric not in request_metrics and metric in metric_names:
             request_metrics.append(metric)
@@ -645,6 +656,20 @@ else:
                         download_slot,
                         chart_bg,
                     )
+                elif cfg.get("platform_type") == "organic" or cfg["platform_key"] in (
+                    "meta_organic", "tiktok_organic", "youtube", "threads",
+                    "linkedin_organic", "x_organic", "pinterest_organic"
+                ):
+                    render_organic_platform_tab(
+                        cfg,
+                        df_curr,
+                        df_prev,
+                        start_date,
+                        end_date,
+                        prev_start_date,
+                        prev_end_date,
+                        theme_mode,
+                    )
                 else:
                     render_generic_ads_platform_tab(
                         cfg,
@@ -679,6 +704,20 @@ else:
                 dashboard_user,
                 download_slot,
                 chart_bg,
+            )
+        elif cfg.get("platform_type") == "organic" or cfg["platform_key"] in (
+            "meta_organic", "tiktok_organic", "youtube", "threads",
+            "linkedin_organic", "x_organic", "pinterest_organic"
+        ):
+            render_organic_platform_tab(
+                cfg,
+                df_curr,
+                df_prev,
+                start_date,
+                end_date,
+                prev_start_date,
+                prev_end_date,
+                theme_mode,
             )
         else:
             render_generic_ads_platform_tab(

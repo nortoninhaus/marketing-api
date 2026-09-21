@@ -8,10 +8,17 @@ from dashboard.config import DIMENSION_VALUE_LABELS, META_RESULT_LABELS
 def extract_metric(metrics, keys):
     for key in keys:
         if key in metrics and metrics[key] is not None:
-            try:
-                return float(metrics[key])
-            except ValueError:
-                pass
+            val = metrics[key]
+            if isinstance(val, dict):
+                try:
+                    return float(sum(float(v) for v in val.values() if v is not None and str(v).replace('.', '', 1).isdigit()))
+                except (ValueError, TypeError):
+                    pass
+            else:
+                try:
+                    return float(val)
+                except (ValueError, TypeError):
+                    pass
     return 0.0
 
 

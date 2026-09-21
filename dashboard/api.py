@@ -556,11 +556,11 @@ def process_api_response(api_data, platform_key, client_id, user_id):
                 spend = float(metrics["cost_micros"]) / 1_000_000.0
             except (ValueError, TypeError):
                 spend = 0.0
-        impressions = extract_metric(metrics, ["impressions", "views", "reach"])
-        clicks = extract_metric(metrics, ["clicks", "unique_clicks"])
+        impressions = extract_metric(metrics, ["impressions", "views", "page_media_view", "post_media_view", "reach"])
+        clicks = extract_metric(metrics, ["clicks", "unique_clicks", "post_clicks", "website_clicks"])
         conversions = extract_metric(metrics, ["conversions", "actions", "purchase", "lead", "add_to_cart"])
         leads = extract_metric(metrics, ["lead"])
-        post_engagement = extract_metric(metrics, ["post_engagement"])
+        post_engagement = extract_metric(metrics, ["post_engagement", "page_post_engagements", "total_interactions", "accounts_engaged"])
         results = extract_metric(metrics, ["__results__", "results"])
         cost_per_result = extract_metric(metrics, ["cost_per_result"])
         if results > 0 and not cost_per_result:
@@ -569,22 +569,33 @@ def process_api_response(api_data, platform_key, client_id, user_id):
 
         sessions = extract_metric(metrics, ["sessions"])
         users = extract_metric(metrics, ["users"])
-        pageviews = extract_metric(metrics, ["pageviews"])
+        pageviews = extract_metric(metrics, ["pageviews", "page_views_total", "profile_views"])
         bounce_rate = extract_metric(metrics, ["bounce_rate"])
 
         downloads = extract_metric(metrics, ["downloads"])
         ratings = extract_metric(metrics, ["ratings"])
 
-        likes = extract_metric(metrics, ["likes", "like_count"])
+        likes = extract_metric(metrics, ["likes", "like_count", "page_actions_post_reactions_total"])
+        if not likes and isinstance(metrics.get("page_actions_post_reactions_total"), dict):
+            try:
+                likes = float(metrics["page_actions_post_reactions_total"].get("like", 0))
+            except (ValueError, TypeError):
+                likes = 0.0
         comments = extract_metric(metrics, ["comments", "comment_count"])
-        engagement = extract_metric(metrics, ["engagement", "total_interactions", "accounts_engaged"])
+        engagement = extract_metric(metrics, ["engagement", "total_interactions", "accounts_engaged", "page_post_engagements", "post_engagement"])
         if not engagement:
-            engagement = likes + comments + extract_metric(metrics, ["shares", "saved"])
-        followers = extract_metric(metrics, ["followers", "follows"])
-        reach = extract_metric(metrics, ["reach", "impressions", "views"])
-        video_views = extract_metric(metrics, ["video_views", "views", "video_play_actions"])
-        profile_visits = extract_metric(metrics, ["profile_visits"])
+            engagement = likes + comments + extract_metric(metrics, ["shares", "saved"]) + post_engagement
+        followers = extract_metric(metrics, ["followers", "follows", "page_follows", "follower_count", "page_fans"])
+        reach = extract_metric(metrics, ["reach", "page_total_media_view_unique", "post_total_media_view_unique", "impressions", "views", "page_media_view"])
+        video_views = extract_metric(metrics, ["video_views", "views", "page_media_view", "video_play_actions", "plays"])
+        profile_visits = extract_metric(metrics, ["profile_visits", "profile_views", "page_views_total"])
         shares = extract_metric(metrics, ["shares"])
+
+        page_media_view = extract_metric(metrics, ["page_media_view", "post_media_view", "views"])
+        page_total_media_view_unique = extract_metric(metrics, ["page_total_media_view_unique", "post_total_media_view_unique", "reach"])
+        page_post_engagements = extract_metric(metrics, ["page_post_engagements", "post_engagement", "total_interactions"])
+        page_views_total = extract_metric(metrics, ["page_views_total", "pageviews", "profile_views"])
+        page_follows = extract_metric(metrics, ["page_follows", "followers", "follows", "follower_count", "page_fans"])
 
         # Include dynamic fields from dimensions if present
         row = {
@@ -618,6 +629,11 @@ def process_api_response(api_data, platform_key, client_id, user_id):
             "shares": int(shares),
             "video_views": int(video_views),
             "profile_visits": int(profile_visits),
+            "page_media_view": int(page_media_view),
+            "page_total_media_view_unique": int(page_total_media_view_unique),
+            "page_post_engagements": int(page_post_engagements),
+            "page_views_total": int(page_views_total),
+            "page_follows": int(page_follows),
         }
         KNOWN_METRIC_ALIASES = {
             "social_spend", "cost", "cost_micros",
