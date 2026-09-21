@@ -1,5 +1,6 @@
 import re
 import json
+import html
 from copy import deepcopy
 import requests
 import pandas as pd
@@ -476,44 +477,68 @@ def fetch_meta_ad_previews(client_id, account_id, preview_targets, api_key):
         return [], f"Error cargando previews Meta: {e}"
 
 
-@st.cache_data(ttl=600, show_spinner=False)
-def fetch_meta_post_preview(client_id, account_id, post_id, api_key):
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_meta_post_preview(client_id, account_id, post_id, api_key, permalink=None):
     """Fetch post details (image_url, message, permalink) for an organic Meta post."""
-    if not post_id or not api_key:
-        return None
-    try:
-        res = _meta_proxy_get(
-            client_id,
-            account_id,
-            api_key,
-            str(post_id),
-            {"fields": "id,message,caption,permalink_url,permalink,full_picture,picture,media_url,thumbnail_url,attachments{media,unshimmed_url}"},
-            timeout=10,
-        )
-        if res.status_code == 200:
-            data = res.json()
-            image_url = (
-                data.get("full_picture")
-                or data.get("media_url")
-                or data.get("thumbnail_url")
-                or data.get("picture")
-                or ""
+    result = {"message": "", "permalink": permalink or "", "image_url": ""}
+
+    # 1. Try Meta Graph API proxy if api_key and post_id are provided
+    if post_id and api_key:
+        try:
+            res = _meta_proxy_get(
+                client_id,
+                account_id,
+                api_key,
+                str(post_id),
+                {"fields": "id,message,caption,permalink_url,permalink,full_picture,picture,media_url,thumbnail_url,attachments{media,unshimmed_url}"},
+                timeout=5,
             )
-            if not image_url:
-                attachments = (data.get("attachments") or {}).get("data") or []
-                for att in attachments:
-                    media_img = (att.get("media") or {}).get("image") or {}
-                    if media_img.get("src"):
-                        image_url = media_img.get("src")
-                        break
-            return {
-                "message": data.get("message") or data.get("caption") or "",
-                "permalink": data.get("permalink_url") or data.get("permalink") or "",
-                "image_url": image_url,
-            }
-    except Exception:
-        pass
-    return None
+            if res.status_code == 200:
+                data = res.json()
+                image_url = (
+                    data.get("full_picture")
+                    or data.get("media_url")
+                    or data.get("thumbnail_url")
+                    or data.get("picture")
+                    or ""
+                )
+                if not image_url:
+                    attachments = (data.get("attachments") or {}).get("data") or []
+                    for att in attachments:
+                        media_img = (att.get("media") or {}).get("image") or {}
+                        if media_img.get("src"):
+                            image_url = media_img.get("src")
+                            break
+                result["message"] = data.get("message") or data.get("caption") or ""
+                result["permalink"] = data.get("permalink_url") or data.get("permalink") or result["permalink"]
+                result["image_url"] = image_url
+        except Exception:
+            pass
+
+    # 2. Fast Open Graph scraper fallback using post permalink
+    target_url = result.get("permalink") or permalink
+    if not target_url and post_id:
+        target_url = f"https://www.facebook.com/{post_id}"
+
+    if (not result.get("image_url") or not result.get("message")) and target_url:
+        try:
+            headers = {"User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)"}
+            r = requests.get(target_url, headers=headers, timeout=4)
+            if r.status_code == 200:
+                if not result.get("image_url"):
+                    og_img = re.search(r'<meta\s+(?:property|name)=["\']og:image["\']\s+content=["\']([^"\']+)["\']', r.text)
+                    if og_img:
+                        result["image_url"] = html.unescape(og_img.group(1))
+                if not result.get("message"):
+                    og_desc = re.search(r'<meta\s+(?:property|name)=["\'](?:og:description|description)["\']\s+content=["\']([^"\']+)["\']', r.text)
+                    if og_desc:
+                        result["message"] = html.unescape(og_desc.group(1))
+                if not result.get("permalink"):
+                    result["permalink"] = target_url
+        except Exception:
+            pass
+
+    return result if (result.get("image_url") or result.get("message") or result.get("permalink")) else None
 
 
 @st.cache_data(ttl=300, show_spinner=False)

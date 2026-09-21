@@ -177,3 +177,44 @@ def test_fetch_meta_post_preview(monkeypatch):
     assert res["permalink"] == "https://facebook.com/post/123"
     assert res["image_url"] == "https://facebook.com/img.jpg"
 
+
+def test_fetch_meta_post_preview_og_fallback(monkeypatch):
+    from unittest.mock import MagicMock
+    from dashboard.api import fetch_meta_post_preview
+    import dashboard.api as api_mod
+    import requests
+
+    # Mock proxy to fail
+    mock_proxy_resp = MagicMock()
+    mock_proxy_resp.status_code = 400
+    monkeypatch.setattr(api_mod, "_meta_proxy_get", lambda *args, **kwargs: mock_proxy_resp)
+
+    # Mock requests.get for OG scrape
+    html_content = '''
+    <html>
+      <head>
+        <meta property="og:image" content="https://lookaside.fbsbx.com/test.jpg" />
+        <meta property="og:description" content="Descripción OG de prueba" />
+      </head>
+    </html>
+    '''
+    mock_get_resp = MagicMock()
+    mock_get_resp.status_code = 200
+    mock_get_resp.text = html_content
+    monkeypatch.setattr(requests, "get", lambda *args, **kwargs: mock_get_resp)
+
+    if hasattr(fetch_meta_post_preview, "clear"):
+        fetch_meta_post_preview.clear()
+
+    res = fetch_meta_post_preview(
+        "client_1",
+        "1217240028141214",
+        "122121881985395366",
+        "test_key",
+        permalink="https://facebook.com/post/123"
+    )
+    assert res is not None
+    assert res["image_url"] == "https://lookaside.fbsbx.com/test.jpg"
+    assert res["message"] == "Descripción OG de prueba"
+
+

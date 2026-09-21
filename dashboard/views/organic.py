@@ -232,31 +232,47 @@ def render_organic_platform_tab(
             plot_df = plot_df.set_index("Fecha")
             st.line_chart(plot_df, width="stretch")
 
-    # Recent Posts / Content Section
+    # Recent Posts / Content Section (Top 5 por visualizaciones / alcance)
     posts_mask = df_curr_p["campaign_name"].astype(str).str.contains("Post_", case=False, na=False)
     posts_df = df_curr_p[posts_mask].copy()
     if not posts_df.empty:
-        st.markdown("### 📌 Publicaciones Recientes")
-        display_posts = posts_df.head(6)
+        # Sort by visualizaciones or alcance descending
+        sort_col = "page_media_view"
+        for candidate in ["page_media_view", "views", "page_total_media_view_unique", "reach", "clicks"]:
+            if candidate in posts_df.columns and posts_df[candidate].sum() > 0:
+                sort_col = candidate
+                break
+
+        posts_df = posts_df.sort_values(by=sort_col, ascending=False)
+        display_posts = posts_df.head(5)
+
+        st.markdown("### 📌 Top 5 Publicaciones")
         num_cols = min(3, len(display_posts))
         for row_start in range(0, len(display_posts), num_cols):
             chunk = display_posts.iloc[row_start : row_start + num_cols]
             cols = st.columns(num_cols)
             for col_idx, (_, post_row) in enumerate(chunk.iterrows()):
+                rank = row_start + col_idx + 1
                 with cols[col_idx]:
                     with st.container(border=True):
                         post_id = str(post_row.get("post_id") or "")
-                        if not post_id:
+                        if not post_id or post_id == "nan":
                             m = re.search(r"^(?:Post_|IG_Post_)?([0-9_]+)", str(post_row.get("campaign_name", "")))
                             if m:
                                 post_id = m.group(1).rstrip("_")
 
                         image_url = str(post_row.get("image_url") or "").strip()
+                        if image_url == "nan":
+                            image_url = ""
                         message = str(post_row.get("message") or "").strip()
+                        if message == "nan":
+                            message = ""
                         permalink = str(post_row.get("permalink") or post_row.get("url") or "").strip()
+                        if permalink == "nan":
+                            permalink = ""
 
-                        if (not image_url or not message) and post_id and api_key:
-                            preview_data = fetch_meta_post_preview(client_id, account_id, post_id, api_key)
+                        if (not image_url or not message) and (post_id or permalink):
+                            preview_data = fetch_meta_post_preview(client_id, account_id, post_id, api_key, permalink=permalink)
                             if preview_data:
                                 if not image_url and preview_data.get("image_url"):
                                     image_url = preview_data["image_url"]
@@ -272,7 +288,7 @@ def render_organic_platform_tab(
                                 pass
 
                         clean_title = _clean_post_title(post_row.get("campaign_name", ""), message=message)
-                        st.markdown(f"**{clean_title}**")
+                        st.markdown(f"**#{rank} &middot; {clean_title}**")
                         if "date" in post_row and pd.notna(post_row["date"]):
                             st.caption(f"📅 {pd.to_datetime(post_row['date']).strftime('%d/%m/%Y')}")
 

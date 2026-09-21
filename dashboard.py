@@ -56,7 +56,7 @@ from dashboard.views.generic_ads import render_generic_ads_platform_tab
 from dashboard.views.meta_ads import render_meta_ads_platform_tab
 from dashboard.views.organic import render_organic_platform_tab
 
-DASHBOARD_CACHE_VERSION = 9
+DASHBOARD_CACHE_VERSION = 10
 
 if os.getenv("DASHBOARD_AUTH_SELF_CHECK") == "1":
     dashboard_auth_self_check()
