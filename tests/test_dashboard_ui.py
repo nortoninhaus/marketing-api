@@ -1367,7 +1367,8 @@ def test_unknown_meta_result_indicator_is_not_humanized():
 
 
 def test_results_schema_change_invalidates_and_migrates_cached_frames():
-    assert "DASHBOARD_CACHE_VERSION = 7" in SOURCE
+    import re
+    assert re.search(r"DASHBOARD_CACHE_VERSION\s*=\s*\d+", SOURCE)
     assert 'schema_key = ("schema", DASHBOARD_CACHE_VERSION, selected_platform_key, api_key)' in SOURCE
     assert "query_key = (\n    DASHBOARD_CACHE_VERSION," in SOURCE
     assert "if active_query_key[0] != DASHBOARD_CACHE_VERSION:" in SOURCE

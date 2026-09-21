@@ -1,8 +1,21 @@
+import re
 import streamlit as st
 import pandas as pd
 import numpy as np
 
+from dashboard.api import fetch_meta_post_preview
 from dashboard.ui import get_kpi_card_html
+
+
+def _clean_post_title(raw_name: str, message: str = "") -> str:
+    """Clean technical prefixes and raw IDs from organic post titles."""
+    if message and str(message).strip():
+        first_line = str(message).strip().split("\n")[0].strip()
+        return first_line[:80] + ("..." if len(first_line) > 80 else "")
+    clean = re.sub(r"^(Post_|IG_Post_)?([0-9]+_)+", "", str(raw_name)).strip()
+    clean = re.sub(r"^[0-9]+$", "Publicación", clean)
+    clean = clean.replace("_", " ").strip()
+    return clean or "Publicación"
 
 
 def render_organic_platform_tab(
@@ -14,6 +27,8 @@ def render_organic_platform_tab(
     prev_start_date,
     prev_end_date,
     theme_mode,
+    client_id=None,
+    api_key=None,
 ):
     plat_key = cfg["platform_key"]
     plat_label = cfg["platform_label"]
@@ -222,21 +237,61 @@ def render_organic_platform_tab(
     posts_df = df_curr_p[posts_mask].copy()
     if not posts_df.empty:
         st.markdown("### 📌 Publicaciones Recientes")
-        cols = st.columns(min(3, len(posts_df)))
-        for idx, (_, post_row) in enumerate(posts_df.head(6).iterrows()):
-            with cols[idx % len(cols)]:
-                with st.container(border=True):
-                    name = str(post_row.get("campaign_name", "Publicación")).replace("Post_", "")
-                    st.markdown(f"**{name}**")
-                    if "date" in post_row and pd.notna(post_row["date"]):
-                        st.caption(f"📅 {pd.to_datetime(post_row['date']).strftime('%d/%m/%Y')}")
-                    v = int(post_row.get("page_media_view", post_row.get("views", 0)))
-                    c = int(post_row.get("clicks", 0))
-                    e = int(post_row.get("page_post_engagements", post_row.get("engagement", 0)))
-                    st.write(f"👁️ **{v:,}** vistas &nbsp;|&nbsp; 🖱️ **{c:,}** clics &nbsp;|&nbsp; 💬 **{e:,}** interac.")
-                    p_url = post_row.get("permalink") or post_row.get("url")
-                    if p_url:
-                        st.link_button("Ver publicación ↗", str(p_url), width="stretch")
+        display_posts = posts_df.head(6)
+        num_cols = min(3, len(display_posts))
+        for row_start in range(0, len(display_posts), num_cols):
+            chunk = display_posts.iloc[row_start : row_start + num_cols]
+            cols = st.columns(num_cols)
+            for col_idx, (_, post_row) in enumerate(chunk.iterrows()):
+                with cols[col_idx]:
+                    with st.container(border=True):
+                        post_id = str(post_row.get("post_id") or "")
+                        if not post_id:
+                            m = re.search(r"^(?:Post_|IG_Post_)?([0-9_]+)", str(post_row.get("campaign_name", "")))
+                            if m:
+                                post_id = m.group(1).rstrip("_")
+
+                        image_url = str(post_row.get("image_url") or "").strip()
+                        message = str(post_row.get("message") or "").strip()
+                        permalink = str(post_row.get("permalink") or post_row.get("url") or "").strip()
+
+                        if (not image_url or not message) and post_id and api_key:
+                            preview_data = fetch_meta_post_preview(client_id, account_id, post_id, api_key)
+                            if preview_data:
+                                if not image_url and preview_data.get("image_url"):
+                                    image_url = preview_data["image_url"]
+                                if not message and preview_data.get("message"):
+                                    message = preview_data["message"]
+                                if not permalink and preview_data.get("permalink"):
+                                    permalink = preview_data["permalink"]
+
+                        if image_url:
+                            try:
+                                st.image(image_url, width="stretch")
+                            except Exception:
+                                pass
+
+                        clean_title = _clean_post_title(post_row.get("campaign_name", ""), message=message)
+                        st.markdown(f"**{clean_title}**")
+                        if "date" in post_row and pd.notna(post_row["date"]):
+                            st.caption(f"📅 {pd.to_datetime(post_row['date']).strftime('%d/%m/%Y')}")
+
+                        v = int(post_row.get("page_media_view", post_row.get("views", 0)))
+                        r = int(post_row.get("page_total_media_view_unique", post_row.get("reach", 0)))
+                        c = int(post_row.get("clicks", 0))
+                        e = int(post_row.get("page_post_engagements", post_row.get("engagement", 0)))
+
+                        metric_items = [f"👁️ **{v:,}** vistas"]
+                        if r > 0:
+                            metric_items.append(f"👥 **{r:,}** alcance")
+                        if e > 0 or (r == 0 and c == 0):
+                            metric_items.append(f"💬 **{e:,}** interac.")
+                        if c > 0:
+                            metric_items.append(f"🖱️ **{c:,}** clics")
+                        st.write(" &nbsp;|&nbsp; ".join(metric_items[:3]))
+
+                        if permalink:
+                            st.link_button("Ver publicación ↗", permalink, width="stretch")
     else:
         # Fallback to page permalink when only Page_Insights is present
         page_urls = df_curr_p["permalink"].dropna().tolist() if "permalink" in df_curr_p.columns else []
@@ -289,6 +344,11 @@ def render_organic_platform_tab(
 
     display_renames = {k: v for k, v in rename_cols.items() if k in df_table.columns}
     df_display = df_table.rename(columns=display_renames)
+
+    if "Contenido / Insights" in df_display.columns:
+        df_display["Contenido / Insights"] = df_display["Contenido / Insights"].apply(
+            lambda n: _clean_post_title(n) if "Post_" in str(n) else n
+        )
 
     column_config = {}
     if "Enlace" in df_display.columns:

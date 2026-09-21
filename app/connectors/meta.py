@@ -667,7 +667,7 @@ class MetaOrganicConnector(BaseConnector):
                     res = client.get(
                         url,
                         params={
-                            "fields": f"id,caption,timestamp,media_type,permalink,insights.metric({','.join(media_metrics)}){{name,values}}",
+                            "fields": f"id,caption,timestamp,media_type,permalink,media_url,thumbnail_url,insights.metric({','.join(media_metrics)}){{name,values}}",
                             "limit": request.limit or 50,
                             "access_token": access_token
                         }
@@ -695,7 +695,9 @@ class MetaOrganicConnector(BaseConnector):
                                 dimensions={
                                     "post_id": media_id,
                                     "permalink": permalink,
-                                    "media_type": item.get("media_type", "")
+                                    "media_type": item.get("media_type", ""),
+                                    "image_url": item.get("media_url") or item.get("thumbnail_url") or "",
+                                    "message": caption,
                                 }
                             ))
                 return results
@@ -993,7 +995,7 @@ class MetaOrganicConnector(BaseConnector):
                     res = client.get(
                         url,
                         params={
-                            "fields": f"id,message,created_time,permalink_url,insights.metric({','.join(post_metrics)}){{name,values}}",
+                            "fields": f"id,message,created_time,permalink_url,full_picture,picture,attachments{{media,unshimmed_url,title,description}},insights.metric({','.join(post_metrics)}){{name,values}}",
                             "limit": request.limit or 50,
                             "access_token": creds["access_token"]
                         }
@@ -1005,7 +1007,16 @@ class MetaOrganicConnector(BaseConnector):
                             message = item.get("message", "")
                             created_time = item.get("created_time", since_str)
                             permalink = item.get("permalink_url") or f"https://www.facebook.com/{pid}"
-                            
+
+                            image_url = item.get("full_picture") or item.get("picture") or ""
+                            if not image_url:
+                                attachments = (item.get("attachments") or {}).get("data") or []
+                                for att in attachments:
+                                    media_img = (att.get("media") or {}).get("image") or {}
+                                    if media_img.get("src"):
+                                        image_url = media_img.get("src")
+                                        break
+
                             insights_data = item.get("insights", {}).get("data", [])
                             metrics_dict = {}
                             for ins in insights_data:
@@ -1013,7 +1024,7 @@ class MetaOrganicConnector(BaseConnector):
                                 values = ins.get("values", [])
                                 if values:
                                     metrics_dict[name] = values[0].get("value", 0)
-                            
+
                             results.append(CampaignData(
                                 campaign_name=f"Post_{pid}_{message[:20]}",
                                 date=created_time[:10],
@@ -1021,6 +1032,8 @@ class MetaOrganicConnector(BaseConnector):
                                 dimensions={
                                     "post_id": pid,
                                     "permalink": permalink,
+                                    "image_url": image_url,
+                                    "message": message,
                                 }
                             ))
             except Exception as e:

@@ -980,7 +980,11 @@ async def _execute_generic_proxy(
 @app.post("/api/v1/meta-proxy")
 async def meta_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
     """Proxy for Meta Ads / Organic (Graph API)."""
-    return await _execute_generic_proxy("meta_ads", request, "https://graph.facebook.com/v25.0", "bearer", settings.meta_access_token)
+    creds = await credential_store.resolve_credentials(request.client_id, "meta_organic", request.account_id)
+    if not creds:
+        creds = await credential_store.resolve_credentials(request.client_id, "meta_ads", request.account_id)
+    token = (creds or {}).get("access_token") or settings.meta_access_token
+    return await _execute_generic_proxy("meta_ads", request, "https://graph.facebook.com/v25.0", "bearer", token)
 
 @app.post("/api/v1/google-ads-proxy")
 async def google_ads_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):

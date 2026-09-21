@@ -476,6 +476,46 @@ def fetch_meta_ad_previews(client_id, account_id, preview_targets, api_key):
         return [], f"Error cargando previews Meta: {e}"
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_meta_post_preview(client_id, account_id, post_id, api_key):
+    """Fetch post details (image_url, message, permalink) for an organic Meta post."""
+    if not post_id or not api_key:
+        return None
+    try:
+        res = _meta_proxy_get(
+            client_id,
+            account_id,
+            api_key,
+            str(post_id),
+            {"fields": "id,message,caption,permalink_url,permalink,full_picture,picture,media_url,thumbnail_url,attachments{media,unshimmed_url}"},
+            timeout=10,
+        )
+        if res.status_code == 200:
+            data = res.json()
+            image_url = (
+                data.get("full_picture")
+                or data.get("media_url")
+                or data.get("thumbnail_url")
+                or data.get("picture")
+                or ""
+            )
+            if not image_url:
+                attachments = (data.get("attachments") or {}).get("data") or []
+                for att in attachments:
+                    media_img = (att.get("media") or {}).get("image") or {}
+                    if media_img.get("src"):
+                        image_url = media_img.get("src")
+                        break
+            return {
+                "message": data.get("message") or data.get("caption") or "",
+                "permalink": data.get("permalink_url") or data.get("permalink") or "",
+                "image_url": image_url,
+            }
+    except Exception:
+        pass
+    return None
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_meta_filter_rows(client_id, account_id, api_key):
     headers = {

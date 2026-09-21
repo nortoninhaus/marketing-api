@@ -101,3 +101,79 @@ def test_dashboard_routes_organic_view():
     dashboard_code = Path("dashboard.py").read_text()
     assert "render_organic_platform_tab" in dashboard_code
     assert "from dashboard.views.organic import render_organic_platform_tab" in dashboard_code
+
+
+def test_clean_post_title():
+    from dashboard.views.organic import _clean_post_title
+
+    # Strips raw ID prefixes
+    raw1 = "Post_1217240028141214_122121881985395366_Cuando las cosas est"
+    assert _clean_post_title(raw1) == "Cuando las cosas est"
+
+    # Handles bare IDs
+    raw2 = "Post_1217240028141214_122121881985395366"
+    assert _clean_post_title(raw2) == "Publicación"
+
+    # Prefers message content if available
+    raw3 = "Post_1217240028141214_122121881985395366_Cuando las cosas est"
+    msg = "Cuando las cosas están difíciles, recuerda por qué empezaste tu camino."
+    assert _clean_post_title(raw3, message=msg) == msg
+
+    # Handles IG prefixes
+    raw_ig = "IG_Post_17841463473447753_998877_Foto playa"
+    assert _clean_post_title(raw_ig) == "Foto playa"
+
+
+def test_process_api_response_preserves_post_image_and_message():
+    sample_data = [
+        {
+            "campaign_name": "Post_1217240028141214_122121881985395366_Test",
+            "date": "2026-09-15",
+            "metrics": {
+                "page_media_view": 344,
+                "clicks": 5,
+                "page_post_engagements": 2,
+            },
+            "dimensions": {
+                "post_id": "1217240028141214_122121881985395366",
+                "permalink": "https://www.facebook.com/1217240028141214/posts/122121881985395366",
+                "image_url": "https://scontent.facebook.com/photo.jpg",
+                "message": "Cuando las cosas están difíciles",
+            }
+        }
+    ]
+
+    df = process_api_response(sample_data, "meta_organic", "client_1", "user_1")
+    assert not df.empty
+    row = df.iloc[0]
+    assert row["image_url"] == "https://scontent.facebook.com/photo.jpg"
+    assert row["message"] == "Cuando las cosas están difíciles"
+    assert row["post_id"] == "1217240028141214_122121881985395366"
+
+
+def test_fetch_meta_post_preview(monkeypatch):
+    from unittest.mock import MagicMock
+    from dashboard.api import fetch_meta_post_preview
+    import dashboard.api as api_mod
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "id": "122121881985395366",
+        "message": "Mensaje de prueba",
+        "permalink_url": "https://facebook.com/post/123",
+        "full_picture": "https://facebook.com/img.jpg"
+    }
+
+    monkeypatch.setattr(api_mod, "_meta_proxy_get", lambda *args, **kwargs: mock_resp)
+
+    # Invalidate cache if wrapped
+    if hasattr(fetch_meta_post_preview, "clear"):
+        fetch_meta_post_preview.clear()
+
+    res = fetch_meta_post_preview("client_1", "1217240028141214", "122121881985395366", "test_key")
+    assert res is not None
+    assert res["message"] == "Mensaje de prueba"
+    assert res["permalink"] == "https://facebook.com/post/123"
+    assert res["image_url"] == "https://facebook.com/img.jpg"
+
