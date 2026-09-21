@@ -330,66 +330,82 @@ def render_organic_platform_tab(
             st.markdown("### 🔗 Enlace a la Página / Perfil")
             st.link_button(f"Abrir {plat_label} en Facebook / Meta ↗", str(page_url))
 
-    # Detail Table
-    st.markdown("### Detalle por Contenido e Insights")
-    group_cols = ["campaign_name"]
-    for extra_col in ["permalink", "url", "page_id"]:
-        if extra_col in df_curr_p.columns and extra_col not in group_cols:
-            group_cols.append(extra_col)
+    # Detail Table (Solo publicaciones)
+    posts_only_mask = df_curr_p["campaign_name"].astype(str).str.contains("Post_", case=False, na=False)
+    table_df = df_curr_p[posts_only_mask].copy()
 
-    agg_dict = {}
-    for m in [
-        "page_media_view", "page_total_media_view_unique", "page_post_engagements",
-        "page_views_total", "page_follows", "impressions", "reach", "engagement",
-        "post_engagement", "followers", "pageviews", "likes", "comments", "shares", "clicks"
-    ]:
-        if m in df_curr_p.columns:
-            agg_dict[m] = "sum"
+    if not table_df.empty:
+        st.markdown("### 📋 Listado de Publicaciones")
 
-    if agg_dict:
-        df_table = df_curr_p.groupby(group_cols, as_index=False).agg(agg_dict)
-    else:
-        df_table = df_curr_p[group_cols].drop_duplicates().copy()
+        sort_col = "page_media_view"
+        for candidate in ["page_media_view", "views", "page_total_media_view_unique", "reach", "clicks"]:
+            if candidate in table_df.columns and table_df[candidate].sum() > 0:
+                sort_col = candidate
+                break
 
-    # Formatted display columns
-    rename_cols = {
-        "campaign_name": "Contenido / Insights",
-        "page_media_view": "Visualizaciones",
-        "page_total_media_view_unique": "Alcance Único",
-        "page_post_engagements": "Interacciones",
-        "page_views_total": "Visitas a Página",
-        "page_follows": "Seguidores",
-        "impressions": "Visualizaciones (Total)",
-        "reach": "Alcance (Total)",
-        "engagement": "Interacciones (Total)",
-        "likes": "Me Gusta",
-        "comments": "Comentarios",
-        "shares": "Compartidos",
-        "clicks": "Clics",
-        "permalink": "Enlace",
-        "url": "URL",
-    }
+        group_cols = ["campaign_name"]
+        for extra_col in ["date", "permalink", "url"]:
+            if extra_col in table_df.columns and extra_col not in group_cols:
+                group_cols.append(extra_col)
 
-    display_renames = {k: v for k, v in rename_cols.items() if k in df_table.columns}
-    df_display = df_table.rename(columns=display_renames)
+        agg_dict = {}
+        for m in [
+            "page_media_view", "page_total_media_view_unique", "page_post_engagements",
+            "impressions", "reach", "engagement", "likes", "comments", "shares", "clicks"
+        ]:
+            if m in table_df.columns:
+                agg_dict[m] = "sum"
 
-    if "Contenido / Insights" in df_display.columns:
-        df_display["Contenido / Insights"] = df_display["Contenido / Insights"].apply(
-            lambda n: _clean_post_title(n) if "Post_" in str(n) else n
-        )
+        if agg_dict:
+            df_table = table_df.groupby(group_cols, as_index=False).agg(agg_dict)
+        else:
+            df_table = table_df[group_cols].drop_duplicates().copy()
 
-    column_config = {}
-    if "Enlace" in df_display.columns:
-        column_config["Enlace"] = st.column_config.LinkColumn(
-            "Enlace",
-            help="Enlace directo a la publicación o página",
-            validate=r"^https?://.*",
-            display_text="Abrir enlace ↗",
-        )
-    if "URL" in df_display.columns:
-        column_config["URL"] = st.column_config.LinkColumn(
-            "URL",
-            display_text="Ver página ↗",
-        )
+        if sort_col in df_table.columns:
+            df_table = df_table.sort_values(by=sort_col, ascending=False)
 
-    st.dataframe(df_display, width="stretch", hide_index=True, column_config=column_config)
+        if "date" in df_table.columns:
+            df_table["date"] = pd.to_datetime(df_table["date"]).dt.strftime("%d/%m/%Y")
+
+        rename_cols = {
+            "campaign_name": "Publicación",
+            "date": "Fecha",
+            "page_media_view": "Visualizaciones",
+            "page_total_media_view_unique": "Alcance",
+            "page_post_engagements": "Interacciones",
+            "clicks": "Clics",
+            "likes": "Me Gusta",
+            "comments": "Comentarios",
+            "shares": "Compartidos",
+            "permalink": "Enlace",
+            "url": "URL",
+        }
+
+        # Avoid showing both redundant duplicate metric columns
+        if "page_media_view" in df_table.columns and "impressions" in df_table.columns:
+            df_table = df_table.drop(columns=["impressions"])
+        if "page_total_media_view_unique" in df_table.columns and "reach" in df_table.columns:
+            df_table = df_table.drop(columns=["reach"])
+        if "page_post_engagements" in df_table.columns and "engagement" in df_table.columns:
+            df_table = df_table.drop(columns=["engagement"])
+
+        preferred_order = ["campaign_name", "date", "page_media_view", "views", "page_total_media_view_unique", "reach", "page_post_engagements", "engagement", "clicks", "likes", "comments", "shares", "permalink"]
+        ordered_cols = [c for c in preferred_order if c in df_table.columns]
+        extra_display_cols = [c for c in df_table.columns if c not in ordered_cols and c not in ["page_id", "source_platform", "source_metrics", "platform", "client_id", "user_id", "url"]]
+        final_cols = ordered_cols + extra_display_cols
+
+        df_display = df_table[final_cols].rename(columns={k: v for k, v in rename_cols.items() if k in final_cols})
+
+        if "Publicación" in df_display.columns:
+            df_display["Publicación"] = df_display["Publicación"].apply(_clean_post_title)
+
+        column_config = {}
+        if "Enlace" in df_display.columns:
+            column_config["Enlace"] = st.column_config.LinkColumn(
+                "Enlace",
+                help="Enlace directo a la publicación",
+                validate=r"^https?://.*",
+                display_text="Abrir publicación ↗",
+            )
+
+        st.dataframe(df_display, width="stretch", hide_index=True, column_config=column_config)
