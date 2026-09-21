@@ -1,0 +1,70 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "01M32STRRQ9HR6HJ5PEPTNJYS4",
+  "session_id": "ses_f3a632b2bffeBkkffaGURuqHiL",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-21T20:17:01.658477Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "app/connectors/meta.py",
+    "app/main.py",
+    "dashboard.py",
+    "dashboard/api.py",
+    "dashboard/views/organic.py",
+    "tests/test_dashboard_organic.py",
+    "tests/test_dashboard_ui.py"
+  ],
+  "agent": "OpenCode",
+  "model": "gemini-3.6-flash",
+  "turn_id": "7d6342ea2e03",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 94743,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 1
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-21T20:17:01.518273Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 23,
+    "total_committed": 0,
+    "total_lines_changed": 23,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 221,
+      "user_lines_removed": 23,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "app/connectors/meta.py": 18,
+        "app/main.py": 5,
+        "dashboard.py": 5,
+        "dashboard/api.py": 40,
+        "dashboard/views/organic.py": 75,
+        "tests/test_dashboard_organic.py": 76,
+        "tests/test_dashboard_ui.py": 2
+      },
+      "user_removed_per_file": {
+        "app/connectors/meta.py": 5,
+        "app/main.py": 1,
+        "dashboard.py": 1,
+        "dashboard/views/organic.py": 15,
+        "tests/test_dashboard_ui.py": 1
+      }
+    }
+  ]
+}

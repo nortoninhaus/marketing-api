@@ -1,0 +1,4182 @@
+You are a code reviewer. Analyze the files below and validate they comply with the coding standards provided.
+
+=== CODING STANDARDS ===
+# AGENTS.md
+
+## Developer Commands
+- **Backend (FastAPI):**
+  - Install: `pip install -r requirements.txt`
+  - Run: `uvicorn app.main:app --reload` (Note: `app/main.py` is the likely entrypoint)
+  - Test: `pytest`
+- **Dashboard (Streamlit):**
+  - Run: `streamlit run dashboard.py`
+- **Frontend (Flutter Web):**
+  - Path: `web_ui/`
+  - Commands: `flutter pub get`, `flutter run -d chrome`
+
+## Project Structure
+- `app/`: FastAPI backend implementation.
+  - `connectors/`: Multi-platform marketing API integrations (Meta, Google, TikTok, etc.).
+  - `routers/`: API endpoints.
+  - `models/`: Pydantic schemas for requests/responses.
+- `dashboard.py`: Streamlit-based data visualization entrypoint (orchestrator for auth, sidebar controls, query caching, and view routing).
+- `dashboard/`: Modular dashboard implementation:
+  - `views/`: Platform presentation layers (`meta_ads.py`, `generic_ads.py`).
+  - `styles.py`: Global theme CSS, light/dark modes, and view transition scripts.
+  - `onboarding.py`: Initial guide dialogs and client-side cookie/storage persistence.
+  - `reporting.py`: HTML standalone reports and segmented PDF capture generation.
+  - `auth.py`: Dashboard authentication, tokens, and permission checks.
+  - `api.py`: Direct API interaction and schema fetching.
+  - `utils.py`: Metric extractors, campaign cleanups, and date calculators.
+  - `ui.py`: Common UI helpers (KPI cards, charts, theme colors).
+- `web_ui/`: Flutter web application.
+- `tests/`: Extensive pytest suite for connectors, API, and dashboard components.
+
+## Core Logic & Conventions
+- **Connectors:** All platforms inherit from `app/connectors/base.py`. Follow this pattern when adding new integrations.
+- **Environment:** Requires a `.env` file (see `.env.example`).
+- **Deployment:** Uses Docker (`Dockerfile`, `Dockerfile.dashboard`) and Google Cloud (`.gcloudignore`, `deploy.sh`).
+
+## Testing Quirks
+- Tests cover specific OAuth flows and API validations for multiple social platforms.
+- `tests/conftest.py` contains shared fixtures for API mocking.
+=== END CODING STANDARDS ===
+
+=== FILES TO REVIEW ===
+
+--- FILE: app/connectors/meta.py ---
+"""
+Meta (Facebook/Instagram) connectors — Ads and Organic.
+Supports dynamic level (campaign, adset, ad), conversions parsing, pagination,
+daily timeseries (time_increment=1), Instagram Organic connectivity,
+comments fetching for Ads/Pages/Instagram, and updated metrics (views replaces
+deprecated impressions for IG media created after July 2024).
+"""
+
+from typing import List, Dict, Any, Optional
+import logging
+import httpx
+from datetime import datetime, time, timezone
+
+from facebook_business.session import FacebookSession
+from facebook_business.api import FacebookAdsApi
+from facebook_business.adobjects.adaccount import AdAccount
+from facebook_business.adobjects.page import Page
+
+from app.connectors.base import BaseConnector
+from app.models.requests import DataRequest
+from app.models.responses import CampaignData, CommentData
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+GRAPH_API_VERSION = "v25.0"
+GRAPH_BASE = f"https://graph.facebook.com/{GRAPH_API_VERSION}"
+
+RESULT_ACTIONS_BY_OPTIMIZATION = {
+    "QUALITY_LEAD": ("lead", "onsite_conversion.lead_grouped", "offsite_conversion.fb_pixel_lead"),
+    "LEAD_GENERATION": ("lead", "onsite_conversion.lead_grouped", "offsite_conversion.fb_pixel_lead"),
+    "LANDING_PAGE_VIEWS": ("landing_page_view",),
+    "LINK_CLICKS": ("link_click",),
+    "POST_ENGAGEMENT": ("post_engagement",),
+    "THRUPLAY": ("video_view",),
+    "APP_INSTALLS": ("app_install",),
+    "CONVERSATIONS": (
+        "onsite_conversion.messaging_conversation_started_7d",
+        "messaging_conversation_started_7d",
+    ),
+    "OFFSITE_CONVERSIONS": ("offsite_conversion.fb_pixel_purchase", "purchase"),
+}
+
+RESULT_ACTIONS_BY_OBJECTIVE = {
+    "OUTCOME_LEADS": ("lead", "onsite_conversion.lead_grouped", "offsite_conversion.fb_pixel_lead"),
+    "OUTCOME_TRAFFIC": ("landing_page_view", "link_click"),
+    "OUTCOME_ENGAGEMENT": (
+        "post_engagement",
+        "onsite_conversion.messaging_conversation_started_7d",
+        "messaging_conversation_started_7d",
+    ),
+    "OUTCOME_SALES": ("offsite_conversion.fb_pixel_purchase", "purchase"),
+    "OUTCOME_APP_PROMOTION": ("app_install",),
+}
+
+
+def _nested_result_value(entries, indicator):
+    for entry in entries or []:
+        if entry.get("indicator") != indicator:
+            continue
+        values = entry.get("values") or []
+        try:
+            return float(values[0].get("value", 0))
+        except (AttributeError, IndexError, TypeError, ValueError):
+            return 0.0
+    return 0.0
+
+
+def _action_value(entries, action_type):
+    for entry in entries or []:
+        if entry.get("action_type") == action_type:
+            try:
+                return float(entry.get("value", 0))
+            except (TypeError, ValueError):
+                return 0.0
+    return None
+
+
+def _resolve_meta_result(insight):
+    result_entries = insight.get("results") or []
+    if result_entries:
+        indicator = str(result_entries[0].get("indicator") or "")
+        return (
+            indicator,
+            _nested_result_value(result_entries, indicator),
+            _nested_result_value(insight.get("cost_per_result"), indicator),
+        )
+
+    candidates = RESULT_ACTIONS_BY_OPTIMIZATION.get(
+        str(insight.get("optimization_goal") or "").upper()
+    ) or RESULT_ACTIONS_BY_OBJECTIVE.get(
+        str(insight.get("objective") or "").upper(),
+        (),
+    )
+    for action_type in candidates:
+        value = _action_value(insight.get("actions"), action_type)
+        if value is not None:
+            cost = _action_value(insight.get("cost_per_action_type"), action_type)
+            return f"actions:{action_type}", value, cost or 0.0
+    return "", 0.0, 0.0
+
+
+class MetaAdsConnector(BaseConnector):
+    platform_name = "meta_ads"
+
+    def get_credentials(self, request: Optional[DataRequest] = None) -> Dict[str, Any]:
+        creds = super().get_credentials(request)
+        
+        access_token = creds.get("access_token") if creds else None
+        if not access_token:
+            access_token = settings.meta_access_token
+            
+        ad_account_id = request.account_id if request else creds.get("ad_account_id")
+            
+        return {
+            "access_token": access_token,
+            "ad_account_id": ad_account_id
+        }
+
+    def fetch_data(self, request: DataRequest) -> List[CampaignData]:
+        creds = self.get_credentials(request)
+        session = FacebookSession(
+            app_id=settings.meta_app_id,
+            app_secret=settings.meta_app_secret,
+            access_token=creds["access_token"]
+        )
+        api = FacebookAdsApi(session)
+        account = AdAccount(creds["ad_account_id"], api=api)
+        
+        # Determine the level from requested dimensions
+        level = "campaign"
+        if request.dimensions:
+            if "ad_name" in request.dimensions or "ad.name" in request.dimensions:
+                level = "ad"
+            elif "adset_name" in request.dimensions or "adset.name" in request.dimensions:
+                level = "adset"
+
+        # Determine fields to request. If conversions or specific pixel action types are requested, request 'actions'
+        # Also request actions / action_values for custom/personalized metrics.
+        fields = []
+        has_actions = False
+        has_action_values = False
+        STANDARD_META_FIELDS = {
+            "impressions", "clicks", "spend", "reach", "conversions", "cpc", "cpm", "ctr", "frequency",
+            "results", "cost_per_result", "purchase_roas", "purchase", "lead", "add_to_cart", "initiate_checkout", "roas",
+            "video_play_actions", "video_p25_watched_actions", "video_p50_watched_actions", "video_p75_watched_actions",
+            "video_p100_watched_actions", "video_30_sec_watched_actions", "video_avg_time_watched_actions",
+            "unique_clicks", "inline_link_clicks", "unique_inline_link_clicks", "social_spend",
+            "cost_per_unique_click", "cost_per_inline_link_click", "cost_per_conversion"
+        }
+        for m in request.metrics:
+            m_mapped = {
+                "roas": "purchase_roas",
+                "__results__": "results",
+                "video_views": "video_play_actions",
+                "views": "video_play_actions",
+            }.get(m, m)
+            if m in ("video_views", "views", "video_play_actions"):
+                if "video_play_actions" not in fields:
+                    fields.append("video_play_actions")
+                if "video_30_sec_watched_actions" not in fields:
+                    fields.append("video_30_sec_watched_actions")
+                if "actions" not in fields:
+                    fields.append("actions")
+            elif m_mapped in ("conversions", "purchase", "lead", "add_to_cart", "initiate_checkout", "followers", "follows", "page_likes", "post_engagement", "engagement") or m_mapped not in STANDARD_META_FIELDS:
+                has_actions = True
+                if m_mapped not in STANDARD_META_FIELDS:
+                    has_action_values = True
+                if "actions" not in fields:
+                    fields.append("actions")
+                if has_action_values and "action_values" not in fields:
+                    fields.append("action_values")
+            else:
+                if m_mapped not in fields:
+                    fields.append(m_mapped)
+
+        if any(metric in request.metrics for metric in ("__results__", "results", "cost_per_result")):
+            for result_field in (
+                "results",
+                "cost_per_result",
+                "actions",
+                "cost_per_action_type",
+                "objective",
+                "optimization_goal",
+            ):
+                if result_field not in fields:
+                    fields.append(result_field)
+
+        # Always include date_start/date_stop to reconstruct date, and name fields for campaign_name mapping
+        if "date_start" not in fields:
+            fields.append("date_start")
+        name_fields = ["campaign_name"]
+        if level in ("adset", "ad"):
+            name_fields.append("adset_name")
+        if level == "ad":
+            name_fields.append("ad_name")
+        for name_field in name_fields:
+            if name_field not in fields:
+                fields.append(name_field)
+
+        # Handle breakdown dimensions
+        # Map UI-facing dimension names to valid Meta Graph API breakdown values
+        VALID_META_BREAKDOWNS = {
+            "age", "gender", "country", "comscore_market", "publisher_platform",
+            "impression_device", "device_platform", "platform_position",
+            "body_asset", "image_asset", "title_asset", "video_asset",
+            "description_asset", "region",
+        }
+        # Translate common UI aliases to valid API breakdown names
+        DIMENSION_TO_BREAKDOWN = {
+            "platform_device": "impression_device",
+            "dma": "comscore_market",
+        }
+
+        # ── Meta breakdown compatibility groups ──
+        # Meta only allows breakdowns from COMPATIBLE groups in the same request.
+        # Asset breakdowns cannot be combined with any other group.
+        # Demographic, Geographic, and Delivery can be combined with each other
+        # (up to Meta's internal limit, typically ≤3-4 total breakdowns).
+        BREAKDOWN_GROUPS = {
+            "demographic": {"age", "gender"},
+            "geographic": {"country", "region", "comscore_market"},
+            "delivery": {"publisher_platform", "platform_position", "impression_device", "device_platform"},
+            "asset": {"body_asset", "image_asset", "title_asset", "video_asset", "description_asset"},
+        }
+        # Asset breakdowns are mutually exclusive with all other groups
+        INCOMPATIBLE_PAIRS = {
+            frozenset({"asset", "demographic"}),
+            frozenset({"asset", "geographic"}),
+            frozenset({"asset", "delivery"}),
+        }
+
+        breakdowns = []
+        if request.dimensions:
+            for dim in request.dimensions:
+                mapped = DIMENSION_TO_BREAKDOWN.get(dim, dim)
+                if mapped in VALID_META_BREAKDOWNS:
+                    breakdowns.append(mapped)
+
+        # Validate breakdown group compatibility
+        if breakdowns:
+            active_groups = set()
+            for bd in breakdowns:
+                for group_name, group_members in BREAKDOWN_GROUPS.items():
+                    if bd in group_members:
+                        active_groups.add(group_name)
+            # Check for incompatible group combinations
+            for pair in INCOMPATIBLE_PAIRS:
+                if pair.issubset(active_groups):
+                    group_names = sorted(pair)
+                    members_by_group = {
+                        g: sorted(BREAKDOWN_GROUPS[g] & set(breakdowns))
+                        for g in group_names
+                    }
+                    detail_parts = [f"{g}: {', '.join(members_by_group[g])}" for g in group_names]
+                    raise ValueError(
+                        f"Meta API does not allow combining these breakdown groups in the same request: "
+                        f"{' + '.join(group_names)}. "
+                        f"Selected breakdowns by group — {'; '.join(detail_parts)}. "
+                        f"Please deselect breakdowns from one of these groups and try again."
+                    )
+
+        params = {
+            "time_range": {
+                "since": request.start_date.strftime("%Y-%m-%d"),
+                "until": request.end_date.strftime("%Y-%m-%d")
+            },
+            "level": level,
+            "time_increment": 1  # Get daily timeseries data
+        }
+        if breakdowns:
+            params["breakdowns"] = breakdowns
+
+        # Handle action attribution windows
+        if hasattr(request, "action_attribution_windows") and request.action_attribution_windows:
+            params["action_attribution_windows"] = request.action_attribution_windows
+
+        # Handle filters translation to Meta's filtering list
+        if hasattr(request, "filters") and request.filters:
+            if isinstance(request.filters, list):
+                params["filtering"] = request.filters
+            elif isinstance(request.filters, dict):
+                filtering_list = []
+                for field, val in request.filters.items():
+                    filtering_list.append({
+                        "field": field,
+                        "operator": "IN" if isinstance(val, list) else "EQUAL",
+                        "value": val if isinstance(val, list) else [val]
+                    })
+                params["filtering"] = filtering_list
+
+        insights = account.get_insights(
+            fields=fields,
+            params=params
+        )
+
+        results = []
+        while insights is not None:
+            for i in insights:
+                campaign_name = i.get("campaign_name") or "Unknown Campaign"
+                adset_name = i.get("adset_name")
+                ad_name = i.get("ad_name")
+
+                # Append breakdown values to campaign_name to differentiate rows
+                for b in breakdowns:
+                    b_val = i.get(b)
+                    if b_val:
+                        campaign_name += f"_{b_val}"
+
+                date_val = i.get("date_start") or request.start_date.strftime("%Y-%m-%d")
+
+                result_indicator, result_value, result_cost = _resolve_meta_result(i)
+                metrics_dict = {}
+                for m in request.metrics:
+                    m_mapped = {"roas": "purchase_roas", "__results__": "results"}.get(m, m)
+                    if m_mapped == "results":
+                        metrics_dict[m] = result_value
+                    elif m_mapped == "cost_per_result":
+                        metrics_dict[m] = result_cost
+                    elif m_mapped == "conversions":
+                        # Parse standard actions array
+                        actions = i.get("actions", [])
+                        total_conversions = 0
+                        for action in actions:
+                            try:
+                                total_conversions += int(float(action.get("value", 0)))
+                            except Exception:
+                                pass
+                        metrics_dict["conversions"] = total_conversions
+                    elif m_mapped in ("purchase", "lead", "add_to_cart", "initiate_checkout"):
+                        actions = i.get("actions", [])
+                        action_type_map = {
+                            "purchase": ["offsite_conversion.fb_pixel_purchase", "purchase", "app_custom_event.fb_mobile_purchase"],
+                            "lead": ["offsite_conversion.fb_pixel_lead", "lead"],
+                            "add_to_cart": ["offsite_conversion.fb_pixel_add_to_cart", "add_to_cart"],
+                            "initiate_checkout": ["offsite_conversion.fb_pixel_initiate_checkout", "initiate_checkout"]
+                        }
+                        target_types = action_type_map[m_mapped]
+                        val_sum = 0
+                        for action in actions:
+                            if action.get("action_type") in target_types:
+                                try:
+                                    val_sum += int(float(action.get("value", 0)))
+                                except Exception:
+                                    pass
+                        metrics_dict[m] = val_sum
+                    elif m in ("video_views", "views", "video_play_actions", "plays"):
+                        v_field = i.get("video_play_actions", [])
+                        v_sum = 0
+                        if isinstance(v_field, list):
+                            for v_item in v_field:
+                                try:
+                                    v_sum += int(float(v_item.get("value", 0)))
+                                except Exception:
+                                    pass
+                        elif isinstance(v_field, (int, float)):
+                            v_sum = int(float(v_field))
+                        if v_sum == 0:
+                            actions = i.get("actions", [])
+                            for action in actions:
+                                act_t = str(action.get("action_type", "")).lower()
+                                if "video_view" in act_t or "video_play" in act_t or "post_video" in act_t or act_t == "video_view":
+                                    try:
+                                        v_sum += int(float(action.get("value", 0)))
+                                    except Exception:
+                                        pass
+                        if v_sum == 0:
+                            for alt_field in ("video_30_sec_watched_actions", "video_p25_watched_actions", "video_p50_watched_actions"):
+                                alt_list = i.get(alt_field, [])
+                                if isinstance(alt_list, list):
+                                    for alt_item in alt_list:
+                                        try:
+                                            v_sum += int(float(alt_item.get("value", 0)))
+                                        except Exception:
+                                            pass
+                                if v_sum > 0:
+                                    break
+                        metrics_dict[m] = v_sum
+                    elif m in ("followers", "follows", "page_likes"):
+                        actions = i.get("actions", [])
+                        f_sum = 0
+                        for action in actions:
+                            act_t = str(action.get("action_type", "")).lower()
+                            if act_t in ("like", "page_like", "follow", "page_engagement", "onsite_conversion.messaging_conversation_started_7d", "profile_engagement") or "follow" in act_t or "like" in act_t:
+                                try:
+                                    f_sum += int(float(action.get("value", 0)))
+                                except Exception:
+                                    pass
+                        metrics_dict[m] = f_sum
+                    elif m_mapped not in STANDARD_META_FIELDS:
+                        # Personalized/custom metric (e.g. custom conversion or custom pixel event)
+                        is_val = m_mapped.endswith("_value")
+                        base_m = m_mapped[:-6] if is_val else m_mapped
+                        target_array = i.get("action_values" if is_val else "actions", [])
+                        val_sum = 0
+                        for action in target_array:
+                            act_type = action.get("action_type", "")
+                            # Match if action_type equals base_m, ends with it, or contains it
+                            if act_type == base_m or act_type.endswith(f".{base_m}") or base_m in act_type:
+                                try:
+                                    val_sum += float(action.get("value", 0)) if is_val else int(float(action.get("value", 0)))
+                                except Exception:
+                                    pass
+                        metrics_dict[m] = val_sum
+                    else:
+                        val = i.get(m_mapped)
+                        if isinstance(val, list):
+                            total_val = 0
+                            for item in val:
+                                for value in item.get("values", [item]):
+                                    try:
+                                        total_val += float(value.get("value", 0))
+                                    except Exception:
+                                        pass
+                            metrics_dict[m] = total_val
+                        elif val is not None:
+                            try:
+                                # Safely cast metrics to float/int
+                                metrics_dict[m] = float(val) if "." in str(val) else int(val)
+                            except Exception:
+                                metrics_dict[m] = 0
+                        else:
+                            metrics_dict[m] = 0
+
+                metrics_dict["result_indicator"] = result_indicator
+                dimensions = {b: i.get(b) for b in breakdowns if i.get(b)}
+                if adset_name:
+                    dimensions["adset_name"] = adset_name
+                if ad_name:
+                    dimensions["ad_name"] = ad_name
+
+                results.append(
+                    CampaignData(
+                        campaign_name=campaign_name,
+                        date=date_val,
+                        metrics=metrics_dict,
+                        dimensions=dimensions
+                    )
+                )
+ 
+            try:
+                insights = insights.get_next_page()
+            except Exception:
+                insights = None
+
+        return results
+
+    def fetch_comments(self, post_id: str, access_token: str) -> List[CommentData]:
+        """
+        Fetch comments on an ad creative's effective post.
+        For ads, post_id should be the effective_object_story_id from the ad creative.
+        """
+        url = f"{GRAPH_BASE}/{post_id}/comments"
+        comments: List[CommentData] = []
+
+        with httpx.Client(timeout=30.0) as client:
+            params: Dict[str, Any] = {
+                "fields": "id,message,from,created_time,comment_count,like_count",
+                "limit": 50,
+                "access_token": access_token,
+            }
+            while True:
+                res = client.get(url, params=params)
+                if res.status_code != 200:
+                    logger.error(f"Meta Ads comments error: {res.text}")
+                    break
+
+                data = res.json()
+                for item in data.get("data", []):
+                    from_data = item.get("from", {})
+                    comments.append(CommentData(
+                        comment_id=item.get("id", ""),
+                        text=item.get("message", ""),
+                        author=from_data.get("name", ""),
+                        timestamp=item.get("created_time", ""),
+                        like_count=item.get("like_count", 0),
+                        reply_count=item.get("comment_count", 0),
+                    ))
+
+                paging = data.get("paging", {})
+                next_url = paging.get("next")
+                if not next_url:
+                    break
+                url = next_url
+                params = {}
+
+        return comments
+
+    def get_schema(self) -> Dict[str, Any]:
+        return {
+            "metrics": [
+                "spend",
+                "impressions",
+                "reach",
+                "post_engagement",
+                "video_views",
+                "followers",
+                "clicks",
+                "conversions",
+                "__results__",
+                "cost_per_result",
+                "cpc", 
+                "cpm", 
+                "ctr", 
+                "frequency", 
+                "actions",
+                "purchase_roas",
+                "purchase",
+                "lead",
+                "add_to_cart",
+                "initiate_checkout",
+                "roas",
+                "unique_clicks",
+                "inline_link_clicks",
+                "unique_inline_link_clicks",
+                "video_play_actions",
+                "views",
+                "follows",
+                "video_p25_watched_actions",
+                "video_p50_watched_actions",
+                "video_p75_watched_actions",
+                "video_p100_watched_actions",
+                "video_30_sec_watched_actions",
+                "video_avg_time_watched_actions",
+                "social_spend",
+                "cost_per_unique_click",
+                "cost_per_inline_link_click",
+                "cost_per_conversion",
+                "action_values",
+                "cost_per_action_type",
+                "cost_per_unique_action_type",
+                "mobile_app_purchase_roas",
+                "website_purchase_roas",
+                "website_ctr",
+                "outbound_clicks",
+                "unique_outbound_clicks",
+                "cost_per_outbound_click"
+            ],
+            "dimensions": ["campaign_name", "adset_name", "ad_name", "date_start",
+                          "age", "gender", "country", "comscore_market", "publisher_platform", "impression_device", "device_platform",
+                          "platform_position", "region",
+                          "body_asset", "image_asset", "title_asset", "video_asset", "description_asset"],
+            "metadata": {
+                "api_version": GRAPH_API_VERSION,
+                "comment_support": True,
+            },
+        }
+
+    def ping(self) -> bool:
+        try:
+            creds = self.get_credentials()
+            session = FacebookSession(
+                app_id=settings.meta_app_id,
+                app_secret=settings.meta_app_secret,
+                access_token=creds["access_token"]
+            )
+            api = FacebookAdsApi(session)
+            account = AdAccount(creds["ad_account_id"], api=api)
+            account.get_insights(params={"limit": 1})
+            return True
+        except Exception:
+            return False
+
+
+class MetaOrganicConnector(BaseConnector):
+    platform_name = "meta_organic"
+
+    def get_credentials(self, request: Optional[DataRequest] = None) -> Dict[str, Any]:
+        creds = super().get_credentials(request)
+        
+        access_token = creds.get("access_token") if creds else None
+        if not access_token:
+            access_token = settings.meta_access_token
+            
+        page_id = request.account_id if request else creds.get("page_id")
+        is_instagram = creds.get("is_instagram", False) if creds else False
+            
+        return {
+            "access_token": access_token,
+            "page_id": page_id,
+            "is_instagram": is_instagram
+        }
+
+    # Categorization constants for metrics
+    IG_ACCOUNT_DAILY_METRICS = {"views", "reach", "profile_views", "follower_count", "accounts_engaged", "total_interactions", "website_clicks"}
+    IG_ACCOUNT_DEMO_METRICS = {"audience_gender_age", "audience_country", "audience_city", "audience_locale"}
+    IG_MEDIA_METRICS = {"views", "reach", "saved", "shares", "likes", "comments", "total_interactions", "plays", "replays", "carousel_album_saves", "carousel_album_impressions"}
+
+    PAGE_DAILY_METRICS = {"page_views_total", "page_post_engagements", "page_follows", "page_actions_post_reactions_total", "page_media_view", "page_total_media_view_unique"}
+    PAGE_DEMO_METRICS = set()  # Meta deprecated lifetime fan demographics (page_fans_*) without API replacement
+    PAGE_POST_METRICS = {"post_clicks", "post_media_view", "post_total_media_view_unique"}
+
+    # ─── Instagram Organic ─────────────────────────────────────────────
+
+    def _fetch_instagram_data(self, request: DataRequest, creds: Dict[str, Any]) -> List[CampaignData]:
+        """Fetch Instagram Organic metrics using raw HTTP Graph API requests.
+        Uses 'views' instead of deprecated 'impressions' for IG media/account insights.
+        """
+        access_token = creds["access_token"]
+        ig_account_id = creds["page_id"]  # In Instagram connections, account_id is the IG Business ID
+        since_dt = datetime.combine(request.start_date, time.min)
+        until_dt = datetime.combine(request.end_date, time.max)
+        since_ts = int(since_dt.replace(tzinfo=timezone.utc).timestamp())
+        until_ts = int(until_dt.replace(tzinfo=timezone.utc).timestamp())
+
+        daily_data: Dict[str, Dict[str, Any]] = {}
+        campaign_name = "Instagram_Organic_Insights"
+
+        # 1. Check if demographic metrics are requested (Lifetime)
+        demo_metrics = [m for m in request.metrics if m in self.IG_ACCOUNT_DEMO_METRICS or "audience_" in m]
+        if demo_metrics and not request.post_id:
+            try:
+                demo_url = f"{GRAPH_BASE}/{ig_account_id}/insights"
+                with httpx.Client() as client:
+                    res = client.get(
+                        demo_url,
+                        params={
+                            "metric": ",".join(demo_metrics),
+                            "period": "lifetime",
+                            "access_token": access_token
+                        }
+                    )
+                    if res.status_code == 200:
+                        insights_data = res.json().get("data", [])
+                        day = request.start_date.strftime("%Y-%m-%d")
+                        if day not in daily_data:
+                            daily_data[day] = {}
+                        for item in insights_data:
+                            name = item.get("name")
+                            values = item.get("values", [])
+                            if values:
+                                daily_data[day][name] = values[0].get("value", {})
+                    else:
+                        logger.warning(f"IG Demographics fetch failed: {res.text}")
+            except Exception as e:
+                logger.warning(f"IG Demographics insights error: {e}")
+
+        # 2. If post_id is "all" or dimension post_id is requested (fetch all media with nested insights in one batch API request)
+        if request.post_id == "all" or (not request.post_id and request.dimensions and "post_id" in request.dimensions):
+            # Filter for valid Instagram Media metrics
+            media_metrics = []
+            for m in request.metrics:
+                if m in ("views", "impressions"):
+                    media_metrics.append("views")
+                elif "reach" in m:
+                    media_metrics.append("reach")
+                elif "save" in m:
+                    media_metrics.append("saved")
+                elif "engagement" in m or "interaction" in m:
+                    media_metrics.append("total_interactions")
+                elif "share" in m:
+                    media_metrics.append("shares")
+                elif "like" in m:
+                    media_metrics.append("likes")
+                elif "comment" in m:
+                    media_metrics.append("comments")
+                elif m in self.IG_MEDIA_METRICS:
+                    media_metrics.append(m)
+            if not media_metrics:
+                media_metrics = ["views", "reach", "total_interactions", "saved", "shares", "likes", "comments"]
+            media_metrics = list(dict.fromkeys(media_metrics))
+            
+            url = f"{GRAPH_BASE}/{ig_account_id}/media"
+            results = []
+            try:
+                with httpx.Client() as client:
+                    res = client.get(
+                        url,
+                        params={
+                            "fields": f"id,caption,timestamp,media_type,permalink,media_url,thumbnail_url,insights.metric({','.join(media_metrics)}){{name,values}}",
+                            "limit": request.limit or 50,
+                            "access_token": access_token
+                        }
+                    )
+                    if res.status_code == 200:
+                        media_list = res.json().get("data", [])
+                        for item in media_list:
+                            media_id = item.get("id")
+                            caption = item.get("caption", "")
+                            timestamp = item.get("timestamp", request.start_date.strftime("%Y-%m-%d"))
+                            permalink = item.get("permalink", "")
+                            
+                            insights_data = item.get("insights", {}).get("data", [])
+                            metrics_dict = {}
+                            for ins in insights_data:
+                                name = ins.get("name")
+                                values = ins.get("values", [])
+                                if values:
+                                    metrics_dict[name] = values[0].get("value", 0)
+                            
+                            results.append(CampaignData(
+                                campaign_name=f"IG_Post_{media_id}_{caption[:20]}",
+                                date=timestamp[:10],
+                                metrics=metrics_dict,
+                                dimensions={
+                                    "post_id": media_id,
+                                    "permalink": permalink,
+                                    "media_type": item.get("media_type", ""),
+                                    "image_url": item.get("media_url") or item.get("thumbnail_url") or "",
+                                    "message": caption,
+                                }
+                            ))
+                return results
+            except Exception as e:
+                logger.error(f"IG Media batch fetch error: {e}")
+                return []
+
+        # 3. If post_id is provided, fetch insights for specific Instagram Media
+        elif request.post_id:
+            media_id = request.post_id
+            single_permalink = ""
+            try:
+                with httpx.Client() as c_perm:
+                    p_res = c_perm.get(
+                        f"{GRAPH_BASE}/{media_id}",
+                        params={"fields": "id,caption,permalink,media_type", "access_token": access_token}
+                    )
+                    if p_res.status_code == 200:
+                        single_permalink = p_res.json().get("permalink", "")
+            except Exception:
+                pass
+
+            url = f"{GRAPH_BASE}/{media_id}/insights"
+            # Map and filter for valid Instagram Media metrics
+            media_metrics = []
+            for m in request.metrics:
+                if m in ("views", "impressions"):
+                    media_metrics.append("views")
+                elif "reach" in m:
+                    media_metrics.append("reach")
+                elif "save" in m:
+                    media_metrics.append("saved")
+                elif "engagement" in m or "interaction" in m:
+                    media_metrics.append("total_interactions")
+                elif "share" in m:
+                    media_metrics.append("shares")
+                elif "like" in m:
+                    media_metrics.append("likes")
+                elif "comment" in m:
+                    media_metrics.append("comments")
+                elif m in self.IG_MEDIA_METRICS:
+                    media_metrics.append(m)
+                elif "view" in m or "play" in m:
+                    media_metrics.append("views")
+
+            if not media_metrics:
+                media_metrics = ["views", "reach", "total_interactions", "saved", "shares", "likes", "comments"]
+
+            media_metrics = list(dict.fromkeys(media_metrics))
+
+            try:
+                with httpx.Client() as client:
+                    res = client.get(
+                        url,
+                        params={
+                            "metric": ",".join(media_metrics),
+                            "access_token": access_token
+                        }
+                    )
+                    if res.status_code == 200:
+                        insights_data = res.json().get("data", [])
+                        day = request.start_date.strftime("%Y-%m-%d")
+                        if day not in daily_data:
+                            daily_data[day] = {}
+                        for item in insights_data:
+                            name = item.get("name")
+                            values = item.get("values", [])
+                            if values:
+                                daily_data[day][name] = values[0].get("value", 0)
+                        campaign_name = f"IG_Post_{media_id}"
+            except Exception as e:
+                logger.error(f"IG Media insights error: {e}")
+
+        # 4. Otherwise, fetch Account/Profile level Insights
+        else:
+            url = f"{GRAPH_BASE}/{ig_account_id}/insights"
+            ig_metrics = []
+            for m in request.metrics:
+                if m in ("views", "impressions"):
+                    ig_metrics.append("views")
+                elif "reach" in m:
+                    ig_metrics.append("reach")
+                elif "profile_views" in m:
+                    ig_metrics.append("profile_views")
+                elif "follower" in m:
+                    ig_metrics.append("follower_count")
+                elif "accounts_engaged" in m or "engaged" in m:
+                    ig_metrics.append("accounts_engaged")
+                elif "total_interactions" in m or "interaction" in m:
+                    ig_metrics.append("total_interactions")
+                elif "website_clicks" in m:
+                    ig_metrics.append("website_clicks")
+                elif m in self.IG_ACCOUNT_DAILY_METRICS:
+                    ig_metrics.append(m)
+
+            if not ig_metrics:
+                ig_metrics = ["views", "reach", "profile_views", "accounts_engaged", "total_interactions"]
+
+            ig_metrics = list(dict.fromkeys(ig_metrics))
+
+            try:
+                with httpx.Client() as client:
+                    res = client.get(
+                        url,
+                        params={
+                            "metric": ",".join(ig_metrics),
+                            "period": "day",
+                            "since": since_ts,
+                            "until": until_ts,
+                            "access_token": access_token
+                        }
+                    )
+                    if res.status_code == 200:
+                        insights_data = res.json().get("data", [])
+                        for item in insights_data:
+                            metric_name = item.get("name")
+                            for val_entry in item.get("values", []):
+                                end_time = val_entry.get("end_time")
+                                day = end_time[:10] if end_time else request.start_date.strftime("%Y-%m-%d")
+                                if day not in daily_data:
+                                    daily_data[day] = {}
+                                daily_data[day][metric_name] = val_entry.get("value", 0)
+            except Exception as e:
+                logger.error(f"IG Account insights error: {e}")
+
+        if not daily_data:
+            return []
+
+        return [
+            CampaignData(
+                campaign_name=campaign_name,
+                date=day,
+                metrics=metrics_dict,
+                dimensions={
+                    "post_id": request.post_id,
+                    "permalink": single_permalink,
+                } if request.post_id else {
+                    "account_id": str(ig_account_id),
+                }
+            ) for day, metrics_dict in sorted(daily_data.items())
+        ]
+
+    def _fetch_instagram_comments(self, post_id: str, access_token: str) -> List[CommentData]:
+        """Fetch comments on an Instagram media post with nested replies."""
+        url = f"{GRAPH_BASE}/{post_id}/comments"
+        comments: List[CommentData] = []
+
+        with httpx.Client(timeout=30.0) as client:
+            params: Dict[str, Any] = {
+                "fields": "id,text,username,timestamp,like_count,replies{id,text,username,timestamp,like_count}",
+                "limit": 50,
+                "access_token": access_token,
+            }
+            while True:
+                res = client.get(url, params=params)
+                if res.status_code != 200:
+                    logger.error(f"IG comments error: {res.text}")
+                    break
+
+                data = res.json()
+                for item in data.get("data", []):
+                    # Parse nested replies
+                    reply_items = item.get("replies", {}).get("data", [])
+                    replies = [
+                        CommentData(
+                            comment_id=r.get("id", ""),
+                            text=r.get("text", ""),
+                            author=r.get("username", ""),
+                            timestamp=r.get("timestamp", ""),
+                            like_count=r.get("like_count", 0),
+                        )
+                        for r in reply_items
+                    ]
+
+                    comments.append(CommentData(
+                        comment_id=item.get("id", ""),
+                        text=item.get("text", ""),
+                        author=item.get("username", ""),
+                        timestamp=item.get("timestamp", ""),
+                        like_count=item.get("like_count", 0),
+                        reply_count=len(replies),
+                        replies=replies,
+                    ))
+
+                paging = data.get("paging", {})
+                next_url = paging.get("next")
+                if not next_url:
+                    break
+                url = next_url
+                params = {}
+
+        return comments
+
+    # ─── Facebook Page Comments ────────────────────────────────────────
+
+    def _fetch_page_comments(self, post_id: str, access_token: str) -> List[CommentData]:
+        """Fetch comments on a Facebook Page post with nested replies."""
+        url = f"{GRAPH_BASE}/{post_id}/comments"
+        comments: List[CommentData] = []
+
+        with httpx.Client(timeout=30.0) as client:
+            params: Dict[str, Any] = {
+                "fields": "id,message,from,created_time,comment_count,like_count",
+                "limit": 50,
+                "access_token": access_token,
+            }
+            while True:
+                res = client.get(url, params=params)
+                if res.status_code != 200:
+                    logger.error(f"Page comments error: {res.text}")
+                    break
+
+                data = res.json()
+                for item in data.get("data", []):
+                    from_data = item.get("from", {})
+                    comments.append(CommentData(
+                        comment_id=item.get("id", ""),
+                        text=item.get("message", ""),
+                        author=from_data.get("name", ""),
+                        timestamp=item.get("created_time", ""),
+                        like_count=item.get("like_count", 0),
+                        reply_count=item.get("comment_count", 0),
+                    ))
+
+                paging = data.get("paging", {})
+                next_url = paging.get("next")
+                if not next_url:
+                    break
+                url = next_url
+                params = {}
+
+        return comments
+
+    def fetch_comments(self, post_id: str, access_token: str, is_instagram: bool = False) -> List[CommentData]:
+        """Unified comment fetching — routes to IG or Page comment method."""
+        if is_instagram:
+            return self._fetch_instagram_comments(post_id, access_token)
+        return self._fetch_page_comments(post_id, access_token)
+
+    # ─── Facebook Page Data ────────────────────────────────────────────
+
+    def fetch_data(self, request: DataRequest) -> List[CampaignData]:
+        creds = self.get_credentials(request)
+        if creds.get("is_instagram"):
+            return self._fetch_instagram_data(request, creds)
+
+        session = FacebookSession(
+            app_id=settings.meta_app_id,
+            app_secret=settings.meta_app_secret,
+            access_token=creds["access_token"]
+        )
+        api = FacebookAdsApi(session)
+        page = Page(creds["page_id"], api=api)
+        
+        since_str = request.start_date.strftime("%Y-%m-%d")
+        until_str = request.end_date.strftime("%Y-%m-%d")
+
+        results = []
+        daily_data: Dict[str, Dict[str, Any]] = {}
+        campaign_name = "Page_Insights"
+
+        # 1. Fetch demographics if requested (run safely in try/except)
+        demo_metrics = [m for m in request.metrics if m in self.PAGE_DEMO_METRICS]
+        if demo_metrics and not request.post_id:
+            try:
+                insights = page.get_insights(params={
+                    "metric": demo_metrics,
+                    "period": "lifetime"
+                })
+                for insight in insights:
+                    metric_name = insight.get("name", "unknown")
+                    values_list = insight.get("values", [])
+                    for val_entry in values_list:
+                        end_time = val_entry.get("end_time", since_str)
+                        day = end_time[:10] if end_time else since_str
+                        if day not in daily_data:
+                            daily_data[day] = {}
+                        daily_data[day][metric_name] = val_entry.get("value", {})
+            except Exception as e:
+                logger.warning(f"Meta Page demographics fetch failed: {e}")
+
+        # 2. If post_id is "all" or dimension post_id is requested (fetch all posts with nested insights in one batch request)
+        fetch_posts = False
+        if request.post_id == "all" or (not request.post_id and request.dimensions and "post_id" in request.dimensions):
+            fetch_posts = True
+            # Filter for valid Facebook Post metrics
+            post_metrics = [m for m in request.metrics if m in self.PAGE_POST_METRICS]
+            if not post_metrics:
+                post_metrics = ["post_clicks", "post_media_view", "post_total_media_view_unique"]
+            post_metrics = list(dict.fromkeys(post_metrics))
+            
+            try:
+                url = f"{GRAPH_BASE}/{creds['page_id']}/posts"
+                with httpx.Client() as client:
+                    res = client.get(
+                        url,
+                        params={
+                            "fields": f"id,message,created_time,permalink_url,full_picture,picture,attachments{{media,unshimmed_url,title,description}},insights.metric({','.join(post_metrics)}){{name,values}}",
+                            "limit": request.limit or 50,
+                            "access_token": creds["access_token"]
+                        }
+                    )
+                    if res.status_code == 200:
+                        post_list = res.json().get("data", [])
+                        for item in post_list:
+                            pid = item.get("id")
+                            message = item.get("message", "")
+                            created_time = item.get("created_time", since_str)
+                            permalink = item.get("permalink_url") or f"https://www.facebook.com/{pid}"
+
+                            image_url = item.get("full_picture") or item.get("picture") or ""
+                            if not image_url:
+                                attachments = (item.get("attachments") or {}).get("data") or []
+                                for att in attachments:
+                                    media_img = (att.get("media") or {}).get("image") or {}
+                                    if media_img.get("src"):
+                                        image_url = media_img.get("src")
+                                        break
+
+                            insights_data = item.get("insights", {}).get("data", [])
+                            metrics_dict = {}
+                            for ins in insights_data:
+                                name = ins.get("name")
+                                values = ins.get("values", [])
+                                if values:
+                                    metrics_dict[name] = values[0].get("value", 0)
+
+                            results.append(CampaignData(
+                                campaign_name=f"Post_{pid}_{message[:20]}",
+                                date=created_time[:10],
+                                metrics=metrics_dict,
+                                dimensions={
+                                    "post_id": pid,
+                                    "permalink": permalink,
+                                    "image_url": image_url,
+                                    "message": message,
+                                }
+                            ))
+            except Exception as e:
+                logger.error(f"Meta Page posts batch fetch failed: {e}")
+
+        # 3. Fetch specific post if requested
+        single_post_permalink = f"https://www.facebook.com/{request.post_id}" if request.post_id else ""
+        if request.post_id and request.post_id != "all":
+            try:
+                with httpx.Client() as client:
+                    p_res = client.get(
+                        f"{GRAPH_BASE}/{request.post_id}",
+                        params={"fields": "id,message,permalink_url", "access_token": creds["access_token"]}
+                    )
+                    if p_res.status_code == 200:
+                        single_post_permalink = p_res.json().get("permalink_url", single_post_permalink)
+            except Exception:
+                pass
+            try:
+                posts = page.get_posts(params={"ids": request.post_id})
+                if posts:
+                    post = posts[0]
+                    post_metrics = [m for m in request.metrics if m in self.PAGE_POST_METRICS]
+                    if not post_metrics:
+                        post_metrics = ["post_clicks", "post_media_view", "post_total_media_view_unique"]
+                    post_metrics = list(dict.fromkeys(post_metrics))
+                    
+                    insights = post.get_insights(params={
+                        "metric": post_metrics,
+                        "since": since_str,
+                        "until": until_str
+                    })
+                    campaign_name = f"Post_{request.post_id}"
+                    for insight in insights:
+                        metric_name = insight.get("name", "unknown")
+                        values_list = insight.get("values", [])
+                        for val_entry in values_list:
+                            end_time = val_entry.get("end_time", since_str)
+                            day = end_time[:10] if end_time else since_str
+                            if day not in daily_data:
+                                daily_data[day] = {}
+                            daily_data[day][metric_name] = val_entry.get("value", 0)
+            except Exception as e:
+                logger.error(f"Meta Page post fetch failed: {e}")
+
+        # 4. Fetch Page daily metrics
+        if not request.post_id or request.post_id == "all":
+            req_metrics = list(request.metrics)
+            wants_page_fans = "page_fans" in req_metrics
+            if wants_page_fans and "page_follows" not in req_metrics:
+                req_metrics.append("page_follows")
+
+            page_metrics = [m for m in req_metrics if m in self.PAGE_DAILY_METRICS]
+            if not page_metrics and not fetch_posts:
+                page_metrics = ["page_views_total", "page_post_engagements", "page_follows", "page_actions_post_reactions_total", "page_media_view", "page_total_media_view_unique"]
+            
+            if page_metrics:
+                page_metrics = list(dict.fromkeys(page_metrics))
+                try:
+                    insights = page.get_insights(params={
+                        "metric": page_metrics,
+                        "since": since_str,
+                        "until": until_str
+                    })
+                    for insight in insights:
+                        metric_name = insight.get("name", "unknown")
+                        values_list = insight.get("values", [])
+                        for val_entry in values_list:
+                            end_time = val_entry.get("end_time", since_str)
+                            day = end_time[:10] if end_time else since_str
+                            if day not in daily_data:
+                                daily_data[day] = {}
+                            daily_data[day][metric_name] = val_entry.get("value", 0)
+                except Exception as e:
+                    logger.warning(f"Meta Page insights batch fetch failed ({e}); falling back to individual metrics")
+                    for single_metric in page_metrics:
+                        try:
+                            insights = page.get_insights(params={
+                                "metric": [single_metric],
+                                "since": since_str,
+                                "until": until_str
+                            })
+                            for insight in insights:
+                                metric_name = insight.get("name", "unknown")
+                                values_list = insight.get("values", [])
+                                for val_entry in values_list:
+                                    end_time = val_entry.get("end_time", since_str)
+                                    day = end_time[:10] if end_time else since_str
+                                    if day not in daily_data:
+                                        daily_data[day] = {}
+                                    daily_data[day][metric_name] = val_entry.get("value", 0)
+                        except Exception as single_err:
+                            logger.warning(f"Failed to fetch individual Page metric '{single_metric}': {single_err}")
+
+            if wants_page_fans:
+                for day in daily_data:
+                    if "page_follows" in daily_data[day]:
+                        daily_data[day]["page_fans"] = daily_data[day]["page_follows"]
+
+        if not daily_data:
+            return results
+
+        page_url = f"https://www.facebook.com/{creds['page_id']}"
+        results.extend([
+            CampaignData(
+                campaign_name=campaign_name,
+                date=day,
+                metrics=metrics_dict,
+                dimensions={
+                    "page_id": str(creds["page_id"]),
+                    "permalink": page_url,
+                    "url": page_url,
+                } if (not request.post_id or request.post_id == "all") else {
+                    "post_id": request.post_id,
+                    "permalink": single_post_permalink,
+                }
+            ) for day, metrics_dict in sorted(daily_data.items())
+        ])
+        return results
+
+    def get_schema(self) -> Dict[str, Any]:
+        return {
+            "metrics": [
+                # Facebook Page metrics (migrated from deprecated impressions and fans)
+                "page_media_view",
+                "page_total_media_view_unique",
+                "page_post_engagements",
+                "page_views_total",
+                "page_follows",
+                "page_actions_post_reactions_total",
+                "post_media_view",
+                "post_total_media_view_unique",
+                "post_clicks",
+                # Instagram Organic metrics (views replaces deprecated impressions)
+                "views",
+                "reach",
+                "accounts_engaged",
+                "total_interactions",
+                "profile_views",
+                "follower_count",
+                "website_clicks",
+                # IG Media-level metrics
+                "saved",
+                "shares",
+                "likes",
+                "comments",
+                "plays",
+                "replays",
+                "carousel_album_saves",
+                "carousel_album_impressions",
+                "audience_gender_age",
+                "audience_country",
+                "audience_city",
+                "audience_locale",
+            ],
+            "dimensions": ["post_id", "date_start", "audience_gender_age", "audience_country", "audience_city", "audience_locale"],
+            "metadata": {
+                "api_version": GRAPH_API_VERSION,
+                "comment_support": True,
+                "notes": "Instagram: 'impressions' deprecated July 2024, use 'views'. "
+                         "Pages: 'page_impressions' and 'page_fans' deprecated, use 'page_media_view' and 'page_follows'.",
+            },
+        }
+
+    def ping(self) -> bool:
+        try:
+            creds = self.get_credentials()
+            session = FacebookSession(
+                app_id=settings.meta_app_id,
+                app_secret=settings.meta_app_secret,
+                access_token=creds["access_token"]
+            )
+            api = FacebookAdsApi(session)
+            page = Page(creds["page_id"], api=api)
+            page.api_get(fields=["name"])
+            return True
+        except Exception:
+            return False
+
+--- FILE: app/main.py ---
+"""
+Main FastAPI application.
+"""
+import time as _time
+
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+from typing import List
+from datetime import datetime, timezone
+
+from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup/shutdown lifecycle for the application."""
+    # Startup
+    from app.config import settings as _settings
+    from app.services.bigquery_sink import bq_sink as _bq
+    if _settings.enable_bigquery_sink:
+        logging.getLogger(__name__).info("Initializing BigQuery sink...")
+        await _bq.ensure_dataset_and_table()
+    yield
+    # Shutdown (cleanup if needed)
+
+from app.config import settings
+from app.models.requests import DataRequest, Platform, BatchDataRequest, CommentsRequest, TikTokProxyRequest, TikTokOrganicProxyRequest
+from app.models.responses import DataResponse, BatchDataResponse, HealthResponse, ErrorDetail, PlatformInfo, SchemaResponse
+from app.middleware.auth import verify_api_key
+from app.services.dispatcher import dispatcher
+from app.services.bigquery_sink import bq_sink
+
+# Import and register connectors
+from app.connectors.meta import MetaAdsConnector, MetaOrganicConnector
+from app.connectors.google_ads import GoogleAdsConnector
+from app.connectors.ga4 import GA4Connector
+from app.connectors.search_console import SearchConsoleConnector, search_console_url, report_response
+from app.models.requests import SearchConsoleQueryRequest
+from app.connectors.tiktok import TikTokAdsConnector, TikTokOrganicConnector
+from app.connectors.linkedin import LinkedInAdsConnector, LinkedInOrganicConnector
+from app.connectors.x_twitter import XAdsConnector, XOrganicConnector
+from app.connectors.youtube import YouTubeConnector
+from app.connectors.google_play import GooglePlayConnector
+from app.connectors.apple import AppleAppStoreConnector, AppleAdsConnector
+from app.connectors.threads import ThreadsConnector
+from app.connectors.spotify import SpotifyAdsConnector
+from app.connectors.pinterest import PinterestAdsConnector, PinterestOrganicConnector
+from app.connectors.shopify import ShopifyConnector
+from app.connectors.ghl import GhlConnector
+
+# Configure root logger
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# Register available connectors
+dispatcher.register(Platform.META_ADS, MetaAdsConnector())
+dispatcher.register(Platform.META_ORGANIC, MetaOrganicConnector())
+dispatcher.register(Platform.GOOGLE_ADS, GoogleAdsConnector())
+dispatcher.register(Platform.GA4, GA4Connector())
+dispatcher.register(Platform.SEARCH_CONSOLE, SearchConsoleConnector())
+dispatcher.register(Platform.TIKTOK_ADS, TikTokAdsConnector())
+dispatcher.register(Platform.TIKTOK_ORGANIC, TikTokOrganicConnector())
+dispatcher.register(Platform.LINKEDIN_ADS, LinkedInAdsConnector())
+dispatcher.register(Platform.LINKEDIN_ORGANIC, LinkedInOrganicConnector())
+dispatcher.register(Platform.X_ADS, XAdsConnector())
+dispatcher.register(Platform.X_ORGANIC, XOrganicConnector())
+dispatcher.register(Platform.YOUTUBE, YouTubeConnector())
+dispatcher.register(Platform.GOOGLE_PLAY, GooglePlayConnector())
+dispatcher.register(Platform.APPLE_APP_STORE, AppleAppStoreConnector())
+dispatcher.register(Platform.APPLE_ADS, AppleAdsConnector())
+dispatcher.register(Platform.THREADS, ThreadsConnector())
+dispatcher.register(Platform.SPOTIFY_ADS, SpotifyAdsConnector())
+dispatcher.register(Platform.PINTEREST_ADS, PinterestAdsConnector())
+dispatcher.register(Platform.PINTEREST_ORGANIC, PinterestOrganicConnector())
+dispatcher.register(Platform.SHOPIFY, ShopifyConnector())
+dispatcher.register(Platform.GHL, GhlConnector())
+
+app = FastAPI(
+    title="Inhaus Marketing Data API",
+    description="Agent-ready API for multi-platform marketing data.",
+    version="5.0.0",
+    lifespan=lifespan
+)
+
+# Allowed CORS origins — add your dashboard / frontend domains here
+_cors_origins = [
+    "https://inhaus-marketing-api-btdf7nijqa-uc.a.run.app",
+    "https://inhaus-marketing-api.web.app",
+    "https://inhaus-marketing-api.firebaseapp.com",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5000",
+    "http://127.0.0.1:5000",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?|https://inhaus-marketing-api--[a-z0-9-]+\.web\.app",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Register OAuth router
+from app.routers.oauth import router as oauth_router
+app.include_router(oauth_router)
+
+# Register SOTA router
+from app.routers.sota import router as sota_router
+app.include_router(sota_router)
+
+# Register Clients router
+from app.routers.clients import router as clients_router
+app.include_router(clients_router)
+
+# Register Benchmarking router
+from app.routers.benchmarking import router as benchmarking_router
+app.include_router(benchmarking_router)
+
+# Mount FastMCP server and protect it with middleware
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from app.mcp import mcp
+
+class InhausASGIMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        method = scope.get("method", "")
+
+        # 1. MCP Authentication (matches /mcp or /mcp_http)
+        if path.startswith("/mcp") or path.startswith("/mcp_http"):
+            # Exclude /messages subpath from API key check since standard MCP SSE clients
+            # might not copy query parameters or custom headers on POST tool calls.
+            # The session_id itself serves as the secure authorization token for messages.
+            if "/messages" not in path:
+                headers = {k.decode("latin1").lower(): v.decode("latin1") for k, v in scope.get("headers", [])}
+                api_key = headers.get("x-api-key")
+                if not api_key:
+                    auth_header = headers.get("authorization")
+                    if auth_header and auth_header.lower().startswith("bearer "):
+                        api_key = auth_header.split(" ", 1)[1]
+                if not api_key:
+                    from urllib.parse import parse_qs
+                    query_string = scope.get("query_string", b"").decode("latin1")
+                    query_params = parse_qs(query_string)
+                    api_key = query_params.get("api_key", [None])[0]
+
+                if api_key != settings.api_key:
+                    await send({
+                        "type": "http.response.start",
+                        "status": 401,
+                        "headers": [
+                            (b"content-type", b"application/json"),
+                        ]
+                    })
+                    import json
+                    await send({
+                        "type": "http.response.body",
+                        "body": json.dumps({"detail": "Invalid API Key"}).encode("utf-8"),
+                        "more_body": False
+                    })
+                    return
+
+        # 2. Latency logging (matches /api/, /mcp, /mcp_http)
+        if path.startswith("/api/") or path.startswith("/mcp") or path.startswith("/mcp_http"):
+            import time as _time
+            start = _time.monotonic()
+            
+            async def wrapped_send(message):
+                if message["type"] == "http.response.start":
+                    elapsed_ms = (_time.monotonic() - start) * 1000
+                    status_code = message.get("status", 200)
+                    logger.info(f"[HTTP] {method} {path} → {status_code} ({elapsed_ms:.0f}ms)")
+                await send(message)
+                
+            await self.app(scope, receive, wrapped_send)
+        else:
+            await self.app(scope, receive, send)
+
+app.add_middleware(InhausASGIMiddleware)
+
+# Mount SSE transport under /mcp (exposing /mcp/sse and /mcp/messages)
+app.mount("/mcp", mcp.sse_app())
+logger.info("MCP mounted with SSE transport at /mcp/sse")
+
+# Also mount Streamable HTTP transport under /mcp_http
+try:
+    app.mount("/mcp_http", mcp.streamable_http_app())
+    logger.info("MCP mounted with Streamable HTTP transport at /mcp_http")
+except AttributeError:
+    pass
+
+# Import comment models
+from app.models.responses import CommentsResponse, CommentData
+
+@app.get("/health", response_model=HealthResponse)
+async def health_check(deep: bool = False):
+    """Exposes platform readiness and optional deep connectivity tests."""
+    configured = 0
+    details = {}
+    
+    for p in Platform:
+        is_ready = settings.is_platform_configured(p.value)
+        
+        status = "configured" if is_ready else "not_configured"
+        
+        if is_ready and deep:
+            try:
+                connector = dispatcher.get_connector(p)
+                # Run ping in thread
+                connected = await asyncio.to_thread(connector.ping)
+                status = "healthy" if connected else "connectivity_issue"
+            except Exception as e:
+                logger.error(f"Ping failed for {p.value}: {e}")
+                status = "unhealthy"
+                
+        details[p.value] = status
+        if is_ready:
+            configured += 1
+
+    return HealthResponse(
+        status="healthy" if configured > 0 else "unconfigured",
+        version="5.0.0",
+        platforms_configured=configured,
+        details=details
+    )
+
+PLATFORM_API_VERSIONS = {
+    "meta_ads": "v25.0",
+    "meta_organic": "v25.0",
+    "google_ads": "v18",
+    "ga4": "v1beta",
+    "search_console": "v3",
+    "tiktok_ads": "v1.3",
+    "tiktok_organic": "v1.3",
+    "linkedin_ads": "202405",
+    "linkedin_organic": "202405",
+    "x_ads": "v12",
+    "x_organic": "v2",
+    "youtube": "v3",
+    "google_play": "v3",
+    "apple_app_store": "v1.6",
+    "apple_ads": "v5",
+    "threads": "v1.0",
+    "spotify_ads": "v3",
+    "pinterest_ads": "v5",
+    "pinterest_organic": "v5",
+    "shopify": "2024-04"
+}
+
+@app.get("/api/v1/platforms", response_model=List[PlatformInfo])
+async def list_platforms(api_key: str = Depends(verify_api_key)):
+    """Discovery endpoint for agents to list available platforms."""
+    from app.metrics import get_supported_generic_metrics, COMMENT_SUPPORTED_PLATFORMS, get_platform_type
+    platforms = []
+    for p in Platform:
+        pval = p.value
+        try:
+            connector = dispatcher.get_connector(p)
+            schema = connector.get_schema()
+            raw_metrics = schema.get("metrics", [])
+            available = [m["name"] if isinstance(m, dict) else m for m in raw_metrics]
+            api_ver = schema.get("metadata", {}).get("api_version") or PLATFORM_API_VERSIONS.get(pval)
+            
+            platforms.append(PlatformInfo(
+                platform=p,
+                display_name=pval.replace("_", " ").title(),
+                type=get_platform_type(pval),
+                configured=settings.is_platform_configured(pval),
+                available_metrics=available,
+                generic_metrics=get_supported_generic_metrics(pval),
+                supports_comments=pval in COMMENT_SUPPORTED_PLATFORMS,
+                supports_batch=True,
+                description=f"Connector for {pval.replace('_', ' ').title()}",
+                api_version=api_ver
+            ))
+        except Exception as e:
+            logger.warning(f"Could not get schema for {pval}: {e}")
+            platforms.append(PlatformInfo(
+                platform=p,
+                display_name=pval.replace("_", " ").title(),
+                type=get_platform_type(pval),
+                configured=settings.is_platform_configured(pval),
+                available_metrics=[],
+                generic_metrics=get_supported_generic_metrics(pval),
+                supports_comments=pval in COMMENT_SUPPORTED_PLATFORMS,
+                supports_batch=True,
+                description=f"Connector for {pval.replace('_', ' ').title()} (failed to load schema)",
+                api_version=PLATFORM_API_VERSIONS.get(pval)
+            ))
+    return platforms
+
+@app.get("/api/v1/schema/{platform}", response_model=SchemaResponse)
+async def get_platform_schema(platform: Platform, api_key: str = Depends(verify_api_key)):
+    """Get the full metric/dimension schema for a specific platform."""
+    try:
+        connector = dispatcher.get_connector(platform)
+        schema = connector.get_schema()
+        return SchemaResponse(
+            platform=platform,
+            metrics=schema.get("metrics", []),
+            dimensions=schema.get("dimensions", []),
+            metadata=schema.get("metadata", {})
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error fetching schema for {platform}: {e}")
+        raise HTTPException(status_code=500, detail="Internal error fetching schema")
+
+from app.services.credential_store import credential_store
+from app.models.requests import ValidationRequest
+from app.models.responses import ValidationResponse, CredentialStatusResponse, CredentialStatusDetails
+
+@app.post("/api/v1/validate", response_model=ValidationResponse)
+async def validate_request_endpoint(
+    request: ValidationRequest,
+    api_key: str = Depends(verify_api_key)
+):
+    """Validate parameters and metrics for a platform without making any upstream calls."""
+    from app.metrics import validate_platform_params, validate_metrics, METRIC_TRANSLATION_MAP
+    
+    # 1. Parameter validation (syntactic)
+    param_errors = validate_platform_params(
+        request.platform.value,
+        request.account_id,
+        request.post_id,
+        request.video_id,
+        request.app_id
+    )
+    
+    # 1.5 Semantic validation (check Firestore connection/credentials)
+    if request.client_id and request.account_id:
+        oauth_conns = await credential_store.list_oauth_connections(request.client_id, request.platform.value)
+        has_oauth = any(c.get("account_id") == request.account_id for c in oauth_conns)
+        manual_creds = await credential_store.get_credentials(request.client_id, request.platform.value)
+        
+        if not (has_oauth or manual_creds is not None):
+            param_errors.append(
+                f"Validación semántica fallida: No se encontraron credenciales o conexiones activas para la cuenta '{request.account_id}' en el cliente '{request.client_id}'."
+            )
+    
+    # 2. Metric validation
+    if request.use_generic_names:
+        native_metrics, metric_errors = validate_metrics(request.platform.value, request.metrics)
+        translations = {}
+        for m in request.metrics:
+            native = METRIC_TRANSLATION_MAP.get(request.platform.value, {}).get(m)
+            translations[m] = native
+            
+        invalid_metrics = [e["metric"] for e in metric_errors]
+        valid_metrics = [m for m in request.metrics if translations.get(m) is not None]
+        
+        return ValidationResponse(
+            valid=len(param_errors) == 0 and len(metric_errors) == 0,
+            platform=request.platform,
+            valid_metrics=valid_metrics,
+            invalid_metrics=invalid_metrics,
+            translations=translations,
+            native_metrics_to_request=native_metrics,
+            parameter_errors=param_errors
+        )
+    else:
+        try:
+            connector = dispatcher.get_connector(request.platform)
+            schema = connector.get_schema()
+            raw_metrics = schema.get("metrics", [])
+            schema_names = {m["name"] if isinstance(m, dict) else m for m in raw_metrics}
+        except Exception:
+            schema_names = set()
+            
+        valid_metrics = [m for m in request.metrics if m in schema_names]
+        invalid_metrics = [m for m in request.metrics if m not in schema_names]
+        
+        return ValidationResponse(
+            valid=len(param_errors) == 0 and len(invalid_metrics) == 0,
+            platform=request.platform,
+            valid_metrics=valid_metrics,
+            invalid_metrics=invalid_metrics,
+            parameter_errors=param_errors
+        )
+
+@app.get("/api/v1/credentials/status", response_model=CredentialStatusResponse)
+async def get_credentials_status(
+    client_id: str,
+    api_key: str = Depends(verify_api_key)
+):
+    """Check configuration and credential status for all platforms for a client."""
+    platforms_status = {}
+    for p in Platform:
+        pval = p.value
+        # Check Firestore for OAuth connections
+        oauth_conns = await credential_store.list_oauth_connections(client_id, pval)
+        # Check Firestore for manual credentials
+        manual_creds = await credential_store.get_credentials(client_id, pval)
+        
+        has_creds = len(oauth_conns) > 0 or manual_creds is not None
+        cred_type = "none"
+        last_refreshed = None
+        
+        if oauth_conns:
+            cred_type = "oauth"
+            dates = [c.get("connected_at") for c in oauth_conns if c.get("connected_at")]
+            if dates:
+                last_refreshed = max(dates)
+        elif manual_creds:
+            if pval in ("google_play", "apple_app_store") or "service_account" in manual_creds or "private_key_path" in manual_creds or "service_account_json" in manual_creds:
+                cred_type = "service_account"
+            else:
+                cred_type = "api_key"
+            
+        details = (
+            f"{len(oauth_conns)} OAuth connection(s)"
+            if oauth_conns
+            else ("Manual credentials configured" if manual_creds else "No credentials configured")
+        )
+        
+        platforms_status[pval] = CredentialStatusDetails(
+            has_credentials=has_creds,
+            credential_type=cred_type,
+            details=details,
+            last_refreshed=last_refreshed
+        )
+        
+    return CredentialStatusResponse(
+        client_id=client_id,
+        platforms=platforms_status
+    )
+
+@app.post("/api/v1/campaign-data", response_model=DataResponse)
+async def get_campaign_data(
+    request: DataRequest, 
+    background_tasks: BackgroundTasks,
+    api_key: str = Depends(verify_api_key)
+):
+    """Fetch data for a single platform with multi-tenant support."""
+    logger.info(f"AUDIT LOG: client_id='{request.client_id}' user_id='{request.user_id}' platform='{request.platform.value}'")
+    logger.info(f"Request for platform: {request.platform.value}, client: {request.client_id}")
+    
+    # Reset rate limit tracker for this thread
+    from app.connectors.base import rate_limit_ctx
+    rate_limit_ctx.set(None)
+
+    if request.dry_run:
+        return DataResponse(
+            status="success",
+            platform=request.platform,
+            date_range={"start": str(request.start_date), "end": str(request.end_date)},
+            data=[],
+            metadata={"dry_run": True, "message": "Dry-run validation successful."}
+        )
+    
+    # Resolve credentials: first check OAuth connections, then fall back to manual
+    if not request.credentials:
+        logger.info(f"Resolving credentials for {request.platform.value} from Firestore...")
+        request.credentials = await credential_store.resolve_credentials(
+            request.client_id, request.platform.value, request.account_id or ""
+        )
+    
+    try:
+        connector = dispatcher.get_connector(request.platform)
+    except ValueError as e:
+        # Not yet implemented
+        return DataResponse(
+            platform=request.platform,
+            status="error",
+            errors=[ErrorDetail(code="NOT_IMPLEMENTED", message=str(e), retryable=False)]
+        )
+
+    try:
+        # Thread offloading is critical here to avoid blocking FastAPI
+        data = await asyncio.to_thread(connector.fetch_with_retry, request)
+        
+        # Dual-write to BigQuery in background (only when write_to_bq is requested, truncating existing data)
+        if settings.enable_bigquery_sink and request.write_to_bq:
+            background_tasks.add_task(
+                bq_sink.write_data, 
+                request.platform, 
+                data,
+                request.client_id,
+                request.user_id,
+                {"request_id": str(datetime.now(timezone.utc).timestamp())},
+                True # Truncate table first to only keep the last query
+            )
+
+        # Unified pagination
+        total_count = len(data)
+        limit = request.limit
+        offset = 0
+        if request.next_page_token:
+            try:
+                offset = int(request.next_page_token)
+            except ValueError:
+                pass
+                
+        if request.platform == Platform.SEARCH_CONSOLE:
+            # Search Console already applies startRow/rowLimit upstream.
+            page_size = limit if limit is not None else 1000
+            sliced_data = data
+            has_next = len(data) == page_size
+            next_token = str(offset + len(data)) if has_next else None
+            total_count = None
+        elif limit is not None:
+            sliced_data = data[offset : offset + limit]
+            has_next = (offset + limit) < total_count
+            next_token = str(offset + limit) if has_next else None
+            page_size = limit
+        else:
+            sliced_data = data
+            has_next = False
+            next_token = None
+            page_size = total_count
+
+        from app.models.responses import PaginationInfo
+        pagination = PaginationInfo(
+            page=(offset // limit) + 1 if (limit and limit > 0) else 1,
+            page_size=page_size,
+            total_count=total_count,
+            has_next=has_next,
+            next_page_token=next_token
+        )
+
+        from app.connectors.base import request_rate_limits, request_rate_limits_lock
+        with request_rate_limits_lock:
+            rl_remaining = request_rate_limits.pop(id(request), None)
+        if rl_remaining is None:
+            rl_remaining = rate_limit_ctx.get()
+
+        return DataResponse(
+            status="success",
+            platform=request.platform,
+            date_range={"start": str(request.start_date), "end": str(request.end_date)},
+            data=sliced_data,
+            pagination=pagination,
+            rate_limit_remaining=rl_remaining
+        )
+    except Exception as e:
+        logger.error(f"Connector error: {e}")
+        err_detail = connector.handle_error(e)
+        from app.connectors.base import request_rate_limits, request_rate_limits_lock
+        with request_rate_limits_lock:
+            rl_remaining = request_rate_limits.pop(id(request), None)
+        if rl_remaining is None:
+            rl_remaining = rate_limit_ctx.get() or err_detail.rate_limit_remaining
+        return DataResponse(
+            status="error",
+            platform=request.platform,
+            date_range={"start": str(request.start_date), "end": str(request.end_date)},
+            errors=[err_detail],
+            rate_limit_remaining=rl_remaining
+        )
+
+
+@app.post("/api/v1/comments", response_model=CommentsResponse)
+async def get_comments(
+    request: CommentsRequest,
+    api_key: str = Depends(verify_api_key)
+):
+    """Fetch comments on a specific post.
+    
+    Supported platforms: meta_ads, meta_organic (FB Pages + Instagram),
+    threads, youtube, x_organic.
+    """
+    logger.info(f"AUDIT LOG: client_id='{request.client_id}' user_id='{request.user_id}' platform='{request.platform.value}'")
+    logger.info(f"Comment request for platform: {request.platform.value}, post: {request.post_id}")
+
+    from app.connectors.base import rate_limit_ctx
+    rate_limit_ctx.set(None)
+
+    # Resolve credentials
+    creds = await credential_store.resolve_credentials(request.client_id, request.platform.value, request.account_id)
+    if not creds:
+        creds = {}
+
+    def fetch_comments_in_thread():
+        from app.connectors.base import thread_local_storage
+        thread_local_storage.current_request = request
+        try:
+            if request.platform == Platform.THREADS:
+                access_token = creds.get("access_token") or settings.threads_access_token
+                from app.connectors.threads import ThreadsConnector
+                connector = ThreadsConnector()
+                return connector.fetch_comments(request.post_id, access_token)
+            elif request.platform == Platform.META_ADS:
+                access_token = creds.get("access_token") or settings.meta_access_token
+                from app.connectors.meta import MetaAdsConnector
+                connector = MetaAdsConnector()
+                return connector.fetch_comments(request.post_id, access_token)
+            elif request.platform == Platform.META_ORGANIC:
+                access_token = creds.get("access_token") or settings.meta_access_token
+                is_instagram = creds.get("is_instagram", False)
+                from app.connectors.meta import MetaOrganicConnector
+                connector = MetaOrganicConnector()
+                return connector.fetch_comments(request.post_id, access_token, is_instagram)
+            elif request.platform == Platform.YOUTUBE:
+                api_key_or_token = creds.get("access_token") or settings.youtube_api_key
+                is_oauth = bool(creds.get("access_token"))
+                from app.connectors.youtube import YouTubeConnector
+                connector = YouTubeConnector()
+                return connector.fetch_comments(request.post_id, api_key_or_token, is_oauth)
+            elif request.platform == Platform.X_ORGANIC:
+                bearer_token = creds.get("bearer_token") or settings.x_bearer_token
+                from app.connectors.x_twitter import XOrganicConnector
+                connector = XOrganicConnector()
+                return connector.fetch_comments(request.post_id, bearer_token)
+            elif request.platform == Platform.PINTEREST_ORGANIC:
+                access_token = creds.get("access_token") or settings.pinterest_access_token
+                from app.connectors.pinterest import PinterestOrganicConnector
+                connector = PinterestOrganicConnector()
+                return connector.fetch_comments(request.post_id, access_token)
+            else:
+                raise ValueError(f"Unsupported platform {request.platform.value}")
+        finally:
+            if hasattr(thread_local_storage, "current_request"):
+                del thread_local_storage.current_request
+
+    try:
+        if request.platform not in (Platform.THREADS, Platform.META_ADS, Platform.META_ORGANIC, Platform.YOUTUBE, Platform.X_ORGANIC, Platform.PINTEREST_ORGANIC):
+            return CommentsResponse(
+                status="error",
+                platform=request.platform,
+                post_id=request.post_id,
+                errors=[ErrorDetail(
+                    code="UNSUPPORTED",
+                    message=f"Comments not supported for platform {request.platform.value}. "
+                            f"Supported: meta_ads, meta_organic, threads, youtube, x_organic, pinterest_organic",
+                    retryable=False
+                )]
+            )
+
+        comments = await asyncio.to_thread(fetch_comments_in_thread)
+
+        # Slicing pagination for comments
+        total_comments = len(comments)
+        limit = request.limit
+        offset = 0
+        if request.next_page_token:
+            try:
+                offset = int(request.next_page_token)
+            except ValueError:
+                pass
+                
+        if limit is not None:
+            sliced_comments = comments[offset : offset + limit]
+            has_next = (offset + limit) < total_comments
+            next_token = str(offset + limit) if has_next else None
+        else:
+            sliced_comments = comments
+            has_next = False
+            next_token = None
+
+        from app.connectors.base import request_rate_limits, request_rate_limits_lock
+        with request_rate_limits_lock:
+            rl_remaining = request_rate_limits.pop(id(request), None)
+        if rl_remaining is None:
+            rl_remaining = rate_limit_ctx.get()
+
+        return CommentsResponse(
+            status="success",
+            platform=request.platform,
+            post_id=request.post_id,
+            total_comments=total_comments,
+            comments=sliced_comments,
+            next_page_token=next_token,
+            rate_limit_remaining=rl_remaining
+        )
+    except Exception as e:
+        logger.error(f"Error fetching comments: {e}")
+        from app.connectors.base import request_rate_limits, request_rate_limits_lock
+        with request_rate_limits_lock:
+            rl_remaining = request_rate_limits.pop(id(request), None)
+        if rl_remaining is None:
+            rl_remaining = rate_limit_ctx.get()
+        return CommentsResponse(
+            status="error",
+            platform=request.platform,
+            post_id=request.post_id,
+            errors=[ErrorDetail(
+                code="COMMENT_FETCH_ERROR",
+                message=str(e),
+                retryable=True
+            )],
+            rate_limit_remaining=rl_remaining
+        )
+
+
+@app.post("/api/v1/batch", response_model=BatchDataResponse)
+async def get_batch_data(
+    request: BatchDataRequest, 
+    background_tasks: BackgroundTasks,
+    api_key: str = Depends(verify_api_key)
+):
+    """Fetch data from multiple platforms concurrently with robust error handling."""
+    client_id = request.requests[0].client_id if request.requests else "unknown"
+    user_id = request.requests[0].user_id if request.requests else "unknown"
+    logger.info(f"AUDIT LOG: client_id='{client_id}' user_id='{user_id}' platform='batch'")
+
+    # Reset rate limit tracker
+    from app.connectors.base import rate_limit_ctx
+    rate_limit_ctx.set(None)
+
+    async def fetch_wrapper(req: DataRequest):
+        try:
+            return await get_campaign_data(req, background_tasks, api_key)
+        except Exception as e:
+            logger.error(f"Batch sub-request failed: {e}")
+            return DataResponse(
+                status="error",
+                platform=req.platform,
+                errors=[ErrorDetail(code="BATCH_SUBREQUEST_FAILED", message=str(e), retryable=False)]
+            )
+
+    # Run all requests concurrently
+    results = await asyncio.gather(*[fetch_wrapper(req) for req in request.requests])
+    
+    successful = sum(1 for res in results if res.status == "success")
+    failed = sum(1 for res in results if res.status == "error")
+    
+    status = "success"
+    if failed > 0:
+        status = "partial" if successful > 0 else "error"
+
+    rl_remaining = rate_limit_ctx.get()
+
+    return BatchDataResponse(
+        status=status,
+        results=results,
+        total_platforms=len(request.requests),
+        successful_platforms=successful,
+        failed_platforms=failed,
+        rate_limit_remaining=rl_remaining
+    )
+
+
+import requests as _requests
+
+@app.post("/api/v1/tiktok-proxy")
+async def tiktok_proxy(
+    request: TikTokProxyRequest,
+    api_key: str = Depends(verify_api_key)
+):
+    """Generic authenticated proxy for executing any TikTok Marketing API endpoint."""
+    logger.info(f"TikTok API Proxy Request: path='{request.path}' client_id='{request.client_id}' account_id='{request.account_id}' method='{request.method}'")
+    
+    # 1. Resolve credentials
+    creds = await credential_store.resolve_credentials(
+        request.client_id, "tiktok_ads", request.account_id
+    )
+    if not creds or not creds.get("access_token"):
+        raise HTTPException(
+            status_code=401,
+            detail=f"Credentials not found for client '{request.client_id}' and advertiser '{request.account_id}' on platform 'tiktok_ads'."
+        )
+        
+    access_token = creds["access_token"]
+    
+    # 2. Normalize path (must start with /open_api/v1.3/)
+    path = request.path.lstrip("/")
+    if not path.startswith("open_api/"):
+        path = f"open_api/v1.3/{path}"
+        
+    url = f"https://business-api.tiktok.com/{path}"
+    headers = {
+        "Access-Token": access_token,
+        "Content-Type": "application/json"
+    }
+    
+    # 3. Execute HTTP request
+    try:
+        method = request.method.upper()
+        if method == "GET":
+            response = await asyncio.to_thread(
+                _requests.get, url, params=request.params, headers=headers, timeout=30
+            )
+        elif method == "POST":
+            response = await asyncio.to_thread(
+                _requests.post, url, json=request.json_body, params=request.params, headers=headers, timeout=30
+            )
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported method '{method}' for TikTok API Proxy.")
+            
+        response.raise_for_status()
+        return response.json()
+    except _requests.RequestException as e:
+        logger.error(f"TikTok API Proxy Call failed: {e}")
+        if e.response is not None:
+            try:
+                return JSONResponse(status_code=e.response.status_code, content=e.response.json())
+            except Exception:
+                raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
+        raise HTTPException(status_code=502, detail=f"Failed to communicate with TikTok API: {e}")
+
+
+@app.post("/api/v1/tiktok-organic-proxy")
+async def tiktok_organic_proxy(
+    request: TikTokOrganicProxyRequest,
+    api_key: str = Depends(verify_api_key)
+):
+    """Generic authenticated proxy for executing any TikTok Organic/Display API endpoint."""
+    logger.info(f"TikTok Organic API Proxy Request: path='{request.path}' client_id='{request.client_id}' account_id='{request.account_id}' method='{request.method}'")
+    
+    # 1. Resolve credentials
+    creds = await credential_store.resolve_credentials(
+        request.client_id, "tiktok_organic", request.account_id
+    )
+    if not creds or not creds.get("access_token"):
+        raise HTTPException(
+            status_code=401,
+            detail=f"Credentials not found for client '{request.client_id}' and account '{request.account_id}' on platform 'tiktok_organic'."
+        )
+        
+    access_token = creds["access_token"]
+    is_bc_asset = creds.get("is_bc_asset") == True
+    
+    # 2. Determine base URL and headers based on account type (BC brand asset vs personal Display API)
+    path = request.path.lstrip("/")
+    if is_bc_asset:
+        if not path.startswith("open_api/"):
+            path = f"open_api/v1.3/{path}"
+        url = f"https://business-api.tiktok.com/{path}"
+        headers = {
+            "Access-Token": access_token,
+            "Content-Type": "application/json"
+        }
+    else:
+        if not path.startswith("v2/"):
+            path = f"v2/{path}"
+        base_url = "https://open-sandbox.tiktokapis.com" if settings.use_tiktok_sandbox else "https://open.tiktokapis.com"
+        url = f"{base_url}/{path}"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json"
+        }
+        
+    # 3. Execute HTTP request
+    try:
+        method = request.method.upper()
+        if method == "GET":
+            response = await asyncio.to_thread(
+                _requests.get, url, params=request.params, headers=headers, timeout=30
+            )
+        elif method == "POST":
+            response = await asyncio.to_thread(
+                _requests.post, url, json=request.json_body, params=request.params, headers=headers, timeout=30
+            )
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported method '{method}' for TikTok Organic API Proxy.")
+            
+        response.raise_for_status()
+        return response.json()
+    except _requests.RequestException as e:
+        logger.error(f"TikTok Organic API Proxy Call failed: {e}")
+        if e.response is not None:
+            try:
+                return JSONResponse(status_code=e.response.status_code, content=e.response.json())
+            except Exception:
+                raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
+        raise HTTPException(status_code=502, detail=f"Failed to communicate with TikTok Organic API: {e}")
+
+
+# ===================================================================
+# Unified Platform Proxy Handler
+# ===================================================================
+from fastapi.responses import JSONResponse
+from app.models.requests import PlatformProxyRequest
+
+async def _execute_generic_proxy(
+    platform_name: str, 
+    request: PlatformProxyRequest, 
+    default_base_url: str, 
+    auth_type: str = "bearer", 
+    default_token: str = ""
+):
+    creds = await credential_store.resolve_credentials(
+        request.client_id, platform_name, request.account_id
+    )
+    if not creds:
+        creds = {}
+
+    access_token = creds.get("access_token") or default_token
+    
+    headers = {"Content-Type": "application/json"}
+    if request.headers:
+        headers.update(request.headers)
+
+    if auth_type == "bearer" and access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    elif auth_type == "shopify" and access_token:
+        headers["X-Shopify-Access-Token"] = access_token
+    elif auth_type == "x-ap-context" and access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+        headers["X-AP-Context"] = request.account_id
+    elif auth_type == "google_ads":
+        dev_token = creds.get("developer_token") or settings.google_ads_developer_token
+        if dev_token:
+            headers["developer-token"] = dev_token
+        login_cust_id = creds.get("login_customer_id")
+        if login_cust_id:
+            headers["login-customer-id"] = str(login_cust_id).replace("-", "")
+        if access_token:
+            headers["Authorization"] = f"Bearer {access_token}"
+    elif auth_type == "apple_app_store":
+        try:
+            key_id = creds.get("key_id") or settings.apple_key_id
+            issuer_id = creds.get("issuer_id") or settings.apple_issuer_id
+            private_key_path = creds.get("private_key_path") or settings.apple_private_key_path
+            if key_id and issuer_id and private_key_path:
+                with open(private_key_path, 'r') as f:
+                    private_key = f.read()
+                import jwt
+                import time
+                token = jwt.encode(
+                    {"iss": issuer_id, "iat": int(time.time()), "exp": int(time.time()) + 1200, "aud": "appstoreconnect-v1"},
+                    private_key, algorithm="ES256", headers={"kid": key_id}
+                )
+                headers["Authorization"] = f"Bearer {token}"
+            elif access_token:
+                headers["Authorization"] = f"Bearer {access_token}"
+        except Exception as jwt_err:
+            logger.error(f"Failed to generate JWT for Apple App Store proxy: {jwt_err}")
+            if access_token:
+                headers["Authorization"] = f"Bearer {access_token}"
+
+    base_url = default_base_url
+    if platform_name == "shopify":
+        shop_domain = request.account_id or creds.get("shop_name") or settings.shopify_shop_name
+        if shop_domain:
+            if "." not in shop_domain:
+                shop_domain = f"{shop_domain}.myshopify.com"
+            base_url = f"https://{shop_domain}/admin/api/2024-04"
+
+    path = request.path.lstrip("/")
+    url = f"{base_url}/{path}"
+    
+    try:
+        method = request.method.upper()
+        if method == "GET":
+            response = await asyncio.to_thread(
+                _requests.get, url, params=request.params, headers=headers, timeout=30
+            )
+        elif method == "POST":
+            response = await asyncio.to_thread(
+                _requests.post, url, json=request.json_body, params=request.params, headers=headers, timeout=30
+            )
+        elif method == "PUT":
+            response = await asyncio.to_thread(
+                _requests.put, url, json=request.json_body, params=request.params, headers=headers, timeout=30
+            )
+        elif method == "DELETE":
+            response = await asyncio.to_thread(
+                _requests.delete, url, params=request.params, headers=headers, timeout=30
+            )
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported method '{method}' for proxy.")
+            
+        response.raise_for_status()
+        return response.json()
+    except _requests.RequestException as e:
+        logger.error(f"Proxy Call failed for {platform_name}: {e}")
+        if e.response is not None:
+            try:
+                return JSONResponse(status_code=e.response.status_code, content=e.response.json())
+            except Exception:
+                raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
+        raise HTTPException(status_code=502, detail=f"Failed to communicate with {platform_name} API: {e}")
+
+
+@app.post("/api/v1/meta-proxy")
+async def meta_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for Meta Ads / Organic (Graph API)."""
+    creds = await credential_store.resolve_credentials(request.client_id, "meta_organic", request.account_id)
+    if not creds:
+        creds = await credential_store.resolve_credentials(request.client_id, "meta_ads", request.account_id)
+    token = (creds or {}).get("access_token") or settings.meta_access_token
+    return await _execute_generic_proxy("meta_ads", request, "https://graph.facebook.com/v25.0", "bearer", token)
+
+@app.post("/api/v1/google-ads-proxy")
+async def google_ads_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for Google Ads REST API."""
+    return await _execute_generic_proxy("google_ads", request, "https://googleads.googleapis.com/v18", "google_ads", settings.google_ads_refresh_token)
+
+@app.post("/api/v1/ga4-proxy")
+async def ga4_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for GA4 Analytics Data API."""
+    return await _execute_generic_proxy("ga4", request, "https://analyticsdata.googleapis.com/v1beta", "bearer")
+
+@app.post("/api/v1/linkedin-proxy")
+async def linkedin_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for LinkedIn API."""
+    return await _execute_generic_proxy("linkedin_ads", request, "https://api.linkedin.com", "bearer", settings.linkedin_access_token)
+
+@app.post("/api/v1/x-twitter-proxy")
+async def x_twitter_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for X/Twitter API v2."""
+    return await _execute_generic_proxy("x_organic", request, "https://api.twitter.com/2", "bearer", settings.x_bearer_token)
+
+@app.post("/api/v1/youtube-proxy")
+async def youtube_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for YouTube Data API v3."""
+    return await _execute_generic_proxy("youtube", request, "https://www.googleapis.com/youtube/v3", "bearer", settings.youtube_api_key)
+
+@app.post("/api/v1/google-play-proxy")
+async def google_play_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for Google Play Developer API."""
+    return await _execute_generic_proxy("google_play", request, "https://www.googleapis.com/androidpublisher/v3", "bearer")
+
+@app.post("/api/v1/apple-app-store-proxy")
+async def apple_app_store_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for Apple App Store Connect API."""
+    return await _execute_generic_proxy("apple_app_store", request, "https://api.appstoreconnect.apple.com/v1", "apple_app_store")
+
+@app.post("/api/v1/apple-ads-proxy")
+async def apple_ads_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for Apple Search Ads API v5."""
+    return await _execute_generic_proxy("apple_ads", request, "https://api.searchads.apple.com/api/v5", "x-ap-context", settings.apple_ads_access_token)
+
+@app.post("/api/v1/threads-proxy")
+async def threads_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for Threads Graph API."""
+    return await _execute_generic_proxy("threads", request, "https://graph.threads.net/v1.0", "bearer", settings.threads_access_token)
+
+@app.post("/api/v1/spotify-proxy")
+async def spotify_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for Spotify Partner Ads API."""
+    return await _execute_generic_proxy("spotify_ads", request, "https://api-partner.spotify.com/ads/v3", "bearer")
+
+@app.post("/api/v1/pinterest-proxy")
+async def pinterest_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for Pinterest API v5."""
+    return await _execute_generic_proxy("pinterest_ads", request, "https://api.pinterest.com/v5", "bearer", settings.pinterest_access_token)
+
+@app.post("/api/v1/shopify-proxy")
+async def shopify_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for Shopify Admin API."""
+    return await _execute_generic_proxy("shopify", request, "https://mock.myshopify.com/admin/api/2024-04", "shopify", settings.shopify_access_token)
+
+
+
+
+@app.post("/api/v1/search-console/query")
+async def search_console_query(request: SearchConsoleQueryRequest, api_key: str = Depends(verify_api_key)):
+    """Query organic web search, preserving monthly totals and exact query filters."""
+    import httpx
+    credentials = await credential_store.resolve_credentials(request.client_id, "search_console", request.account_id)
+    token = (credentials or {}).get("access_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="Connect Search Console before querying this property.")
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(search_console_url(request.account_id), json=request.upstream_body(),
+                                         headers={"Authorization": f"Bearer {token}"})
+    except httpx.RequestError:
+        raise HTTPException(status_code=502, detail="Search Console is temporarily unreachable.") from None
+    return report_response(response)
+
+--- FILE: dashboard.py ---
+# ponytail: simple, dynamic marketing dashboard connecting to the API directly with period comparison and custom CSS styling
+import streamlit as st
+import streamlit.components.v1 as components
+import pandas as pd
+import json
+import os
+from datetime import date
+from dotenv import load_dotenv
+
+# Load env variables for local defaults
+load_dotenv()
+
+# Import configurations, authenticators, API wrappers, and utilities
+from dashboard.config import (
+    DEFAULT_API_KEY,
+    PLATFORM_TYPES,
+)
+
+from dashboard.auth import (
+    dashboard_auth_cookie_bridge,
+    dashboard_allowed_account_ids,
+    filter_dashboard_connections,
+    connection_account_label,
+    require_dashboard_login,
+    dashboard_auth_self_check,
+)
+
+from dashboard.api import (
+    fetch_connections_from_api,
+    fetch_schema_from_api,
+    fetch_campaign_data_from_api,
+    process_api_response,
+)
+
+from dashboard.utils import (
+    get_prior_month_range,
+    get_current_month_range,
+)
+
+from dashboard.ui import (
+    render_dashboard_empty_state,
+)
+
+from dashboard.analytics import (
+    inject_gtag_script,
+    log_query_execution,
+    log_demographics_check,
+)
+from dashboard.styles import inject_dashboard_styles
+from dashboard.onboarding import (
+    has_seen_onboarding_persisted,
+    persist_onboarding_seen_to_client,
+    show_onboarding_dialog,
+)
+from dashboard.views.generic_ads import render_generic_ads_platform_tab
+from dashboard.views.meta_ads import render_meta_ads_platform_tab
+from dashboard.views.organic import render_organic_platform_tab
+
+DASHBOARD_CACHE_VERSION = 9
+
+if os.getenv("DASHBOARD_AUTH_SELF_CHECK") == "1":
+    dashboard_auth_self_check()
+    raise SystemExit("dashboard auth self-check passed")
+
+
+def toggle_theme():
+    st.session_state["theme_switch"] = not st.session_state.get("theme_switch", True)
+
+
+def log_demographics_toggle(user_id, platform_key, account_id):
+    if st.session_state.get("load_demographics"):
+        log_demographics_check(user_id, platform_key, account_id)
+
+
+# Determine sidebar collapse state dynamically to hide it automatically once query runs
+initial_sidebar = "collapsed" if st.session_state.get("query_run", False) else "expanded"
+
+# Page config to force wide layout
+st.set_page_config(
+    page_title="Inhaus Marketing API - Dashboard",
+    page_icon="⚡",
+    layout="wide",
+    initial_sidebar_state=initial_sidebar
+)
+
+theme_mode = "Oscuro" if st.session_state.get("theme_switch", True) else "Claro"
+st.session_state.theme_mode = theme_mode
+chart_bg = "#FFFFFF" if theme_mode == "Claro" else "#0A0D13"
+text_color = "#0F172A" if theme_mode == "Claro" else "#EAF0F7"
+grid_color = "rgba(15,23,42,0.10)" if theme_mode == "Claro" else "rgba(255,255,255,0.05)"
+
+inject_dashboard_styles(theme_mode)
+inject_gtag_script()
+theme_icon = "☾" if theme_mode == "Oscuro" else "☀"
+dashboard_user = require_dashboard_login(theme_icon, toggle_theme)
+current_username = dashboard_user.get("username") if dashboard_user else None
+
+if not has_seen_onboarding_persisted(dashboard_user):
+    persist_onboarding_seen_to_client(current_username)
+    show_onboarding_dialog(current_username)
+
+# SIDEBAR FILTERS (Acts as the collapsible Hamburger Menu on the left)
+st.sidebar.image("https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/69691ca0d848087449f86454.svg", width=180)
+st.sidebar.button(theme_icon, key="theme_switch_button", help="Cambiar tema", on_click=toggle_theme)
+if st.sidebar.button("❓ Guía de Ayuda", key="btn_show_guide", help="Ver guía de uso y cómo solicitar acceso a cuentas", width="stretch"):
+    show_onboarding_dialog()
+
+st.sidebar.markdown("### Configuración de Consulta")
+
+# Hidden admin defaults
+api_key = DEFAULT_API_KEY
+client_id = dashboard_user.get("client_id") or "client_1"
+user_id = dashboard_user.get("user_id") or "user_1"
+
+# Platform Selection
+platform_labels = {
+    "meta_ads": "Meta Ads (Facebook/IG)",
+    "google_ads": "Google Ads",
+    "tiktok_ads": "TikTok Ads",
+    "linkedin_ads": "LinkedIn Ads",
+    "apple_ads": "Apple Search Ads",
+    "x_ads": "X Ads",
+    "spotify_ads": "Spotify Ads",
+    "pinterest_ads": "Pinterest Ads",
+    "meta_organic": "Meta Orgánico",
+    "tiktok_organic": "TikTok Orgánico",
+    "linkedin_organic": "LinkedIn Orgánico",
+    "x_organic": "X Orgánico",
+    "youtube": "YouTube Analytics",
+    "threads": "Threads Orgánico",
+    "pinterest_organic": "Pinterest Orgánico",
+    "ga4": "Google Analytics 4",
+    "shopify": "Shopify Store",
+    "ghl": "GoHighLevel (GHL)",
+    "google_play": "Google Play Store",
+    "apple_app_store": "Apple App Store",
+}
+selected_platform_labels = st.sidebar.multiselect(
+    "Plataforma",
+    list(platform_labels.values()),
+    default=[],
+    help="Selecciona las plataformas que deseas consultar (Meta Ads, TikTok Ads, etc.). Si requieres acceso a una plataforma adicional, contacta a tu administrador o escribe a dpineda@inhauscorp.com.",
+)
+if not selected_platform_labels:
+    st.sidebar.warning("Selecciona al menos una plataforma.")
+    if st.session_state.get("query_run", False):
+        st.session_state["query_run"] = False
+        st.rerun()
+    st.session_state["query_run"] = False
+    render_dashboard_empty_state("Abre el menú lateral y elige plataforma, cuenta y rango de fechas para cargar el reporte.")
+    st.stop()
+
+selected_platform_keys = [k for k, v in platform_labels.items() if v in selected_platform_labels]
+platform_configs = []
+
+for selected_platform_key in selected_platform_keys:
+    platform_label = platform_labels[selected_platform_key]
+    with st.sidebar.expander(platform_label, expanded=len(selected_platform_keys) == 1):
+        sidebar_cache = st.session_state.setdefault("sidebar_api_cache", {})
+        connections = fetch_connections_from_api(selected_platform_key, client_id, api_key)
+        connections = filter_dashboard_connections(connections, dashboard_user, selected_platform_key)
+        allowed_account_ids = dashboard_allowed_account_ids(dashboard_user, selected_platform_key)
+        if allowed_account_ids == []:
+            st.warning("Tu usuario no tiene cuentas asignadas para esta plataforma. Solicita acceso a tu administrador o envía un correo a dpineda@inhauscorp.com.")
+            continue
+        if connections:
+            connection_options = {connection_account_label(c, selected_platform_key): c["account_id"] for c in connections}
+            conn_keys = list(connection_options.keys())
+            conn_choices = conn_keys if len(conn_keys) == 1 else ([""] + conn_keys)
+            selected_conn_label = st.selectbox(
+                "Cuentas Conectadas",
+                conn_choices,
+                key=f"conn_{selected_platform_key}",
+                help="Cuentas publicitarias asignadas a tu usuario por el administrador.\n\n💡 ¿Necesitas acceso a más cuentas?\nLos usuarios no pueden agregar cuentas directamente. Solicítalo a quien te otorgó acceso o envía un correo a dpineda@inhauscorp.com.",
+            )
+            default_account_id = connection_options.get(selected_conn_label, "")
+        else:
+            fallback_accounts = allowed_account_ids or []
+            fallback_account_options = {connection_account_label({"account_id": acc_id}, selected_platform_key): acc_id for acc_id in fallback_accounts}
+            fallback_keys = list(fallback_account_options.keys())
+            fallback_choices = fallback_keys if len(fallback_keys) == 1 else ([""] + fallback_keys)
+            selected_fallback_label = st.selectbox(
+                "Cuentas permitidas",
+                fallback_choices,
+                key=f"allowed_account_{selected_platform_key}",
+                help="Cuentas autorizadas para tu perfil. Para solicitar cuentas adicionales, contacta al administrador o escribe a dpineda@inhauscorp.com.",
+            ) if allowed_account_ids else ""
+            default_account_id = fallback_account_options.get(selected_fallback_label, "")
+
+        if connections:
+            account_id_value = default_account_id
+        else:
+            account_key = f"account_{selected_platform_key}"
+            prev_conn_key = f"prev_conn_{selected_platform_key}"
+            if st.session_state.get(prev_conn_key) != default_account_id:
+                st.session_state[account_key] = default_account_id
+                st.session_state[prev_conn_key] = default_account_id
+            account_id_value = default_account_id if allowed_account_ids else st.text_input(
+                "ID de cuenta",
+                key=account_key,
+                help="Identificador numérico de la cuenta. Recuerda que tu usuario debe tener permisos autorizados por el administrador o vía dpineda@inhauscorp.com.",
+            )
+        if not account_id_value:
+            st.warning("Selecciona una cuenta.")
+            continue
+        schema_key = ("schema", DASHBOARD_CACHE_VERSION, selected_platform_key, api_key)
+        if schema_key not in sidebar_cache:
+            sidebar_cache[schema_key] = fetch_schema_from_api(selected_platform_key, api_key)
+        schema_data = sidebar_cache[schema_key]
+        metrics_list = schema_data.get("metrics", [])
+        dimensions_list = schema_data.get("dimensions", [])
+        metrics_key = f"selected_metrics_{selected_platform_key}"
+        dimensions_key = f"selected_dimensions_{selected_platform_key}"
+        widget_metrics_key = f"metrics_{selected_platform_key}"
+
+        if selected_platform_key == "tiktok_ads":
+            # Exclude non-existent metrics from choices
+            metrics_list = [m for m in metrics_list if m.get("name") not in ("video_views", "followers", "views")]
+
+        platform_preferred_metrics = {
+            "meta_ads": ["spend", "impressions", "reach", "post_engagement", "video_views", "followers", "clicks", "conversions", "__results__", "cost_per_result"],
+            "tiktok_ads": [
+                "spend", "impressions", "clicks", "reach", "conversion", "cost_per_conversion",
+                "conversion_rate", "ctr", "cpc", "cpm", "frequency", "follows", "profile_visits",
+                "likes", "comments", "shares", "video_play_actions", "video_watched_2s",
+                "video_watched_6s", "video_views_p25", "video_views_p50", "video_views_p75", "video_views_p100"
+            ],
+            "google_ads": [
+                "impressions", "clicks", "cost_micros", "conversions", "roas", "all_conversions",
+                "conversions_value", "all_conversions_value", "interactions", "engagements", "video_views",
+                "active_view_impressions", "conversions_from_interactions_rate", "interaction_rate",
+                "average_cpc", "average_cpm", "ctr", "bounce_rate", "active_view_measurability",
+                "active_view_viewability", "video_quartile_25_rate", "video_quartile_50_rate",
+                "video_quartile_75_rate", "video_quartile_100_rate", "cost_per_conversion",
+                "cost_per_all_conversions", "all_conversions_from_interactions_rate",
+                "value_per_conversion", "value_per_all_conversion", "active_view_cpm", "active_view_ctr"
+            ],
+            "youtube": [
+                "views", "likes", "comments", "shares", "watchTimeMinutes",
+                "subscribersGained", "averageViewDuration", "viewCount", "likeCount", "commentCount"
+            ],
+            "meta_organic": [
+                "page_media_view", "page_total_media_view_unique", "page_post_engagements",
+                "page_views_total", "page_follows", "page_actions_post_reactions_total",
+                "views", "reach", "accounts_engaged", "total_interactions", "profile_views",
+                "follower_count", "likes", "comments", "shares",
+            ],
+        }
+        avail_metric_names = [m["name"] for m in metrics_list]
+        pref = platform_preferred_metrics.get(selected_platform_key, [])
+        smart_defaults = [m for m in pref if m in avail_metric_names] or ([m["name"] for m in metrics_list] if metrics_list else ["impressions"])
+
+        if selected_platform_key == "tiktok_ads":
+            # Migrate any legacy/invalid names in session state to official TikTok metrics
+            for k in (metrics_key, widget_metrics_key):
+                if k in st.session_state and isinstance(st.session_state[k], list):
+                    mapped = []
+                    for m in st.session_state[k]:
+                        if m in ("followers", "follower"):
+                            target = "follows"
+                        elif m in ("video_views", "views"):
+                            target = "video_play_actions"
+                        else:
+                            target = m
+                        if target in avail_metric_names and target not in mapped:
+                            mapped.append(target)
+                    for def_m in ("follows", "profile_visits", "likes", "comments", "shares", "video_play_actions", "video_watched_2s", "video_watched_6s"):
+                        if def_m in avail_metric_names and def_m not in mapped:
+                            mapped.append(def_m)
+                    st.session_state[k] = mapped
+
+        if metrics_key not in st.session_state or not st.session_state[metrics_key]:
+            st.session_state[metrics_key] = smart_defaults
+        else:
+            if selected_platform_key == "tiktok_ads":
+                for essential in ("spend", "impressions", "clicks", "reach", "conversion", "follows", "profile_visits", "likes", "comments", "shares", "video_play_actions"):
+                    if essential in avail_metric_names and essential not in st.session_state[metrics_key]:
+                        st.session_state[metrics_key].append(essential)
+            elif selected_platform_key == "youtube":
+                for essential in ("views", "likes", "comments", "watchTimeMinutes"):
+                    if essential in avail_metric_names and essential not in st.session_state[metrics_key]:
+                        st.session_state[metrics_key].append(essential)
+            elif selected_platform_key == "meta_organic":
+                for essential in ("page_media_view", "page_total_media_view_unique", "page_post_engagements", "page_views_total", "page_follows", "page_actions_post_reactions_total", "views", "reach"):
+                    if essential in avail_metric_names and essential not in st.session_state[metrics_key]:
+                        st.session_state[metrics_key].append(essential)
+            else:
+                for essential in ("spend", "impressions", "reach", "post_engagement", "video_views", "followers"):
+                    if essential in avail_metric_names and essential not in st.session_state[metrics_key]:
+                        st.session_state[metrics_key].append(essential)
+        if dimensions_key not in st.session_state:
+            st.session_state[dimensions_key] = ["post_id"] if (selected_platform_key == "meta_organic" and any(d["name"] == "post_id" for d in dimensions_list)) else []
+
+        selected_metrics_value = st.multiselect(
+            "Métricas *",
+            options=[m["name"] for m in metrics_list],
+            default=st.session_state[metrics_key],
+            key=f"metrics_{selected_platform_key}",
+            help="Métricas de rendimiento a consultar. El selector incluye por defecto las métricas oficiales recomendadas. Puedes buscar y agregar métricas adicionales escribiendo aquí.",
+        )
+        selected_dimensions_value = st.multiselect(
+            "Dimensiones (Opcional)",
+            options=[d["name"] for d in dimensions_list],
+            default=st.session_state[dimensions_key],
+            key=f"dimensions_{selected_platform_key}",
+            help="Nivel de granularidad para desglosar la información (por campaña, conjunto de anuncios o anuncio).",
+        )
+
+        platform_type_value = PLATFORM_TYPES.get(selected_platform_key, "ads")
+        opt_filters_value = {}
+        if selected_platform_key == "meta_ads":
+            applied_api_filters = st.session_state.get("meta_applied_api_filters", {})
+            if applied_api_filters:
+                opt_filters_value["filters"] = applied_api_filters
+        if platform_type_value == "organic":
+            post_id = st.text_input("ID de publicación", value="", placeholder="ID de publicación (opcional)", key=f"post_{selected_platform_key}")
+            video_id = st.text_input("ID de video", value="", placeholder="ID de video (opcional)", key=f"video_{selected_platform_key}")
+            if post_id:
+                opt_filters_value["post_id"] = post_id
+            if video_id:
+                opt_filters_value["video_id"] = video_id
+        elif platform_type_value == "app_store":
+            app_id = st.text_input("ID de app", value="", placeholder="ID de app / paquete (opcional)", key=f"app_{selected_platform_key}")
+            if app_id:
+                opt_filters_value["app_id"] = app_id
+
+        platform_configs.append({
+            "platform_key": selected_platform_key,
+            "platform_label": platform_label,
+            "platform_type": platform_type_value,
+            "connections": connections,
+            "account_id": account_id_value,
+            "metrics_list": metrics_list,
+            "dimensions_list": dimensions_list,
+            "selected_metrics": selected_metrics_value,
+            "selected_dimensions": selected_dimensions_value,
+            "opt_filters": opt_filters_value,
+        })
+
+if not platform_configs:
+    if st.session_state.get("query_run", False):
+        st.session_state["query_run"] = False
+        st.rerun()
+    st.session_state["query_run"] = False
+    render_dashboard_empty_state("Selecciona una cuenta disponible en el menú lateral para continuar.")
+    st.stop()
+
+platform_key = platform_configs[0]["platform_key"]
+platform_type = platform_configs[0]["platform_type"]
+selected_platform_label = " + ".join(cfg["platform_label"] for cfg in platform_configs)
+connections = platform_configs[0]["connections"]
+account_id = platform_configs[0]["account_id"]
+selected_metrics = platform_configs[0]["selected_metrics"]
+selected_dimensions = platform_configs[0]["selected_dimensions"]
+metrics_list = platform_configs[0]["metrics_list"]
+opt_filters = platform_configs[0]["opt_filters"]
+# Write to BQ checkbox
+write_to_bq = st.sidebar.checkbox(
+    "Escribir resultados a BigQuery (write_to_bq)",
+    value=False,
+    help="Guarda una copia de los datos consultados en BigQuery para análisis histórico y persistencia de reportes.",
+)
+
+# Date Pickers
+today = date.today()
+default_start, _ = get_current_month_range(today)
+date_range = st.sidebar.date_input(
+    "Rango de Fechas a Consultar",
+    [default_start, today],
+    help="Periodo a auditar. Las métricas del dashboard compararán automáticamente estas cifras contra el mes anterior completo equivalente.",
+)
+is_date_range_complete = False
+if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
+    start_date, end_date = date_range[0], date_range[1]
+    is_date_range_complete = True
+elif isinstance(date_range, (list, tuple)) and len(date_range) == 1:
+    start_date = end_date = date_range[0]
+    is_date_range_complete = False
+else:
+    start_date, end_date = default_start, today
+    is_date_range_complete = True
+
+if not is_date_range_complete:
+    st.sidebar.info("🗓️ Selecciona la fecha de fin en el calendario para completar el rango.")
+
+# Benchmarking / Competitors Section
+can_benchmark = bool(dashboard_user.get("can_benchmark", False)) if dashboard_user else False
+if can_benchmark:
+    with st.sidebar.expander("🔍 Competidores (Benchmarking)", expanded=False):
+        st.caption("Escribe los usernames de Instagram y nombres de página de Facebook para analizar competidores.")
+        st.text_area(
+            "Competidores Instagram (@usernames)",
+            value=st.session_state.get("benchmark_ig_input", "parmalatecuador, toniec, lalecheraec, vita_ecuador"),
+            help="Usernames de Instagram separados por coma o salto de línea",
+            key="benchmark_ig_input",
+        )
+        st.text_area(
+            "Competidores Facebook (Páginas/Usernames)",
+            value=st.session_state.get("benchmark_fb_input", "parmalatecuador, ToniLacteosEc, LaLecheraEcuador, VitaEcuador"),
+            help="Usernames o nombres de página de Facebook separados por coma o salto de línea",
+            key="benchmark_fb_input",
+        )
+
+# Execute Button in Sidebar to prevent auto-loading until clicked
+execute_query = st.sidebar.button("🚀 Consultar API", width="stretch", help="Ejecuta la consulta en tiempo real contra las APIs oficiales de cada plataforma seleccionada.")
+
+if st.session_state.get("query_run", False):
+    applied_start = st.session_state.get("applied_start_date")
+    applied_end = st.session_state.get("applied_end_date")
+    if is_date_range_complete and (start_date != applied_start or end_date != applied_end):
+        st.sidebar.caption("⚡ Haz clic en **Consultar API** para aplicar las nuevas fechas.")
+
+if st.sidebar.button("🔒 Cerrar Sesión", key="logout_button", width="stretch"):
+    st.session_state.pop("dashboard_auth_token", None)
+    st.session_state.pop("dashboard_user", None)
+    dashboard_auth_cookie_bridge(clear=True)
+    st.stop()
+
+# MAIN DISPLAY (Occupies full wide screen)
+header_left, header_right = st.columns([0.84, 0.16], vertical_alignment="center")
+with header_right:
+    col_dl, col_live = st.columns([0.30, 0.70], vertical_alignment="center", gap="small")
+    with col_dl:
+        download_slot = st.empty()
+    with col_live:
+        st.markdown('<div class="header-live-badge"><span class="stamp"><span class="live"></span> API Directa</span></div>', unsafe_allow_html=True)
+with header_left:
+    st.markdown("""
+<div class="custom-header">
+    <div class="agency">
+        <img src="https://assets.cdn.filesafe.space/7w7j6sfnicAwqdXG0sKP/media/69691ca0d848087449f86454.svg" alt="Inhaus">
+        <span class="div-bar"></span>
+        <span class="who">Dashboard de Pauta &middot; Conexión de API</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+if execute_query:
+    if not is_date_range_complete:
+        st.sidebar.warning("⚠️ Debes seleccionar ambas fechas (inicio y fin) en el calendario antes de consultar.")
+        st.stop()
+    if start_date > end_date:
+        st.sidebar.error("⚠️ La fecha de inicio no puede ser posterior a la fecha de fin.")
+        st.stop()
+
+    log_query_execution(
+        current_username,
+        platform_key,
+        account_id,
+        start_date.isoformat(),
+        end_date.isoformat(),
+        write_to_bq,
+    )
+
+    st.session_state.setdefault("dashboard_query_cache", {})
+    st.session_state.force_query_fetch = False
+
+    st.session_state["applied_start_date"] = start_date
+    st.session_state["applied_end_date"] = end_date
+    st.session_state["applied_platform_configs"] = platform_configs
+    st.session_state["applied_write_to_bq"] = write_to_bq
+    st.session_state["applied_platform_key"] = platform_key
+    st.session_state["applied_account_id"] = account_id
+    st.session_state.query_run = True
+    st.rerun()
+
+if not st.session_state.get("query_run", False):
+    render_dashboard_empty_state("Configura tus parámetros de consulta en el menú lateral y presiona Consultar API.")
+    st.stop()
+else:
+    # Use the parameters committed when "Consultar API" was clicked
+    start_date = st.session_state.get("applied_start_date", start_date)
+    end_date = st.session_state.get("applied_end_date", end_date)
+    platform_configs = st.session_state.get("applied_platform_configs", platform_configs)
+    write_to_bq = st.session_state.get("applied_write_to_bq", write_to_bq)
+    platform_key = st.session_state.get("applied_platform_key", platform_key)
+    account_id = st.session_state.get("applied_account_id", account_id)
+
+    # Render the fullscreen loading overlay first to block the screen
+    loading_placeholder = st.empty()
+
+    # Calculate comparison month (previous calendar month)
+    prev_start_date, prev_end_date = get_prior_month_range(start_date)
+
+# Ensure standard KPI metrics requested in payload even unchecked
+query_configs = []
+for cfg in platform_configs:
+    metric_names = [x["name"] for x in cfg["metrics_list"]]
+    dimension_names = [x["name"] for x in cfg["dimensions_list"]]
+    request_metrics = list(cfg["selected_metrics"])
+    if cfg["platform_type"] == "ads":
+        standard_metrics = [
+            "impressions", "clicks", "spend", "cost_micros", "cost", "conversions", "lead", "reach",
+            "post_engagement", "engagement", "__results__", "cost_per_result",
+            "video_play_actions", "video_views", "views", "followers", "follows",
+            "average_cpc", "average_cpm", "ctr", "interaction_rate",
+        ]
+    elif cfg["platform_type"] == "analytics":
+        standard_metrics = ["sessions", "users", "pageviews", "bounce_rate"]
+    elif cfg["platform_type"] == "app_store":
+        standard_metrics = ["downloads", "ratings"]
+    else:
+        standard_metrics = [
+            "impressions", "engagement", "followers", "reach",
+            "page_media_view", "page_total_media_view_unique", "page_post_engagements",
+            "page_views_total", "page_follows", "views", "total_interactions",
+        ]
+    for metric in standard_metrics:
+        if metric not in request_metrics and metric in metric_names:
+            request_metrics.append(metric)
+
+    if cfg["platform_key"] == "tiktok_ads":
+        invalid_tiktok = {"video_views", "views", "followers", "conversions"}
+        request_metrics = [m for m in request_metrics if m not in invalid_tiktok]
+        if "video_play_actions" in metric_names and "video_play_actions" not in request_metrics:
+            request_metrics.append("video_play_actions")
+
+    request_dimensions = list(cfg["selected_dimensions"])
+    if cfg["platform_key"] == "meta_ads" and "publisher_platform" in dimension_names and "publisher_platform" not in request_dimensions:
+        request_dimensions.append("publisher_platform")
+    if cfg["platform_key"] == "meta_organic" and "post_id" in dimension_names and "post_id" not in request_dimensions:
+        request_dimensions.append("post_id")
+    if cfg["platform_key"] == "google_ads" and "campaign.advertising_channel_type" in dimension_names and "campaign.advertising_channel_type" not in request_dimensions:
+        request_dimensions.append("campaign.advertising_channel_type")
+
+    cfg["request_metrics"] = request_metrics
+    cfg["request_dimensions"] = request_dimensions
+    query_configs.append((
+        cfg["platform_key"], cfg["account_id"], tuple(request_metrics), tuple(request_dimensions),
+        json.dumps(cfg["opt_filters"], sort_keys=True, default=str),
+    ))
+
+query_key = (
+    DASHBOARD_CACHE_VERSION,
+    client_id, user_id,
+    start_date.isoformat(), end_date.isoformat(),
+    bool(write_to_bq), tuple(query_configs),
+)
+
+st.session_state.setdefault("dashboard_query_cache", {})
+force_query_fetch = st.session_state.pop("force_query_fetch", False)
+if force_query_fetch or st.session_state.get("active_query_key") != query_key:
+    st.session_state["active_query_key"] = query_key
+active_query_key = st.session_state.get("active_query_key", query_key)
+if active_query_key[0] != DASHBOARD_CACHE_VERSION:
+    active_query_key = query_key
+    st.session_state["active_query_key"] = query_key
+
+if force_query_fetch or active_query_key not in st.session_state["dashboard_query_cache"]:
+    curr_frames = []
+    prev_frames = []
+    for idx, cfg in enumerate(platform_configs, start=1):
+        loading_placeholder.markdown(f"""
+        <div class="loading-overlay">
+            <div class="spinner"></div>
+            <div class="loading-text">{idx}/{len(platform_configs)}: Consultando {cfg['platform_label']}...</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        curr_rows = fetch_campaign_data_from_api(
+            cfg["platform_key"], client_id, user_id, cfg["account_id"],
+            start_date, end_date, cfg["request_metrics"], cfg["request_dimensions"],
+            cfg["opt_filters"], write_to_bq, api_key
+        )
+        prev_rows = fetch_campaign_data_from_api(
+            cfg["platform_key"], client_id, user_id, cfg["account_id"],
+            prev_start_date, prev_end_date, cfg["request_metrics"], cfg["request_dimensions"],
+            cfg["opt_filters"], False, api_key, show_errors=False
+        )
+        if curr_rows:
+            curr_frames.append(process_api_response(curr_rows, cfg["platform_key"], client_id, user_id))
+        if prev_rows:
+            prev_frames.append(process_api_response(prev_rows, cfg["platform_key"], client_id, user_id))
+
+    df_curr = pd.concat(curr_frames, ignore_index=True) if curr_frames else pd.DataFrame()
+    df_prev = pd.concat(prev_frames, ignore_index=True) if prev_frames else pd.DataFrame()
+    account_disp = platform_configs[0]["account_id"] if len(platform_configs) == 1 else " | ".join(f"{cfg['platform_label']}: {cfg['account_id']}" for cfg in platform_configs)
+    active_context = {
+        "platform_key": platform_key,
+        "platform_type": platform_type,
+        "selected_platform_label": selected_platform_label,
+        "account_id": account_id,
+        "account_disp": account_disp,
+        "selected_dimensions": selected_dimensions,
+        "request_metrics": platform_configs[0]["request_metrics"],
+        "request_dimensions": platform_configs[0]["request_dimensions"],
+        "opt_filters": opt_filters,
+        "platform_configs": platform_configs,
+    }
+    st.session_state["dashboard_query_cache"][query_key] = (df_curr, df_prev, active_context)
+    active_query_key = query_key
+    loading_placeholder.empty()
+else:
+    df_curr, df_prev, active_context = st.session_state["dashboard_query_cache"][active_query_key]
+
+platform_key = active_context["platform_key"]
+platform_type = active_context["platform_type"]
+selected_platform_label = active_context["selected_platform_label"]
+account_id = active_context["account_id"]
+account_disp = active_context["account_disp"]
+selected_dimensions = active_context["selected_dimensions"]
+opt_filters = active_context["opt_filters"]
+
+for frame in (df_curr, df_prev):
+    if "results" not in frame.columns:
+        frame["results"] = frame.get("__results__", 0)
+    if "cost_per_result" not in frame.columns:
+        frame["cost_per_result"] = 0.0
+    if "result_indicator" not in frame.columns:
+        frame["result_indicator"] = ""
+    if "post_engagement" not in frame.columns:
+        frame["post_engagement"] = 0
+
+# Inject JavaScript to automatically collapse the sidebar menu if it is expanded
+components.html("""
+    <script>
+    (function() {
+        const parentDoc = window.parent.document;
+        const collapseSidebar = () => {
+            const collapseBtn = parentDoc.querySelector(
+                '[data-testid="stSidebarCollapseButton"], button[aria-label="Close sidebar"], button[title="Close sidebar"]'
+            );
+            if (collapseBtn) collapseBtn.click();
+        };
+        collapseSidebar();
+        setTimeout(collapseSidebar, 200);
+        setTimeout(collapseSidebar, 500);
+    })();
+    </script>
+""", height=0, width=0)
+
+if df_curr.empty:
+    st.error("No se recibió información de la API para el periodo actual. Verifica las credenciales, plataforma o ID de cuenta en el menú lateral.")
+    st.stop()
+else:
+    platform_configs_active = active_context.get("platform_configs", platform_configs)
+    has_multiple_platforms = len(platform_configs_active) > 1
+
+    if has_multiple_platforms:
+        platform_tabs = st.tabs([f"📊 {cfg['platform_label']}" for cfg in platform_configs_active])
+        for p_idx, cfg in enumerate(platform_configs_active):
+            with platform_tabs[p_idx]:
+                if cfg["platform_key"] == "meta_ads":
+                    render_meta_ads_platform_tab(
+                        cfg,
+                        df_curr,
+                        df_prev,
+                        client_id,
+                        user_id,
+                        api_key,
+                        start_date,
+                        end_date,
+                        prev_start_date,
+                        prev_end_date,
+                        force_query_fetch,
+                        active_query_key,
+                        opt_filters,
+                        theme_mode,
+                        current_username,
+                        selected_platform_keys,
+                        dashboard_user,
+                        download_slot,
+                        chart_bg,
+                    )
+                elif cfg.get("platform_type") == "organic" or cfg["platform_key"] in (
+                    "meta_organic", "tiktok_organic", "youtube", "threads",
+                    "linkedin_organic", "x_organic", "pinterest_organic"
+                ):
+                    render_organic_platform_tab(
+                        cfg,
+                        df_curr,
+                        df_prev,
+                        start_date,
+                        end_date,
+                        prev_start_date,
+                        prev_end_date,
+                        theme_mode,
+                        client_id=client_id,
+                        api_key=api_key,
+                    )
+                else:
+                    render_generic_ads_platform_tab(
+                        cfg,
+                        df_curr,
+                        df_prev,
+                        start_date,
+                        end_date,
+                        prev_start_date,
+                        prev_end_date,
+                        theme_mode,
+                    )
+    else:
+        cfg = platform_configs_active[0]
+        if cfg["platform_key"] == "meta_ads":
+            render_meta_ads_platform_tab(
+                cfg,
+                df_curr,
+                df_prev,
+                client_id,
+                user_id,
+                api_key,
+                start_date,
+                end_date,
+                prev_start_date,
+                prev_end_date,
+                force_query_fetch,
+                active_query_key,
+                opt_filters,
+                theme_mode,
+                current_username,
+                selected_platform_keys,
+                dashboard_user,
+                download_slot,
+                chart_bg,
+            )
+        elif cfg.get("platform_type") == "organic" or cfg["platform_key"] in (
+            "meta_organic", "tiktok_organic", "youtube", "threads",
+            "linkedin_organic", "x_organic", "pinterest_organic"
+        ):
+            render_organic_platform_tab(
+                cfg,
+                df_curr,
+                df_prev,
+                start_date,
+                end_date,
+                prev_start_date,
+                prev_end_date,
+                theme_mode,
+                client_id=client_id,
+                api_key=api_key,
+            )
+        else:
+            render_generic_ads_platform_tab(
+                cfg,
+                df_curr,
+                df_prev,
+                start_date,
+                end_date,
+                prev_start_date,
+                prev_end_date,
+                theme_mode,
+            )
+
+
+--- FILE: dashboard/api.py ---
+import re
+import json
+from copy import deepcopy
+import requests
+import pandas as pd
+import streamlit as st
+from datetime import datetime
+
+from dashboard.config import (
+    DEFAULT_API_URL,
+    CAMPAIGN_DATA_TIMEOUT,
+    META_PUBLISHER_LABELS
+)
+from dashboard.utils import (
+    extract_metric,
+    translate_dimension_value,
+    clean_campaign_name,
+    meta_base_campaign_name
+)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_connections_from_api(platform_key, client_id, api_key):
+    try:
+        url = f"{DEFAULT_API_URL}/api/v1/oauth/connections"
+        headers = {
+            "accept": "*/*",
+            "x-api-key": api_key,
+            "origin": "https://inhaus-marketing-api.web.app",
+            "referer": "https://inhaus-marketing-api.web.app/",
+            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
+        }
+        params = {"platform": platform_key, "client_id": client_id}
+        res = requests.get(url, headers=headers, params=params, timeout=10)
+        if res.status_code == 200:
+            connections = res.json()
+            if connections or not client_id or client_id == "client_1":
+                return connections
+            params = {"platform": platform_key}
+            res = requests.get(url, headers=headers, params=params, timeout=10)
+            if res.status_code == 200:
+                return res.json()
+        return []
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_schema_from_api(platform_key, api_key):
+    try:
+        url = f"{DEFAULT_API_URL}/api/v1/schema/{platform_key}"
+        headers = {
+            "accept": "*/*",
+            "x-api-key": api_key,
+            "origin": "https://inhaus-marketing-api.web.app",
+            "referer": "https://inhaus-marketing-api.web.app/"
+        }
+        res = requests.get(url, headers=headers, timeout=15)
+        if res.status_code == 200:
+            schema = res.json()
+            metrics = schema.get("metrics", [])
+            dimensions = schema.get("dimensions", [])
+
+            # Normalize to list of dicts with name
+            norm_metrics = []
+            for m in metrics:
+                if isinstance(m, dict):
+                    norm_metrics.append({"name": m.get("name", ""), "description": m.get("description", "")})
+                else:
+                    norm_metrics.append({"name": str(m), "description": ""})
+
+            norm_dimensions = []
+            for d in dimensions:
+                if isinstance(d, dict):
+                    norm_dimensions.append({"name": d.get("name", ""), "description": d.get("description", "")})
+                else:
+                    norm_dimensions.append({"name": str(d), "description": ""})
+
+            # Ensure core metrics are available in schema
+            extra_known_metrics = {
+                "meta_ads": ["followers", "follows", "video_views", "views", "video_play_actions"],
+                "tiktok_ads": [
+                    "follows", "profile_visits", "likes", "comments", "shares",
+                    "video_play_actions", "video_watched_2s", "video_watched_6s",
+                    "video_views_p25", "video_views_p50", "video_views_p75", "video_views_p100",
+                    "average_video_play", "average_video_play_per_user"
+                ],
+                "google_ads": ["video_views"],
+            }
+            existing_names = {m["name"] for m in norm_metrics}
+            for extra in extra_known_metrics.get(platform_key, []):
+                if extra not in existing_names:
+                    norm_metrics.append({"name": extra, "description": ""})
+
+            return {"metrics": norm_metrics, "dimensions": norm_dimensions}
+        return {"metrics": [], "dimensions": []}
+    except Exception:
+        return {"metrics": [], "dimensions": []}
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def fetch_campaign_data_from_api(platform_key, client_id, user_id, account_id, start_date, end_date, metrics, dimensions, opt_filters, write_to_bq, api_key, show_errors=True, timeout=CAMPAIGN_DATA_TIMEOUT):
+    url = f"{DEFAULT_API_URL}/api/v1/campaign-data"
+    headers = {
+        "accept": "*/*",
+        "content-type": "application/json",
+        "x-api-key": api_key,
+        "origin": "https://inhaus-marketing-api.web.app",
+        "referer": "https://inhaus-marketing-api.web.app/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
+    }
+    payload = {
+        "platform": platform_key,
+        "client_id": client_id,
+        "user_id": user_id,
+        "account_id": account_id,
+        "start_date": start_date.strftime("%Y-%m-%d"),
+        "end_date": end_date.strftime("%Y-%m-%d"),
+        "metrics": metrics
+    }
+    if dimensions:
+        payload["dimensions"] = dimensions
+    if write_to_bq:
+        payload["write_to_bq"] = True
+
+    # Append optional platform specific filters
+    payload.update(opt_filters)
+
+    try:
+        res = requests.post(url, headers=headers, json=payload, timeout=timeout)
+        if res.status_code == 200:
+            body = res.json()
+            if body.get("errors") and show_errors and not body.get("data"):
+                error_msgs = [e.get("message", "") for e in body.get("errors", []) if isinstance(e, dict)]
+                if error_msgs:
+                    st.error(f"Error de API: {' | '.join(error_msgs)}")
+            return body.get("data", [])
+        else:
+            if show_errors:
+                st.error(f"Error de API ({res.status_code}): {res.text}")
+            return []
+    except Exception as e:
+        if show_errors:
+            st.error(f"Error de conexión con la API: {e}")
+        return []
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_benchmarking_from_api(client_id, user_id, account_id, ig_competitors, fb_competitors, api_key, limit_media=25, show_errors=False, timeout=40):
+    url = f"{DEFAULT_API_URL}/api/v1/benchmarking"
+    headers = {
+        "accept": "*/*",
+        "content-type": "application/json",
+        "x-api-key": api_key,
+        "origin": "https://inhaus-marketing-api.web.app",
+        "referer": "https://inhaus-marketing-api.web.app/"
+    }
+    payload = {
+        "client_id": client_id,
+        "user_id": user_id,
+        "account_id": account_id,
+        "instagram_competitors": ig_competitors,
+        "facebook_competitors": fb_competitors,
+        "limit_media": limit_media
+    }
+    try:
+        res = requests.post(url, headers=headers, json=payload, timeout=timeout)
+        if res.status_code == 200:
+            return res.json()
+        else:
+            if show_errors:
+                st.error(f"Error de Benchmarking API ({res.status_code}): {res.text}")
+            return {}
+    except Exception as e:
+        if show_errors:
+            st.error(f"Error de conexión con Benchmarking API: {e}")
+        return {}
+
+
+def _meta_proxy_get(client_id, account_id, api_key, path, params, timeout=30):
+    return requests.post(
+        f"{DEFAULT_API_URL}/api/v1/meta-proxy",
+        headers={
+            "accept": "*/*",
+            "content-type": "application/json",
+            "x-api-key": api_key,
+            "origin": "https://inhaus-marketing-api.web.app",
+            "referer": "https://inhaus-marketing-api.web.app/",
+        },
+        json={
+            "client_id": client_id,
+            "account_id": account_id,
+            "path": path,
+            "method": "GET",
+            "params": params,
+        },
+        timeout=timeout,
+    )
+
+
+def _meta_indicator_value(entries, indicator):
+    for entry in entries or []:
+        if indicator and str(entry.get("indicator") or "") != indicator:
+            continue
+        values = entry.get("values") or []
+        if values and isinstance(values, list) and len(values) > 0:
+            try:
+                first = values[0]
+                val = first.get("value") if isinstance(first, dict) else first
+                if val is not None:
+                    return float(val)
+            except (KeyError, TypeError, ValueError):
+                pass
+        if "value" in entry and entry["value"] is not None:
+            try:
+                return float(entry["value"])
+            except (TypeError, ValueError):
+                pass
+    if indicator and entries:
+        return _meta_indicator_value(entries, "")
+    return None
+
+
+def _meta_minor_currency(value):
+    if value in (None, ""):
+        return None
+    try:
+        return float(value) / 100
+    except (TypeError, ValueError):
+        return None
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def fetch_meta_aggregate_insights(
+    client_id,
+    account_id,
+    start_date,
+    end_date,
+    level,
+    api_filters,
+    api_key,
+):
+    account_edge = account_id if str(account_id).startswith("act_") else f"act_{account_id}"
+    fields = ["impressions", "reach", "clicks", "spend", "results", "cost_per_result"]
+    if level in ("campaign", "adset", "ad"):
+        fields += ["campaign_id", "campaign_name"]
+    if level in ("adset", "ad"):
+        fields += ["adset_id", "adset_name"]
+    if level == "ad":
+        fields += ["ad_id", "ad_name", "actions"]
+
+    s_iso = start_date.isoformat() if hasattr(start_date, "isoformat") else str(start_date)
+    e_iso = end_date.isoformat() if hasattr(end_date, "isoformat") else str(end_date)
+    params = {
+        "fields": ",".join(fields),
+        "level": level,
+        "time_range": json.dumps({
+            "since": s_iso[:10] if len(s_iso) >= 10 else s_iso,
+            "until": e_iso[:10] if len(e_iso) >= 10 else e_iso,
+        }),
+        "limit": 500,
+    }
+    if api_filters:
+        params["filtering"] = json.dumps([
+            {
+                "field": field,
+                "operator": "IN" if isinstance(value, list) else "EQUAL",
+                "value": value if isinstance(value, list) else [value],
+            }
+            for field, value in api_filters.items()
+        ])
+
+    rows = []
+    seen_cursors = set()
+    try:
+        while True:
+            response = _meta_proxy_get(
+                client_id,
+                account_id,
+                api_key,
+                f"{account_edge}/insights",
+                params,
+            )
+            if response.status_code != 200:
+                return [], f"No se pudieron cargar insights Meta ({response.status_code})."
+
+            payload = response.json()
+            for insight in payload.get("data", []):
+                actions = insight.get("actions") or []
+                result_entries = insight.get("results") or []
+                result_indicator = (
+                    str(result_entries[0].get("indicator") or "")
+                    if result_entries else ""
+                )
+                result_value = _meta_indicator_value(result_entries, result_indicator)
+                result_cost = _meta_indicator_value(
+                    insight.get("cost_per_result"), result_indicator
+                )
+                rows.append({
+                    "campaign_id": insight.get("campaign_id") or "",
+                    "campaign_name": insight.get("campaign_name") or "",
+                    "adset_id": insight.get("adset_id") or "",
+                    "adset_name": insight.get("adset_name") or "",
+                    "ad_id": insight.get("ad_id") or "",
+                    "ad_name": insight.get("ad_name") or "",
+                    "impressions": extract_metric(insight, ["impressions"]),
+                    "reach": extract_metric(insight, ["reach"]),
+                    "spend": extract_metric(insight, ["spend"]),
+                    "clicks": extract_metric(insight, ["clicks"]),
+                    "result_indicator": result_indicator,
+                    "results": result_value,
+                    "cost_per_result": result_cost,
+                    "lead": sum(
+                        extract_metric(action, ["value"])
+                        for action in actions
+                        if action.get("action_type") in {
+                            "lead",
+                            "onsite_conversion.lead_grouped",
+                            "offsite_conversion.fb_pixel_lead",
+                        }
+                    ),
+                    "post_engagement": sum(
+                        extract_metric(action, ["value"])
+                        for action in actions
+                        if action.get("action_type") == "post_engagement"
+                    ),
+                })
+
+            after = (payload.get("paging") or {}).get("cursors", {}).get("after")
+            if not after or after in seen_cursors:
+                break
+            seen_cursors.add(after)
+            params["after"] = after
+        return rows, None
+    except Exception as e:
+        return [], f"Error cargando insights Meta: {e}"
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_meta_ad_previews(client_id, account_id, preview_targets, api_key):
+    targets = tuple(target for target in preview_targets if target[2])
+    if not targets:
+        return [], None
+
+    hydrated_ads = {}
+    previews = []
+    try:
+        for ranking_metric, campaign_name, ad_id, fallback_ad_name in targets:
+            if ad_id not in hydrated_ads:
+                ad_response = _meta_proxy_get(
+                    client_id,
+                    account_id,
+                    api_key,
+                    str(ad_id),
+                    {
+                        "fields": (
+                            "id,name,campaign{id,name},"
+                            "creative{effective_object_story_id,object_story_spec,image_url,thumbnail_url,link_url,instagram_permalink_url}"
+                        )
+                    },
+                )
+                if ad_response.status_code != 200:
+                    continue
+                ad = ad_response.json()
+
+                preview_response = _meta_proxy_get(
+                    client_id,
+                    account_id,
+                    api_key,
+                    f"{ad_id}/previews",
+                    {"ad_format": "DESKTOP_FEED_STANDARD"},
+                )
+                preview_data = (
+                    preview_response.json().get("data", [])
+                    if preview_response.status_code == 200
+                    else []
+                )
+                body = preview_data[0].get("body", "") if preview_data else ""
+
+                creative = ad.get("creative") or {}
+                story = creative.get("object_story_spec") or {}
+                post_text = " ".join(filter(None, (
+                    story.get("message"),
+                    (story.get("link_data") or {}).get("message"),
+                    (story.get("link_data") or {}).get("name"),
+                    (story.get("video_data") or {}).get("message"),
+                    (story.get("video_data") or {}).get("title"),
+                    (story.get("photo_data") or {}).get("caption"),
+                    (story.get("template_data") or {}).get("message"),
+                ))).strip()
+                instagram_url = creative.get("instagram_permalink_url") or ""
+                facebook_url = ""
+
+                image_url = (
+                    creative.get("image_url")
+                    or creative.get("thumbnail_url")
+                    or (story.get("link_data") or {}).get("picture")
+                    or (story.get("link_data") or {}).get("image_url")
+                    or (story.get("video_data") or {}).get("image_url")
+                    or (story.get("photo_data") or {}).get("url")
+                    or ""
+                )
+                post_id = creative.get("effective_object_story_id")
+                post_created_time = ""
+                if post_id and "_" in str(post_id):
+                    p_parts = str(post_id).split("_", 1)
+                    facebook_url = f"https://www.facebook.com/{p_parts[0]}/posts/{p_parts[1]}"
+
+                if post_id:
+                    post_response = _meta_proxy_get(
+                        client_id,
+                        account_id,
+                        api_key,
+                        post_id,
+                        {"fields": "message,story,caption,created_time,permalink_url,full_picture,picture,attachments{title,description,media,url}"},
+                        timeout=20,
+                    )
+                    if post_response.status_code == 200:
+                        post = post_response.json()
+                        post_created_time = post.get("created_time") or ""
+                        attachments = (post.get("attachments") or {}).get("data") or []
+                        published_parts = [
+                            post.get("message"),
+                            post.get("story"),
+                            post.get("caption"),
+                            *(attachment.get(key) for attachment in attachments for key in ("title", "description")),
+                        ]
+                        published_parts = [str(value).strip() for value in published_parts if str(value or "").strip()]
+                        post_text = " ".join(dict.fromkeys(published_parts)) or post_text
+                        if post.get("permalink_url"):
+                            permalink = post["permalink_url"]
+                            if "instagram.com" in permalink.lower():
+                                instagram_url = permalink
+                            elif "facebook.com" in permalink.lower():
+                                facebook_url = permalink
+                        attachment_image = next((
+                            ((attachment.get("media") or {}).get("image") or {}).get("src")
+                            for attachment in attachments
+                            if ((attachment.get("media") or {}).get("image") or {}).get("src")
+                        ), "")
+                        if post.get("full_picture") or attachment_image:
+                            image_url = post.get("full_picture") or attachment_image
+                        elif post.get("picture") and not image_url:
+                            image_url = post["picture"]
+
+                post_url = instagram_url or facebook_url
+                post_url_lower = post_url.lower()
+                post_platform = (
+                    "instagram" if "instagram.com" in post_url_lower
+                    else "facebook" if "facebook.com" in post_url_lower or post_id
+                    else ""
+                )
+                hydrated_ads[ad_id] = {
+                    "ad_name": ad.get("name") or fallback_ad_name or "",
+                    "body": body,
+                    "post_message": post_text,
+                    "url": post_url,
+                    "facebook_url": facebook_url,
+                    "instagram_url": instagram_url,
+                    "image_url": image_url,
+                    "post_created_time": post_created_time,
+                    "post_platform": post_platform,
+                }
+
+            hydrated = hydrated_ads[ad_id]
+            previews.append({
+                "ranking_metric": ranking_metric,
+                "campaign_name": campaign_name,
+                "campaign_label": clean_campaign_name(campaign_name),
+                "ad_id": ad_id,
+                **hydrated,
+            })
+
+        return previews, None if previews else "No se encontraron previews para los anuncios seleccionados."
+    except Exception as e:
+        return [], f"Error cargando previews Meta: {e}"
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_meta_post_preview(client_id, account_id, post_id, api_key):
+    """Fetch post details (image_url, message, permalink) for an organic Meta post."""
+    if not post_id or not api_key:
+        return None
+    try:
+        res = _meta_proxy_get(
+            client_id,
+            account_id,
+            api_key,
+            str(post_id),
+            {"fields": "id,message,caption,permalink_url,permalink,full_picture,picture,media_url,thumbnail_url,attachments{media,unshimmed_url}"},
+            timeout=10,
+        )
+        if res.status_code == 200:
+            data = res.json()
+            image_url = (
+                data.get("full_picture")
+                or data.get("media_url")
+                or data.get("thumbnail_url")
+                or data.get("picture")
+                or ""
+            )
+            if not image_url:
+                attachments = (data.get("attachments") or {}).get("data") or []
+                for att in attachments:
+                    media_img = (att.get("media") or {}).get("image") or {}
+                    if media_img.get("src"):
+                        image_url = media_img.get("src")
+                        break
+            return {
+                "message": data.get("message") or data.get("caption") or "",
+                "permalink": data.get("permalink_url") or data.get("permalink") or "",
+                "image_url": image_url,
+            }
+    except Exception:
+        pass
+    return None
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_meta_filter_rows(client_id, account_id, api_key):
+    headers = {
+        "accept": "*/*",
+        "content-type": "application/json",
+        "x-api-key": api_key,
+        "origin": "https://inhaus-marketing-api.web.app",
+        "referer": "https://inhaus-marketing-api.web.app/",
+    }
+    url = f"{DEFAULT_API_URL}/api/v1/meta-proxy"
+    account_edge = account_id if str(account_id).startswith("act_") else f"act_{account_id}"
+    rows = []
+    after = None
+    try:
+        # ponytail: cap option hydration at 5 pages; paginate more if accounts exceed ~2500 ads.
+        for _ in range(5):
+            params = {
+                "fields": (
+                    "id,name,"
+                    "campaign{id,name,daily_budget,lifetime_budget},"
+                    "adset{id,name,daily_budget,lifetime_budget}"
+                ),
+                "limit": 500,
+            }
+            if after:
+                params["after"] = after
+            res = requests.post(url, headers=headers, json={
+                "client_id": client_id,
+                "account_id": account_id,
+                "path": f"{account_edge}/ads",
+                "method": "GET",
+                "params": params,
+            }, timeout=30)
+            if res.status_code != 200:
+                return [], f"No se pudieron cargar filtros Meta ({res.status_code})."
+            body = res.json()
+            for ad in body.get("data", []):
+                campaign = ad.get("campaign") or {}
+                adset = ad.get("adset") or {}
+                if campaign.get("name"):
+                    rows.append({
+                        "campaign_id": campaign.get("id", ""),
+                        "campaign_name": campaign.get("name", ""),
+                        "adset_id": adset.get("id", ""),
+                        "adset_name": adset.get("name", ""),
+                        "ad_id": ad.get("id", ""),
+                        "ad_name": ad.get("name", ""),
+                        "campaign_daily_budget": _meta_minor_currency(
+                            campaign.get("daily_budget")
+                        ),
+                        "campaign_lifetime_budget": _meta_minor_currency(
+                            campaign.get("lifetime_budget")
+                        ),
+                        "adset_daily_budget": _meta_minor_currency(
+                            adset.get("daily_budget")
+                        ),
+                        "adset_lifetime_budget": _meta_minor_currency(
+                            adset.get("lifetime_budget")
+                        ),
+                    })
+            paging = body.get("paging", {})
+            after = (paging.get("cursors") or {}).get("after")
+            if not after or not paging.get("next"):
+                break
+        return rows, None
+    except Exception as e:
+        return [], f"Error cargando filtros Meta: {e}"
+
+
+def process_api_response(api_data, platform_key, client_id, user_id):
+    flat_rows = []
+    for item in api_data:
+        metrics = item.get("metrics", {})
+
+        spend = extract_metric(metrics, ["spend", "social_spend", "cost"])
+        if not spend and "cost_micros" in metrics:
+            try:
+                spend = float(metrics["cost_micros"]) / 1_000_000.0
+            except (ValueError, TypeError):
+                spend = 0.0
+        impressions = extract_metric(metrics, ["impressions", "views", "page_media_view", "post_media_view", "reach"])
+        clicks = extract_metric(metrics, ["clicks", "unique_clicks", "post_clicks", "website_clicks"])
+        conversions = extract_metric(metrics, ["conversions", "actions", "purchase", "lead", "add_to_cart"])
+        leads = extract_metric(metrics, ["lead"])
+        post_engagement = extract_metric(metrics, ["post_engagement", "page_post_engagements", "total_interactions", "accounts_engaged"])
+        results = extract_metric(metrics, ["__results__", "results"])
+        cost_per_result = extract_metric(metrics, ["cost_per_result"])
+        if results > 0 and not cost_per_result:
+            cost_per_result = spend / results
+        result_indicator = str(metrics.get("result_indicator") or "")
+
+        sessions = extract_metric(metrics, ["sessions"])
+        users = extract_metric(metrics, ["users"])
+        pageviews = extract_metric(metrics, ["pageviews", "page_views_total", "profile_views"])
+        bounce_rate = extract_metric(metrics, ["bounce_rate"])
+
+        downloads = extract_metric(metrics, ["downloads"])
+        ratings = extract_metric(metrics, ["ratings"])
+
+        likes = extract_metric(metrics, ["likes", "like_count", "page_actions_post_reactions_total"])
+        if not likes and isinstance(metrics.get("page_actions_post_reactions_total"), dict):
+            try:
+                likes = float(metrics["page_actions_post_reactions_total"].get("like", 0))
+            except (ValueError, TypeError):
+                likes = 0.0
+        comments = extract_metric(metrics, ["comments", "comment_count"])
+        engagement = extract_metric(metrics, ["engagement", "total_interactions", "accounts_engaged", "page_post_engagements", "post_engagement"])
+        if not engagement:
+            engagement = likes + comments + extract_metric(metrics, ["shares", "saved"]) + post_engagement
+        followers = extract_metric(metrics, ["followers", "follows", "page_follows", "follower_count", "page_fans"])
+        reach = extract_metric(metrics, ["reach", "page_total_media_view_unique", "post_total_media_view_unique", "impressions", "views", "page_media_view"])
+        video_views = extract_metric(metrics, ["video_views", "views", "page_media_view", "video_play_actions", "plays"])
+        profile_visits = extract_metric(metrics, ["profile_visits", "profile_views", "page_views_total"])
+        shares = extract_metric(metrics, ["shares"])
+
+        page_media_view = extract_metric(metrics, ["page_media_view", "post_media_view", "views"])
+        page_total_media_view_unique = extract_metric(metrics, ["page_total_media_view_unique", "post_total_media_view_unique", "reach"])
+        page_post_engagements = extract_metric(metrics, ["page_post_engagements", "post_engagement", "total_interactions"])
+        page_views_total = extract_metric(metrics, ["page_views_total", "pageviews", "profile_views"])
+        page_follows = extract_metric(metrics, ["page_follows", "followers", "follows", "follower_count", "page_fans"])
+
+        # Include dynamic fields from dimensions if present
+        row = {
+            "platform": platform_key,
+            "source_platform": platform_key,
+            "source_metrics": deepcopy(metrics),
+            "client_id": client_id,
+            "user_id": user_id,
+            "campaign_name": item.get("campaign_name", "N/A"),
+            "date": pd.to_datetime(item.get("date", datetime.now())),
+            "spend": spend,
+            "impressions": int(impressions),
+            "clicks": int(clicks),
+            "conversions": int(conversions),
+            "lead": int(leads),
+            "post_engagement": int(post_engagement),
+            "results": int(results),
+            "cost_per_result": cost_per_result,
+            "result_indicator": result_indicator,
+            "sessions": int(sessions),
+            "users": int(users),
+            "pageviews": int(pageviews),
+            "bounce_rate": bounce_rate,
+            "downloads": int(downloads),
+            "ratings": ratings,
+            "engagement": int(engagement),
+            "followers": int(followers),
+            "reach": int(reach),
+            "likes": int(likes),
+            "comments": int(comments),
+            "shares": int(shares),
+            "video_views": int(video_views),
+            "profile_visits": int(profile_visits),
+            "page_media_view": int(page_media_view),
+            "page_total_media_view_unique": int(page_total_media_view_unique),
+            "page_post_engagements": int(page_post_engagements),
+            "page_views_total": int(page_views_total),
+            "page_follows": int(page_follows),
+        }
+        KNOWN_METRIC_ALIASES = {
+            "social_spend", "cost", "cost_micros",
+            "unique_clicks",
+            "actions", "add_to_cart", "purchase", "lead",
+            "fan_count", "follower_count", "follows", "page_fans", "page_follows",
+            "views", "page_media_view", "plays", "video_play_actions", "video_watched_2s", "video_watched_6s", "view_count",
+            "total_interactions", "accounts_engaged", "saved",
+            "like_count", "comment_count",
+        }
+        for m_key, m_val in metrics.items():
+            if m_key not in row and m_key not in KNOWN_METRIC_ALIASES:
+                try:
+                    s = str(m_val).strip()
+                    row[m_key] = float(s) if "." in s else int(s)
+                except (ValueError, TypeError):
+                    row[m_key] = m_val
+
+        # Add dimensions to the row dict dynamically
+        protected_source_fields = {"source_platform", "source_metrics"}
+        for key, val in item.get("dimensions", {}).items():
+            if key not in protected_source_fields:
+                row[key] = translate_dimension_value(key, val)
+
+        for key, val in item.items():
+            if key not in {"metrics", "dimensions", "platform", "client_id", "user_id", *protected_source_fields}:
+                row[key] = translate_dimension_value(key, val)
+
+        if platform_key == "meta_ads":
+            publisher = str(row.get("publisher_platform", "")).lower()
+            if not publisher:
+                match = re.search(r"_(facebook|instagram|audience_network|messenger)$", str(row["campaign_name"]), re.I)
+                publisher = match.group(1).lower() if match else ""
+            if publisher:
+                row["platform"] = META_PUBLISHER_LABELS.get(publisher, publisher.replace("_", " ").title())
+
+        flat_rows.append(row)
+
+    df = pd.DataFrame(flat_rows)
+    if df.empty:
+        return pd.DataFrame(columns=[
+            "platform", "source_platform", "source_metrics", "client_id", "user_id", "campaign_name", "date", "spend", "impressions", "clicks", "conversions", "lead", "results", "cost_per_result", "result_indicator",
+            "sessions", "users", "pageviews", "bounce_rate", "downloads", "ratings", "engagement", "post_engagement", "followers", "reach", "likes", "comments"
+        ])
+    return df
+
+--- FILE: dashboard/views/organic.py ---
+import re
+import streamlit as st
+import pandas as pd
+import numpy as np
+
+from dashboard.api import fetch_meta_post_preview
+from dashboard.ui import get_kpi_card_html
+
+
+def _clean_post_title(raw_name: str, message: str = "") -> str:
+    """Clean technical prefixes and raw IDs from organic post titles."""
+    if message and str(message).strip():
+        first_line = str(message).strip().split("\n")[0].strip()
+        return first_line[:80] + ("..." if len(first_line) > 80 else "")
+    clean = re.sub(r"^(Post_|IG_Post_)?([0-9]+_)+", "", str(raw_name)).strip()
+    clean = re.sub(r"^[0-9]+$", "Publicación", clean)
+    clean = clean.replace("_", " ").strip()
+    return clean or "Publicación"
+
+
+def render_organic_platform_tab(
+    cfg,
+    df_curr_all,
+    df_prev_all,
+    start_date,
+    end_date,
+    prev_start_date,
+    prev_end_date,
+    theme_mode,
+    client_id=None,
+    api_key=None,
+):
+    plat_key = cfg["platform_key"]
+    plat_label = cfg["platform_label"]
+    account_id = cfg["account_id"]
+
+    if "source_platform" in df_curr_all.columns:
+        df_curr_p = df_curr_all[df_curr_all["source_platform"] == plat_key].copy()
+    elif "platform" in df_curr_all.columns:
+        df_curr_p = df_curr_all[df_curr_all["platform"] == plat_key].copy()
+    else:
+        df_curr_p = df_curr_all.copy()
+
+    if isinstance(df_prev_all, pd.DataFrame) and not df_prev_all.empty:
+        if "source_platform" in df_prev_all.columns:
+            df_prev_p = df_prev_all[df_prev_all["source_platform"] == plat_key].copy()
+        elif "platform" in df_prev_all.columns:
+            df_prev_p = df_prev_all[df_prev_all["platform"] == plat_key].copy()
+        else:
+            df_prev_p = df_prev_all.copy()
+    else:
+        df_prev_p = pd.DataFrame()
+
+    non_numeric_cols = {
+        "platform", "source_platform", "campaign_name", "date", "client_id", "user_id",
+        "page_id", "permalink", "url", "source_metrics", "account_id"
+    }
+    for df_target in (df_curr_p, df_prev_p):
+        if isinstance(df_target, pd.DataFrame) and not df_target.empty:
+            for c in df_target.columns:
+                if c not in non_numeric_cols:
+                    df_target[c] = pd.to_numeric(df_target[c], errors="coerce").fillna(0)
+
+    # Fallback extraction from source_metrics if raw columns are 0 or missing
+    for df_target in (df_curr_p, df_prev_p):
+        if isinstance(df_target, pd.DataFrame) and not df_target.empty and "source_metrics" in df_target.columns:
+            for m_key in ["page_media_view", "page_follows", "page_total_media_view_unique", "page_post_engagements", "page_views_total"]:
+                if m_key not in df_target.columns or df_target[m_key].sum() == 0:
+                    try:
+                        extracted = df_target["source_metrics"].apply(
+                            lambda m: float(m.get(m_key, 0)) if isinstance(m, dict) and m.get(m_key) is not None and not isinstance(m.get(m_key), dict) else 0.0
+                        )
+                        if extracted.sum() > 0:
+                            df_target[m_key] = extracted
+                    except Exception:
+                        pass
+
+    organic_metric_cols = [
+        col for col in [
+            "page_media_view", "page_total_media_view_unique", "page_post_engagements",
+            "page_views_total", "page_follows", "impressions", "reach", "engagement",
+            "post_engagement", "followers", "pageviews", "likes", "comments", "shares",
+            "video_views", "profile_visits", "views", "clicks"
+        ] if col in df_curr_p.columns
+    ]
+
+    if not df_curr_p.empty and organic_metric_cols:
+        df_curr_p = df_curr_p[df_curr_p[organic_metric_cols].sum(axis=1) > 0].copy()
+
+    if df_curr_p.empty:
+        st.warning(f"ℹ️ No se registraron datos activos con métricas mayores a 0 para {plat_label} en este periodo.")
+        return
+
+    title_color = "#0F172A" if theme_mode == "Claro" else "#EAF0F7"
+    st.markdown(f"""
+    <h1 style="margin-top: 10px; font-size: 2rem; line-height: 1.1; color: {title_color};">{plat_label} &middot; {account_id}</h1>
+    <p class="lede" style="margin-top: 15px;">
+        Resultados orgánicos del <b>{start_date.strftime('%d/%m/%Y')} al {end_date.strftime('%d/%m/%Y')}</b>.<br/>
+        Comparado contra periodo anterior: <b>{prev_start_date.strftime('%d/%m/%Y')} al {prev_end_date.strftime('%d/%m/%Y')}</b>.
+    </p>
+    """, unsafe_allow_html=True)
+
+    # Metric extractions with fallback priorities
+    def _sum_metric(df, cols):
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            return 0
+        for col in cols:
+            if col in df.columns:
+                val = int(pd.to_numeric(df[col], errors="coerce").fillna(0).sum())
+                if val > 0:
+                    return val
+        if "source_metrics" in df.columns:
+            for col in cols:
+                try:
+                    val = int(df["source_metrics"].apply(
+                        lambda m: float(m.get(col, 0)) if isinstance(m, dict) and m.get(col) is not None and not isinstance(m.get(col), dict) else (
+                            float(sum(float(v) for v in m[col].values() if v is not None)) if isinstance(m, dict) and isinstance(m.get(col), dict) else 0.0
+                        )
+                    ).sum())
+                    if val > 0:
+                        return val
+                except Exception:
+                    pass
+        return 0
+
+    def _extract_followers(df):
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            return 0, "Seguidores ganados"
+        for fcol in ["page_follows", "followers", "follower_count"]:
+            series = None
+            if fcol in df.columns and df[fcol].sum() > 0:
+                s = pd.to_numeric(df[fcol], errors="coerce").fillna(0)
+                series = s[s > 0]
+            elif "source_metrics" in df.columns:
+                try:
+                    extracted = df["source_metrics"].apply(
+                        lambda m: float(m.get(fcol, 0)) if isinstance(m, dict) and m.get(fcol) is not None else 0.0
+                    )
+                    series = extracted[extracted > 0]
+                except Exception:
+                    pass
+            if series is not None and len(series) > 0:
+                earliest = series.iloc[0]
+                latest = series.iloc[-1]
+                net = int(latest - earliest)
+                if net > 0:
+                    return net, f"Nuevos en el periodo (Total: {int(latest):,})"
+                elif int(latest) > 0:
+                    return int(latest), "Total seguidores acumulados"
+        return _sum_metric(df, ["page_follows", "followers"]), "Seguidores ganados"
+
+    media_views_curr = _sum_metric(df_curr_p, ["page_media_view", "impressions", "views", "video_views"])
+    media_views_prev = _sum_metric(df_prev_p, ["page_media_view", "impressions", "views", "video_views"])
+
+    reach_curr = _sum_metric(df_curr_p, ["page_total_media_view_unique", "reach", "impressions"])
+    reach_prev = _sum_metric(df_prev_p, ["page_total_media_view_unique", "reach", "impressions"])
+
+    engagements_curr = _sum_metric(df_curr_p, ["page_post_engagements", "post_engagement", "engagement"])
+    engagements_prev = _sum_metric(df_prev_p, ["page_post_engagements", "post_engagement", "engagement"])
+
+    pageviews_curr = _sum_metric(df_curr_p, ["page_views_total", "pageviews", "profile_visits"])
+    pageviews_prev = _sum_metric(df_prev_p, ["page_views_total", "pageviews", "profile_visits"])
+
+    follows_curr, follows_sub = _extract_followers(df_curr_p)
+    follows_prev, _ = _extract_followers(df_prev_p)
+
+    likes_curr = _sum_metric(df_curr_p, ["likes"])
+    likes_prev = _sum_metric(df_prev_p, ["likes"])
+
+    comments_curr = _sum_metric(df_curr_p, ["comments"])
+    comments_prev = _sum_metric(df_prev_p, ["comments"])
+
+    shares_curr = _sum_metric(df_curr_p, ["shares"])
+    shares_prev = _sum_metric(df_prev_p, ["shares"])
+
+    clicks_curr = _sum_metric(df_curr_p, ["clicks"])
+    clicks_prev = _sum_metric(df_prev_p, ["clicks"])
+
+    # Hero Card
+    hero_html = f"""
+    <div class="hero-card" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;">
+      <div><div class="lab">Visualizaciones Totales</div><div class="big">{media_views_curr:,}</div></div>
+      <div><div class="lab">Interacciones Totales</div><div class="big">{engagements_curr:,}</div></div>
+      <div><div class="lab">Nuevos Seguidores</div><div class="big">{follows_curr:,}</div></div>
+    </div>
+    """
+    st.markdown(hero_html, unsafe_allow_html=True)
+
+    # KPIs Grid
+    st.markdown("### Métricas clave orgánicas con comparación")
+    kpis_layout = '<div class="kpis">\n'
+    kpis_layout += get_kpi_card_html("Visualizaciones", f"{media_views_curr:,}", "Vistas de contenido/medios", media_views_curr, media_views_prev) + "\n"
+    kpis_layout += get_kpi_card_html("Alcance Único", f"{reach_curr:,}", "Personas alcanzadas", reach_curr, reach_prev) + "\n"
+    kpis_layout += get_kpi_card_html("Interacciones con Posts", f"{engagements_curr:,}", "Interacciones y engagement", engagements_curr, engagements_prev) + "\n"
+    kpis_layout += get_kpi_card_html("Visitas a Página/Perfil", f"{pageviews_curr:,}", "Visitas recibidas", pageviews_curr, pageviews_prev) + "\n"
+    kpis_layout += get_kpi_card_html("Nuevos Seguidores", f"{follows_curr:,}", follows_sub, follows_curr, follows_prev) + "\n"
+    if likes_curr > 0 or likes_prev > 0:
+        kpis_layout += get_kpi_card_html("Reacciones / Me Gusta", f"{likes_curr:,}", "Likes en contenido", likes_curr, likes_prev) + "\n"
+    if comments_curr > 0 or comments_prev > 0:
+        kpis_layout += get_kpi_card_html("Comentarios", f"{comments_curr:,}", "Comentarios en publicaciones", comments_curr, comments_prev) + "\n"
+    if shares_curr > 0 or shares_prev > 0:
+        kpis_layout += get_kpi_card_html("Compartidos", f"{shares_curr:,}", "Publicaciones compartidas", shares_curr, shares_prev) + "\n"
+    if clicks_curr > 0 or clicks_prev > 0:
+        kpis_layout += get_kpi_card_html("Clics en Publicaciones", f"{clicks_curr:,}", "Clics en enlaces / posts", clicks_curr, clicks_prev) + "\n"
+    kpis_layout += '</div>'
+    st.markdown(kpis_layout, unsafe_allow_html=True)
+
+    # Daily Trend Line Chart
+    if "date" in df_curr_p.columns and len(df_curr_p["date"].dropna().unique()) > 1:
+        st.markdown("### Tendencia Diaria")
+        trend_df = df_curr_p.copy()
+        trend_df["date"] = pd.to_datetime(trend_df["date"]).dt.date
+        trend_agg = {}
+        for col in ["impressions", "page_media_view", "reach", "page_total_media_view_unique", "engagement", "page_post_engagements", "page_views_total", "page_follows", "followers"]:
+            if col in trend_df.columns:
+                trend_agg[col] = "sum"
+        if trend_agg:
+            daily_chart_data = trend_df.groupby("date", as_index=False).agg(trend_agg)
+            plot_df = pd.DataFrame({"Fecha": daily_chart_data["date"]})
+            if "page_media_view" in daily_chart_data.columns and daily_chart_data["page_media_view"].sum() > 0:
+                plot_df["Visualizaciones"] = daily_chart_data["page_media_view"]
+            elif "impressions" in daily_chart_data.columns:
+                plot_df["Visualizaciones"] = daily_chart_data["impressions"]
+            if "page_total_media_view_unique" in daily_chart_data.columns and daily_chart_data["page_total_media_view_unique"].sum() > 0:
+                plot_df["Alcance"] = daily_chart_data["page_total_media_view_unique"]
+            elif "reach" in daily_chart_data.columns:
+                plot_df["Alcance"] = daily_chart_data["reach"]
+            if "page_post_engagements" in daily_chart_data.columns and daily_chart_data["page_post_engagements"].sum() > 0:
+                plot_df["Interacciones"] = daily_chart_data["page_post_engagements"]
+            elif "engagement" in daily_chart_data.columns:
+                plot_df["Interacciones"] = daily_chart_data["engagement"]
+            plot_df = plot_df.set_index("Fecha")
+            st.line_chart(plot_df, width="stretch")
+
+    # Recent Posts / Content Section
+    posts_mask = df_curr_p["campaign_name"].astype(str).str.contains("Post_", case=False, na=False)
+    posts_df = df_curr_p[posts_mask].copy()
+    if not posts_df.empty:
+        st.markdown("### 📌 Publicaciones Recientes")
+        display_posts = posts_df.head(6)
+        num_cols = min(3, len(display_posts))
+        for row_start in range(0, len(display_posts), num_cols):
+            chunk = display_posts.iloc[row_start : row_start + num_cols]
+            cols = st.columns(num_cols)
+            for col_idx, (_, post_row) in enumerate(chunk.iterrows()):
+                with cols[col_idx]:
+                    with st.container(border=True):
+                        post_id = str(post_row.get("post_id") or "")
+                        if not post_id:
+                            m = re.search(r"^(?:Post_|IG_Post_)?([0-9_]+)", str(post_row.get("campaign_name", "")))
+                            if m:
+                                post_id = m.group(1).rstrip("_")
+
+                        image_url = str(post_row.get("image_url") or "").strip()
+                        message = str(post_row.get("message") or "").strip()
+                        permalink = str(post_row.get("permalink") or post_row.get("url") or "").strip()
+
+                        if (not image_url or not message) and post_id and api_key:
+                            preview_data = fetch_meta_post_preview(client_id, account_id, post_id, api_key)
+                            if preview_data:
+                                if not image_url and preview_data.get("image_url"):
+                                    image_url = preview_data["image_url"]
+                                if not message and preview_data.get("message"):
+                                    message = preview_data["message"]
+                                if not permalink and preview_data.get("permalink"):
+                                    permalink = preview_data["permalink"]
+
+                        if image_url:
+                            try:
+                                st.image(image_url, width="stretch")
+                            except Exception:
+                                pass
+
+                        clean_title = _clean_post_title(post_row.get("campaign_name", ""), message=message)
+                        st.markdown(f"**{clean_title}**")
+                        if "date" in post_row and pd.notna(post_row["date"]):
+                            st.caption(f"📅 {pd.to_datetime(post_row['date']).strftime('%d/%m/%Y')}")
+
+                        v = int(post_row.get("page_media_view", post_row.get("views", 0)))
+                        r = int(post_row.get("page_total_media_view_unique", post_row.get("reach", 0)))
+                        c = int(post_row.get("clicks", 0))
+                        e = int(post_row.get("page_post_engagements", post_row.get("engagement", 0)))
+
+                        metric_items = [f"👁️ **{v:,}** vistas"]
+                        if r > 0:
+                            metric_items.append(f"👥 **{r:,}** alcance")
+                        if e > 0 or (r == 0 and c == 0):
+                            metric_items.append(f"💬 **{e:,}** interac.")
+                        if c > 0:
+                            metric_items.append(f"🖱️ **{c:,}** clics")
+                        st.write(" &nbsp;|&nbsp; ".join(metric_items[:3]))
+
+                        if permalink:
+                            st.link_button("Ver publicación ↗", permalink, width="stretch")
+    else:
+        # Fallback to page permalink when only Page_Insights is present
+        page_urls = df_curr_p["permalink"].dropna().tolist() if "permalink" in df_curr_p.columns else []
+        if not page_urls and "url" in df_curr_p.columns:
+            page_urls = df_curr_p["url"].dropna().tolist()
+        if page_urls:
+            page_url = page_urls[0]
+            st.markdown("### 🔗 Enlace a la Página / Perfil")
+            st.link_button(f"Abrir {plat_label} en Facebook / Meta ↗", str(page_url))
+
+    # Detail Table
+    st.markdown("### Detalle por Contenido e Insights")
+    group_cols = ["campaign_name"]
+    for extra_col in ["permalink", "url", "page_id"]:
+        if extra_col in df_curr_p.columns and extra_col not in group_cols:
+            group_cols.append(extra_col)
+
+    agg_dict = {}
+    for m in [
+        "page_media_view", "page_total_media_view_unique", "page_post_engagements",
+        "page_views_total", "page_follows", "impressions", "reach", "engagement",
+        "post_engagement", "followers", "pageviews", "likes", "comments", "shares", "clicks"
+    ]:
+        if m in df_curr_p.columns:
+            agg_dict[m] = "sum"
+
+    if agg_dict:
+        df_table = df_curr_p.groupby(group_cols, as_index=False).agg(agg_dict)
+    else:
+        df_table = df_curr_p[group_cols].drop_duplicates().copy()
+
+    # Formatted display columns
+    rename_cols = {
+        "campaign_name": "Contenido / Insights",
+        "page_media_view": "Visualizaciones",
+        "page_total_media_view_unique": "Alcance Único",
+        "page_post_engagements": "Interacciones",
+        "page_views_total": "Visitas a Página",
+        "page_follows": "Seguidores",
+        "impressions": "Visualizaciones (Total)",
+        "reach": "Alcance (Total)",
+        "engagement": "Interacciones (Total)",
+        "likes": "Me Gusta",
+        "comments": "Comentarios",
+        "shares": "Compartidos",
+        "clicks": "Clics",
+        "permalink": "Enlace",
+        "url": "URL",
+    }
+
+    display_renames = {k: v for k, v in rename_cols.items() if k in df_table.columns}
+    df_display = df_table.rename(columns=display_renames)
+
+    if "Contenido / Insights" in df_display.columns:
+        df_display["Contenido / Insights"] = df_display["Contenido / Insights"].apply(
+            lambda n: _clean_post_title(n) if "Post_" in str(n) else n
+        )
+
+    column_config = {}
+    if "Enlace" in df_display.columns:
+        column_config["Enlace"] = st.column_config.LinkColumn(
+            "Enlace",
+            help="Enlace directo a la publicación o página",
+            validate=r"^https?://.*",
+            display_text="Abrir enlace ↗",
+        )
+    if "URL" in df_display.columns:
+        column_config["URL"] = st.column_config.LinkColumn(
+            "URL",
+            display_text="Ver página ↗",
+        )
+
+    st.dataframe(df_display, width="stretch", hide_index=True, column_config=column_config)
+
+=== END FILES ===
+
+**IMPORTANT: Your response MUST include one of these lines near the beginning:**
+STATUS: PASSED
+STATUS: FAILED
+
+**If FAILED:** List each violation with:
+- File name
+- Line number (if applicable)
+- Rule violated
+- Description of the issue
+
+**If PASSED:** Confirm all files comply with the coding standards.
+
+**Begin with STATUS:**
