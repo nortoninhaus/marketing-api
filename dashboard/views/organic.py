@@ -46,6 +46,20 @@ def render_organic_platform_tab(
                 if c not in non_numeric_cols:
                     df_target[c] = pd.to_numeric(df_target[c], errors="coerce").fillna(0)
 
+    # Fallback extraction from source_metrics if raw columns are 0 or missing
+    for df_target in (df_curr_p, df_prev_p):
+        if isinstance(df_target, pd.DataFrame) and not df_target.empty and "source_metrics" in df_target.columns:
+            for m_key in ["page_media_view", "page_follows", "page_total_media_view_unique", "page_post_engagements", "page_views_total"]:
+                if m_key not in df_target.columns or df_target[m_key].sum() == 0:
+                    try:
+                        extracted = df_target["source_metrics"].apply(
+                            lambda m: float(m.get(m_key, 0)) if isinstance(m, dict) and m.get(m_key) is not None and not isinstance(m.get(m_key), dict) else 0.0
+                        )
+                        if extracted.sum() > 0:
+                            df_target[m_key] = extracted
+                    except Exception:
+                        pass
+
     organic_metric_cols = [
         col for col in [
             "page_media_view", "page_total_media_view_unique", "page_post_engagements",
@@ -77,10 +91,48 @@ def render_organic_platform_tab(
             return 0
         for col in cols:
             if col in df.columns:
-                val = int(df[col].sum())
+                val = int(pd.to_numeric(df[col], errors="coerce").fillna(0).sum())
                 if val > 0:
                     return val
+        if "source_metrics" in df.columns:
+            for col in cols:
+                try:
+                    val = int(df["source_metrics"].apply(
+                        lambda m: float(m.get(col, 0)) if isinstance(m, dict) and m.get(col) is not None and not isinstance(m.get(col), dict) else (
+                            float(sum(float(v) for v in m[col].values() if v is not None)) if isinstance(m, dict) and isinstance(m.get(col), dict) else 0.0
+                        )
+                    ).sum())
+                    if val > 0:
+                        return val
+                except Exception:
+                    pass
         return 0
+
+    def _extract_followers(df):
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            return 0, "Seguidores ganados"
+        for fcol in ["page_follows", "followers", "follower_count"]:
+            series = None
+            if fcol in df.columns and df[fcol].sum() > 0:
+                s = pd.to_numeric(df[fcol], errors="coerce").fillna(0)
+                series = s[s > 0]
+            elif "source_metrics" in df.columns:
+                try:
+                    extracted = df["source_metrics"].apply(
+                        lambda m: float(m.get(fcol, 0)) if isinstance(m, dict) and m.get(fcol) is not None else 0.0
+                    )
+                    series = extracted[extracted > 0]
+                except Exception:
+                    pass
+            if series is not None and len(series) > 0:
+                earliest = series.iloc[0]
+                latest = series.iloc[-1]
+                net = int(latest - earliest)
+                if net > 0:
+                    return net, f"Nuevos en el periodo (Total: {int(latest):,})"
+                elif int(latest) > 0:
+                    return int(latest), "Total seguidores acumulados"
+        return _sum_metric(df, ["page_follows", "followers"]), "Seguidores ganados"
 
     media_views_curr = _sum_metric(df_curr_p, ["page_media_view", "impressions", "views", "video_views"])
     media_views_prev = _sum_metric(df_prev_p, ["page_media_view", "impressions", "views", "video_views"])
@@ -94,8 +146,8 @@ def render_organic_platform_tab(
     pageviews_curr = _sum_metric(df_curr_p, ["page_views_total", "pageviews", "profile_visits"])
     pageviews_prev = _sum_metric(df_prev_p, ["page_views_total", "pageviews", "profile_visits"])
 
-    follows_curr = _sum_metric(df_curr_p, ["page_follows", "followers"])
-    follows_prev = _sum_metric(df_prev_p, ["page_follows", "followers"])
+    follows_curr, follows_sub = _extract_followers(df_curr_p)
+    follows_prev, _ = _extract_followers(df_prev_p)
 
     likes_curr = _sum_metric(df_curr_p, ["likes"])
     likes_prev = _sum_metric(df_prev_p, ["likes"])
@@ -126,7 +178,7 @@ def render_organic_platform_tab(
     kpis_layout += get_kpi_card_html("Alcance Único", f"{reach_curr:,}", "Personas alcanzadas", reach_curr, reach_prev) + "\n"
     kpis_layout += get_kpi_card_html("Interacciones con Posts", f"{engagements_curr:,}", "Interacciones y engagement", engagements_curr, engagements_prev) + "\n"
     kpis_layout += get_kpi_card_html("Visitas a Página/Perfil", f"{pageviews_curr:,}", "Visitas recibidas", pageviews_curr, pageviews_prev) + "\n"
-    kpis_layout += get_kpi_card_html("Nuevos Seguidores", f"{follows_curr:,}", "Seguidores ganados", follows_curr, follows_prev) + "\n"
+    kpis_layout += get_kpi_card_html("Nuevos Seguidores", f"{follows_curr:,}", follows_sub, follows_curr, follows_prev) + "\n"
     if likes_curr > 0 or likes_prev > 0:
         kpis_layout += get_kpi_card_html("Reacciones / Me Gusta", f"{likes_curr:,}", "Likes en contenido", likes_curr, likes_prev) + "\n"
     if comments_curr > 0 or comments_prev > 0:
@@ -150,20 +202,50 @@ def render_organic_platform_tab(
         if trend_agg:
             daily_chart_data = trend_df.groupby("date", as_index=False).agg(trend_agg)
             plot_df = pd.DataFrame({"Fecha": daily_chart_data["date"]})
-            if "page_media_view" in daily_chart_data.columns:
+            if "page_media_view" in daily_chart_data.columns and daily_chart_data["page_media_view"].sum() > 0:
                 plot_df["Visualizaciones"] = daily_chart_data["page_media_view"]
             elif "impressions" in daily_chart_data.columns:
                 plot_df["Visualizaciones"] = daily_chart_data["impressions"]
-            if "page_total_media_view_unique" in daily_chart_data.columns:
+            if "page_total_media_view_unique" in daily_chart_data.columns and daily_chart_data["page_total_media_view_unique"].sum() > 0:
                 plot_df["Alcance"] = daily_chart_data["page_total_media_view_unique"]
             elif "reach" in daily_chart_data.columns:
                 plot_df["Alcance"] = daily_chart_data["reach"]
-            if "page_post_engagements" in daily_chart_data.columns:
+            if "page_post_engagements" in daily_chart_data.columns and daily_chart_data["page_post_engagements"].sum() > 0:
                 plot_df["Interacciones"] = daily_chart_data["page_post_engagements"]
             elif "engagement" in daily_chart_data.columns:
                 plot_df["Interacciones"] = daily_chart_data["engagement"]
             plot_df = plot_df.set_index("Fecha")
             st.line_chart(plot_df, width="stretch")
+
+    # Recent Posts / Content Section
+    posts_mask = df_curr_p["campaign_name"].astype(str).str.contains("Post_", case=False, na=False)
+    posts_df = df_curr_p[posts_mask].copy()
+    if not posts_df.empty:
+        st.markdown("### 📌 Publicaciones Recientes")
+        cols = st.columns(min(3, len(posts_df)))
+        for idx, (_, post_row) in enumerate(posts_df.head(6).iterrows()):
+            with cols[idx % len(cols)]:
+                with st.container(border=True):
+                    name = str(post_row.get("campaign_name", "Publicación")).replace("Post_", "")
+                    st.markdown(f"**{name}**")
+                    if "date" in post_row and pd.notna(post_row["date"]):
+                        st.caption(f"📅 {pd.to_datetime(post_row['date']).strftime('%d/%m/%Y')}")
+                    v = int(post_row.get("page_media_view", post_row.get("views", 0)))
+                    c = int(post_row.get("clicks", 0))
+                    e = int(post_row.get("page_post_engagements", post_row.get("engagement", 0)))
+                    st.write(f"👁️ **{v:,}** vistas &nbsp;|&nbsp; 🖱️ **{c:,}** clics &nbsp;|&nbsp; 💬 **{e:,}** interac.")
+                    p_url = post_row.get("permalink") or post_row.get("url")
+                    if p_url:
+                        st.link_button("Ver publicación ↗", str(p_url), width="stretch")
+    else:
+        # Fallback to page permalink when only Page_Insights is present
+        page_urls = df_curr_p["permalink"].dropna().tolist() if "permalink" in df_curr_p.columns else []
+        if not page_urls and "url" in df_curr_p.columns:
+            page_urls = df_curr_p["url"].dropna().tolist()
+        if page_urls:
+            page_url = page_urls[0]
+            st.markdown("### 🔗 Enlace a la Página / Perfil")
+            st.link_button(f"Abrir {plat_label} en Facebook / Meta ↗", str(page_url))
 
     # Detail Table
     st.markdown("### Detalle por Contenido e Insights")
@@ -208,4 +290,18 @@ def render_organic_platform_tab(
     display_renames = {k: v for k, v in rename_cols.items() if k in df_table.columns}
     df_display = df_table.rename(columns=display_renames)
 
-    st.dataframe(df_display, width="stretch", hide_index=True)
+    column_config = {}
+    if "Enlace" in df_display.columns:
+        column_config["Enlace"] = st.column_config.LinkColumn(
+            "Enlace",
+            help="Enlace directo a la publicación o página",
+            validate=r"^https?://.*",
+            display_text="Abrir enlace ↗",
+        )
+    if "URL" in df_display.columns:
+        column_config["URL"] = st.column_config.LinkColumn(
+            "URL",
+            display_text="Ver página ↗",
+        )
+
+    st.dataframe(df_display, width="stretch", hide_index=True, column_config=column_config)

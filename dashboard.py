@@ -56,7 +56,7 @@ from dashboard.views.generic_ads import render_generic_ads_platform_tab
 from dashboard.views.meta_ads import render_meta_ads_platform_tab
 from dashboard.views.organic import render_organic_platform_tab
 
-DASHBOARD_CACHE_VERSION = 7
+DASHBOARD_CACHE_VERSION = 8
 
 if os.getenv("DASHBOARD_AUTH_SELF_CHECK") == "1":
     dashboard_auth_self_check()
@@ -280,12 +280,16 @@ for selected_platform_key in selected_platform_keys:
                 for essential in ("views", "likes", "comments", "watchTimeMinutes"):
                     if essential in avail_metric_names and essential not in st.session_state[metrics_key]:
                         st.session_state[metrics_key].append(essential)
+            elif selected_platform_key == "meta_organic":
+                for essential in ("page_media_view", "page_total_media_view_unique", "page_post_engagements", "page_views_total", "page_follows", "page_actions_post_reactions_total", "views", "reach"):
+                    if essential in avail_metric_names and essential not in st.session_state[metrics_key]:
+                        st.session_state[metrics_key].append(essential)
             else:
                 for essential in ("spend", "impressions", "reach", "post_engagement", "video_views", "followers"):
                     if essential in avail_metric_names and essential not in st.session_state[metrics_key]:
                         st.session_state[metrics_key].append(essential)
         if dimensions_key not in st.session_state:
-            st.session_state[dimensions_key] = []
+            st.session_state[dimensions_key] = ["post_id"] if (selected_platform_key == "meta_organic" and any(d["name"] == "post_id" for d in dimensions_list)) else []
 
         selected_metrics_value = st.multiselect(
             "Métricas *",
@@ -514,6 +518,8 @@ for cfg in platform_configs:
     request_dimensions = list(cfg["selected_dimensions"])
     if cfg["platform_key"] == "meta_ads" and "publisher_platform" in dimension_names and "publisher_platform" not in request_dimensions:
         request_dimensions.append("publisher_platform")
+    if cfg["platform_key"] == "meta_organic" and "post_id" in dimension_names and "post_id" not in request_dimensions:
+        request_dimensions.append("post_id")
     if cfg["platform_key"] == "google_ads" and "campaign.advertising_channel_type" in dimension_names and "campaign.advertising_channel_type" not in request_dimensions:
         request_dimensions.append("campaign.advertising_channel_type")
 
