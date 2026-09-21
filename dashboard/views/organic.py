@@ -1,4 +1,5 @@
 import re
+import html
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -232,7 +233,7 @@ def render_organic_platform_tab(
             plot_df = plot_df.set_index("Fecha")
             st.line_chart(plot_df, width="stretch")
 
-    # Recent Posts / Content Section (Top 5 por visualizaciones / alcance)
+    # Recent Posts / Content Section (Top 3 por visualizaciones / alcance)
     posts_mask = df_curr_p["campaign_name"].astype(str).str.contains("Post_", case=False, na=False)
     posts_df = df_curr_p[posts_mask].copy()
     if not posts_df.empty:
@@ -244,70 +245,81 @@ def render_organic_platform_tab(
                 break
 
         posts_df = posts_df.sort_values(by=sort_col, ascending=False)
-        display_posts = posts_df.head(5)
+        display_posts = posts_df.head(3)
 
-        st.markdown("### 📌 Top 5 Publicaciones")
-        num_cols = min(3, len(display_posts))
-        for row_start in range(0, len(display_posts), num_cols):
-            chunk = display_posts.iloc[row_start : row_start + num_cols]
-            cols = st.columns(num_cols)
-            for col_idx, (_, post_row) in enumerate(chunk.iterrows()):
-                rank = row_start + col_idx + 1
-                with cols[col_idx]:
-                    with st.container(border=True):
-                        post_id = str(post_row.get("post_id") or "")
-                        if not post_id or post_id == "nan":
-                            m = re.search(r"^(?:Post_|IG_Post_)?([0-9_]+)", str(post_row.get("campaign_name", "")))
-                            if m:
-                                post_id = m.group(1).rstrip("_")
+        st.markdown("### 📌 Top 3 Publicaciones")
+        cols = st.columns(len(display_posts))
+        for col_idx, (_, post_row) in enumerate(display_posts.iterrows()):
+            rank = col_idx + 1
+            with cols[col_idx]:
+                with st.container(border=True):
+                    post_id = str(post_row.get("post_id") or "")
+                    if not post_id or post_id == "nan":
+                        m = re.search(r"^(?:Post_|IG_Post_)?([0-9_]+)", str(post_row.get("campaign_name", "")))
+                        if m:
+                            post_id = m.group(1).rstrip("_")
 
-                        image_url = str(post_row.get("image_url") or "").strip()
-                        if image_url == "nan":
-                            image_url = ""
-                        message = str(post_row.get("message") or "").strip()
-                        if message == "nan":
-                            message = ""
-                        permalink = str(post_row.get("permalink") or post_row.get("url") or "").strip()
-                        if permalink == "nan":
-                            permalink = ""
+                    image_url = str(post_row.get("image_url") or "").strip()
+                    if image_url == "nan":
+                        image_url = ""
+                    message = str(post_row.get("message") or "").strip()
+                    if message == "nan":
+                        message = ""
+                    permalink = str(post_row.get("permalink") or post_row.get("url") or "").strip()
+                    if permalink == "nan":
+                        permalink = ""
 
-                        if (not image_url or not message) and (post_id or permalink):
-                            preview_data = fetch_meta_post_preview(client_id, account_id, post_id, api_key, permalink=permalink)
-                            if preview_data:
-                                if not image_url and preview_data.get("image_url"):
-                                    image_url = preview_data["image_url"]
-                                if not message and preview_data.get("message"):
-                                    message = preview_data["message"]
-                                if not permalink and preview_data.get("permalink"):
-                                    permalink = preview_data["permalink"]
+                    if (not image_url or not message) and (post_id or permalink):
+                        preview_data = fetch_meta_post_preview(client_id, account_id, post_id, api_key, permalink=permalink)
+                        if preview_data:
+                            if not image_url and preview_data.get("image_url"):
+                                image_url = preview_data["image_url"]
+                            if not message and preview_data.get("message"):
+                                message = preview_data["message"]
+                            if not permalink and preview_data.get("permalink"):
+                                permalink = preview_data["permalink"]
 
-                        if image_url:
-                            try:
-                                st.image(image_url, width="stretch")
-                            except Exception:
-                                pass
+                    if image_url:
+                        escaped_img = html.escape(image_url)
+                        st.markdown(f"""
+                        <div style="width: 100%; height: 280px; overflow: hidden; border-radius: 8px; margin-bottom: 10px; background: #0b0f19;">
+                            <img src="{escaped_img}" style="width: 100%; height: 100%; object-fit: cover; object-position: center;" alt="Preview" />
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.markdown("""
+                        <div style="width: 100%; height: 280px; border-radius: 8px; margin-bottom: 10px; background: #1e293b; display: grid; place-items: center; color: #94a3b8; font-size: 0.9rem;">
+                            Sin imagen disponible
+                        </div>
+                        """, unsafe_allow_html=True)
 
-                        clean_title = _clean_post_title(post_row.get("campaign_name", ""), message=message)
-                        st.markdown(f"**#{rank} &middot; {clean_title}**")
-                        if "date" in post_row and pd.notna(post_row["date"]):
-                            st.caption(f"📅 {pd.to_datetime(post_row['date']).strftime('%d/%m/%Y')}")
+                    clean_title = _clean_post_title(post_row.get("campaign_name", ""), message=message)
+                    escaped_title = html.escape(clean_title)
+                    st.markdown(f"""
+                    <div style="font-weight: 700; font-size: 1rem; line-height: 1.35; height: 2.7em; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; margin-bottom: 4px;">
+                        #{rank} &middot; {escaped_title}
+                    </div>
+                    """, unsafe_allow_html=True)
 
-                        v = int(post_row.get("page_media_view", post_row.get("views", 0)))
-                        r = int(post_row.get("page_total_media_view_unique", post_row.get("reach", 0)))
-                        c = int(post_row.get("clicks", 0))
-                        e = int(post_row.get("page_post_engagements", post_row.get("engagement", 0)))
+                    if "date" in post_row and pd.notna(post_row["date"]):
+                        st.caption(f"📅 {pd.to_datetime(post_row['date']).strftime('%d/%m/%Y')}")
 
-                        metric_items = [f"👁️ **{v:,}** vistas"]
-                        if r > 0:
-                            metric_items.append(f"👥 **{r:,}** alcance")
-                        if e > 0 or (r == 0 and c == 0):
-                            metric_items.append(f"💬 **{e:,}** interac.")
-                        if c > 0:
-                            metric_items.append(f"🖱️ **{c:,}** clics")
-                        st.write(" &nbsp;|&nbsp; ".join(metric_items[:3]))
+                    v = int(post_row.get("page_media_view", post_row.get("views", 0)))
+                    r = int(post_row.get("page_total_media_view_unique", post_row.get("reach", 0)))
+                    c = int(post_row.get("clicks", 0))
+                    e = int(post_row.get("page_post_engagements", post_row.get("engagement", 0)))
 
-                        if permalink:
-                            st.link_button("Ver publicación ↗", permalink, width="stretch")
+                    metric_items = [f"👁️ **{v:,}** vistas"]
+                    if r > 0:
+                        metric_items.append(f"👥 **{r:,}** alcance")
+                    if e > 0 or (r == 0 and c == 0):
+                        metric_items.append(f"💬 **{e:,}** interac.")
+                    if c > 0:
+                        metric_items.append(f"🖱️ **{c:,}** clics")
+                    st.write(" &nbsp;|&nbsp; ".join(metric_items[:3]))
+
+                    if permalink:
+                        st.link_button("Ver publicación ↗", permalink, width="stretch")
     else:
         # Fallback to page permalink when only Page_Insights is present
         page_urls = df_curr_p["permalink"].dropna().tolist() if "permalink" in df_curr_p.columns else []
