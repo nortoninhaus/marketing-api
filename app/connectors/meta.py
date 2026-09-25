@@ -604,7 +604,11 @@ class MetaOrganicConnector(BaseConnector):
         Uses 'views' instead of deprecated 'impressions' for IG media/account insights.
         """
         access_token = creds["access_token"]
-        ig_account_id = creds["page_id"]  # In Instagram connections, account_id is the IG Business ID
+        # In Instagram connections, account_id es el IG Business ID (17 digitos,
+        # prefijo 1784); page_id es la pagina FB enlazada. Usar page_id aqui hace
+        # /{page}/insights -> 400 "must be a valid insights metric" -> data vacia
+        # (el "error de Instagram" de /contenidos). account_id responde OK.
+        ig_account_id = creds.get("account_id") or creds.get("page_id")
         since_dt = datetime.combine(request.start_date, time.min)
         until_dt = datetime.combine(request.end_date, time.max)
         since_ts = int(since_dt.replace(tzinfo=timezone.utc).timestamp())
