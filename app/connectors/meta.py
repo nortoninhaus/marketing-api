@@ -574,7 +574,14 @@ class MetaOrganicConnector(BaseConnector):
             
         page_id = request.account_id if request else creds.get("page_id")
         is_instagram = creds.get("is_instagram", False) if creds else False
-            
+        # Fallback por account_id: las cuentas IG Business son de 17 digitos y
+        # empiezan en 1784; las paginas FB son mas cortas. Sin esto, una cuenta
+        # IG sin doc de credencial (is_instagram ausente) se consulta como pagina
+        # FB y devuelve vacio — el "error de Instagram" de JCV (17841463473447753).
+        if not is_instagram and page_id:
+            pid = str(page_id)
+            if len(pid) == 17 and pid.startswith("1784"):
+                is_instagram = True
         return {
             "access_token": access_token,
             "page_id": page_id,
@@ -586,7 +593,7 @@ class MetaOrganicConnector(BaseConnector):
     IG_ACCOUNT_DEMO_METRICS = {"audience_gender_age", "audience_country", "audience_city", "audience_locale"}
     IG_MEDIA_METRICS = {"views", "reach", "saved", "shares", "likes", "comments", "total_interactions", "plays", "replays", "carousel_album_saves", "carousel_album_impressions"}
 
-    PAGE_DAILY_METRICS = {"page_views_total", "page_post_engagements", "page_follows", "page_fans", "page_actions_post_reactions_total", "page_media_view", "page_total_media_view_unique"}
+    PAGE_DAILY_METRICS = {"page_views_total", "page_post_engagements", "page_follows", "page_actions_post_reactions_total", "page_media_view", "page_total_media_view_unique"}
     PAGE_DEMO_METRICS = {"page_fans_gender_age", "page_fans_country", "page_fans_city", "page_fans_locale"}
     PAGE_POST_METRICS = {"post_clicks", "post_media_view", "post_total_media_view_unique"}
 
@@ -754,52 +761,106 @@ class MetaOrganicConnector(BaseConnector):
         # 4. Otherwise, fetch Account/Profile level Insights
         else:
             url = f"{GRAPH_BASE}/{ig_account_id}/insights"
-            ig_metrics = []
+            
+            # Instagram Graph API requires metric_type=total_value for views, profile_views, accounts_engaged, total_interactions, website_clicks
+            TOTAL_VALUE_METRICS = {"views", "profile_views", "accounts_engaged", "total_interactions", "website_clicks"}
+            TIME_SERIES_METRICS = {"reach", "follower_count"}
+
+            requested_total_value = []
+            requested_time_series = []
+
+            has_metrics = bool(request.metrics)
             for m in request.metrics:
                 if m in ("views", "impressions"):
-                    ig_metrics.append("views")
+                    requested_total_value.append("views")
                 elif "reach" in m:
-                    ig_metrics.append("reach")
+                    requested_time_series.append("reach")
                 elif "profile_views" in m:
-                    ig_metrics.append("profile_views")
+                    requested_total_value.append("profile_views")
                 elif "follower" in m:
-                    ig_metrics.append("follower_count")
+                    requested_time_series.append("follower_count")
                 elif "accounts_engaged" in m or "engaged" in m:
-                    ig_metrics.append("accounts_engaged")
+                    requested_total_value.append("accounts_engaged")
                 elif "total_interactions" in m or "interaction" in m:
-                    ig_metrics.append("total_interactions")
+                    requested_total_value.append("total_interactions")
                 elif "website_clicks" in m:
-                    ig_metrics.append("website_clicks")
-                elif m in self.IG_ACCOUNT_DAILY_METRICS:
-                    ig_metrics.append(m)
+                    requested_total_value.append("website_clicks")
+                elif m in TOTAL_VALUE_METRICS:
+                    requested_total_value.append(m)
+                elif m in TIME_SERIES_METRICS:
+                    requested_time_series.append(m)
 
-            if not ig_metrics:
-                ig_metrics = ["views", "reach", "profile_views", "accounts_engaged", "total_interactions"]
+            if not requested_total_value and not requested_time_series:
+                requested_total_value = ["views", "profile_views", "accounts_engaged", "total_interactions"]
+                requested_time_series = ["reach", "follower_count"]
 
-            ig_metrics = list(dict.fromkeys(ig_metrics))
+            requested_total_value = list(dict.fromkeys(requested_total_value))
+            requested_time_series = list(dict.fromkeys(requested_time_series))
 
             try:
-                with httpx.Client() as client:
-                    res = client.get(
-                        url,
-                        params={
-                            "metric": ",".join(ig_metrics),
-                            "period": "day",
-                            "since": since_ts,
-                            "until": until_ts,
-                            "access_token": access_token
-                        }
-                    )
-                    if res.status_code == 200:
-                        insights_data = res.json().get("data", [])
-                        for item in insights_data:
-                            metric_name = item.get("name")
-                            for val_entry in item.get("values", []):
-                                end_time = val_entry.get("end_time")
-                                day = end_time[:10] if end_time else request.start_date.strftime("%Y-%m-%d")
-                                if day not in daily_data:
-                                    daily_data[day] = {}
-                                daily_data[day][metric_name] = val_entry.get("value", 0)
+                with httpx.Client(timeout=30.0) as client:
+                    # A. Fetch time-series daily metrics (e.g. reach, follower_count)
+                    if requested_time_series:
+                        res_ts = client.get(
+                            url,
+                            params={
+                                "metric": ",".join(requested_time_series),
+                                "period": "day",
+                                "since": since_ts,
+                                "until": until_ts,
+                                "access_token": access_token
+                            }
+                        )
+                        if res_ts.status_code == 200:
+                            insights_data = res_ts.json().get("data", [])
+                            for item in insights_data:
+                                metric_name = item.get("name")
+                                for val_entry in item.get("values", []):
+                                    end_time = val_entry.get("end_time")
+                                    day = end_time[:10] if end_time else request.start_date.strftime("%Y-%m-%d")
+                                    if day not in daily_data:
+                                        daily_data[day] = {}
+                                    daily_data[day][metric_name] = val_entry.get("value", 0)
+                        else:
+                            logger.warning(f"IG Time-series insights warning ({res_ts.status_code}): {res_ts.text}")
+
+                    # B. Fetch total_value period metrics (e.g. views, profile_views, accounts_engaged, total_interactions)
+                    if requested_total_value:
+                        res_tv = client.get(
+                            url,
+                            params={
+                                "metric": ",".join(requested_total_value),
+                                "metric_type": "total_value",
+                                "period": "day",
+                                "since": since_ts,
+                                "until": until_ts,
+                                "access_token": access_token
+                            }
+                        )
+                        if res_tv.status_code == 200:
+                            insights_data = res_tv.json().get("data", [])
+                            # If total_value response has values array (time-series fallback or mock), process values
+                            for item in insights_data:
+                                metric_name = item.get("name")
+                                values = item.get("values", [])
+                                if values:
+                                    for val_entry in values:
+                                        end_time = val_entry.get("end_time")
+                                        day = end_time[:10] if end_time else request.start_date.strftime("%Y-%m-%d")
+                                        if day not in daily_data:
+                                            daily_data[day] = {}
+                                        daily_data[day][metric_name] = val_entry.get("value", 0)
+                                else:
+                                    tv_dict = item.get("total_value", {})
+                                    val = tv_dict.get("value", 0) if isinstance(tv_dict, dict) else 0
+                                    # Pick the earliest active day or end_date
+                                    target_day = next(iter(daily_data)) if daily_data else request.end_date.strftime("%Y-%m-%d")
+                                    if target_day not in daily_data:
+                                        daily_data[target_day] = {}
+                                    daily_data[target_day][metric_name] = val
+                        else:
+                            logger.warning(f"IG Total-value insights warning ({res_tv.status_code}): {res_tv.text}")
+
             except Exception as e:
                 logger.error(f"IG Account insights error: {e}")
 
@@ -1030,7 +1091,7 @@ class MetaOrganicConnector(BaseConnector):
         if not request.post_id or request.post_id == "all":
             page_metrics = [m for m in request.metrics if m in self.PAGE_DAILY_METRICS]
             if not page_metrics and not fetch_posts:
-                page_metrics = ["page_views_total", "page_post_engagements", "page_follows", "page_fans", "page_actions_post_reactions_total"]
+                page_metrics = ["page_media_view", "page_total_media_view_unique", "page_views_total", "page_post_engagements", "page_follows", "page_actions_post_reactions_total"]
             
             if page_metrics:
                 page_metrics = list(dict.fromkeys(page_metrics))
@@ -1127,3 +1188,104 @@ class MetaOrganicConnector(BaseConnector):
             return True
         except Exception:
             return False
+
+
+class FacebookOrganicConnector(MetaOrganicConnector):
+    platform_name = "facebook_organic"
+
+    def get_credentials(self, request: Optional[DataRequest] = None) -> Dict[str, Any]:
+        creds = super().get_credentials(request)
+        creds["is_instagram"] = False
+        return creds
+
+    def fetch_data(self, request: DataRequest) -> List[CampaignData]:
+        # Always route to Facebook Page insights
+        creds = self.get_credentials(request)
+        creds["is_instagram"] = False
+        return super().fetch_data(request)
+
+    def get_schema(self) -> Dict[str, Any]:
+        return {
+            "metrics": [
+                "page_media_view",
+                "page_total_media_view_unique",
+                "page_post_engagements",
+                "page_views_total",
+                "page_follows",
+                "page_actions_post_reactions_total",
+                "post_media_view",
+                "post_total_media_view_unique",
+                "post_clicks",
+                "page_fans_gender_age",
+                "page_fans_country",
+                "page_fans_city",
+                "page_fans_locale",
+            ],
+            "dimensions": ["post_id", "date_start", "page_fans_gender_age", "page_fans_country", "page_fans_city", "page_fans_locale"],
+            "metadata": {
+                "api_version": GRAPH_API_VERSION,
+                "comment_support": True,
+                "notes": "Facebook Pages: 'page_impressions' deprecated June 2026, use 'page_media_view'.",
+            },
+        }
+
+
+class InstagramOrganicConnector(MetaOrganicConnector):
+    platform_name = "instagram_organic"
+
+    def get_credentials(self, request: Optional[DataRequest] = None) -> Dict[str, Any]:
+        creds = super().get_credentials(request)
+        creds["is_instagram"] = True
+        return creds
+
+    def fetch_data(self, request: DataRequest) -> List[CampaignData]:
+        # Always route to Instagram Organic insights
+        creds = self.get_credentials(request)
+        creds["is_instagram"] = True
+        return self._fetch_instagram_data(request, creds)
+
+    def fetch_comments(self, post_id: str, access_token: str, is_instagram: bool = True) -> List[CommentData]:
+        return self._fetch_instagram_comments(post_id, access_token)
+
+    def ping(self) -> bool:
+        try:
+            creds = self.get_credentials()
+            with httpx.Client(timeout=10.0) as client:
+                res = client.get(
+                    f"{GRAPH_BASE}/{creds['page_id']}",
+                    params={"fields": "id,username,name", "access_token": creds["access_token"]}
+                )
+                return res.status_code == 200
+        except Exception:
+            return False
+
+    def get_schema(self) -> Dict[str, Any]:
+        return {
+            "metrics": [
+                "views",
+                "reach",
+                "accounts_engaged",
+                "total_interactions",
+                "profile_views",
+                "follower_count",
+                "website_clicks",
+                "saved",
+                "shares",
+                "likes",
+                "comments",
+                "plays",
+                "replays",
+                "carousel_album_saves",
+                "carousel_album_impressions",
+                "audience_gender_age",
+                "audience_country",
+                "audience_city",
+                "audience_locale",
+            ],
+            "dimensions": ["post_id", "date_start", "audience_gender_age", "audience_country", "audience_city", "audience_locale"],
+            "metadata": {
+                "api_version": GRAPH_API_VERSION,
+                "comment_support": True,
+                "notes": "Instagram: 'impressions' deprecated July 2024, use 'views'.",
+            },
+        }
