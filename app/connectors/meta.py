@@ -680,6 +680,8 @@ class MetaOrganicConnector(BaseConnector):
                         params={
                             "fields": f"id,caption,timestamp,media_type,insights.metric({','.join(media_metrics)}){{name,values}}",
                             "limit": request.limit or 50,
+                            "since": since_ts,
+                            "until": until_ts,
                             "access_token": access_token
                         }
                     )
