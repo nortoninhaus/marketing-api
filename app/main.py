@@ -257,7 +257,8 @@ PLATFORM_API_VERSIONS = {
     "spotify_ads": "v3",
     "pinterest_ads": "v5",
     "pinterest_organic": "v5",
-    "shopify": "2024-04"
+    "shopify": "2025-01",
+    "ghl": "v3"
 }
 
 @app.get("/api/v1/platforms", response_model=List[PlatformInfo])
@@ -1044,7 +1045,19 @@ async def pinterest_proxy(request: PlatformProxyRequest, api_key: str = Depends(
 @app.post("/api/v1/shopify-proxy")
 async def shopify_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
     """Proxy for Shopify Admin API."""
-    return await _execute_generic_proxy("shopify", request, "https://mock.myshopify.com/admin/api/2024-04", "shopify", settings.shopify_access_token)
+    return await _execute_generic_proxy("shopify", request, "https://mock.myshopify.com/admin/api/2025-01", "shopify", settings.shopify_access_token)
+
+@app.post("/api/v1/ghl-proxy")
+async def ghl_proxy(request: PlatformProxyRequest, api_key: str = Depends(verify_api_key)):
+    """Proxy for GoHighLevel (LeadConnector) API."""
+    creds = await credential_store.resolve_credentials(request.client_id, "ghl", request.account_id)
+    token = (creds or {}).get("access_token") or settings.ghl_access_token
+    # Set default Version header for LeadConnector if not explicitly supplied
+    if not request.headers:
+        request.headers = {}
+    if "Version" not in request.headers and "version" not in request.headers:
+        request.headers["Version"] = "2021-07-28"
+    return await _execute_generic_proxy("ghl", request, "https://services.leadconnectorhq.com", "bearer", token)
 
 
 
