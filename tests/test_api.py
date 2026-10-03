@@ -2,6 +2,8 @@
 Tests for API endpoints.
 """
 
+import pytest
+from unittest.mock import MagicMock, patch
 from app.models.requests import Platform
 
 def test_health_check(client):
@@ -146,5 +148,41 @@ def test_meta_oauth_authorize_valid_scopes(client):
         ]
         for scope in expected_scopes:
             assert scope in auth_url, f"Expected scope '{scope}' to be in authorization URL"
+
+
+def test_ghl_proxy_endpoint(client, auth_headers):
+    """Test GoHighLevel proxy endpoint with mock responses."""
+    with patch("requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"opportunities": [{"id": "opp_1", "monetaryValue": 500}]}
+        mock_resp.headers = {}
+        mock_resp.raise_for_status.return_value = None
+        mock_get.return_value = mock_resp
+
+        response = client.post(
+            "/api/v1/ghl-proxy",
+            json={
+                "client_id": "test_client",
+                "account_id": "loc_123",
+                "path": "opportunities/search",
+                "method": "GET"
+            },
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        assert "opportunities" in response.json()
+
+
+@pytest.mark.asyncio
+async def test_mcp_new_tools_registration():
+    """Verify execute_search_console_api_call and execute_ghl_api_call are registered in MCP."""
+    import app.mcp as mcp_module
+    assert "search_console" in mcp_module.VALID_PLATFORMS
+    assert "ghl" in mcp_module.VALID_PLATFORMS
+
+    # Verify functions exist and are callable
+    assert callable(mcp_module.execute_ghl_api_call)
+    assert callable(mcp_module.execute_search_console_api_call)
 
 

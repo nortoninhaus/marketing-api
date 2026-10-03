@@ -48,8 +48,8 @@ mcp = FastMCP(
     "Inhaus Marketing API",
     instructions=(
         "You are connected to the Inhaus Marketing Data API — a unified, "
-        "multi-tenant gateway to 16 marketing and analytics platforms "
-        "(Meta Ads, Google Ads, TikTok, LinkedIn, YouTube, GA4, and more). "
+        "multi-tenant gateway to 21 marketing and analytics platforms "
+        "(Meta Ads, Google Ads, TikTok, LinkedIn, YouTube, GA4, Search Console, and more). "
         "Use the tools below to discover platforms, inspect schemas, "
         "fetch campaign/organic data, and run cross-platform comparisons. "
         "IMPORTANT: Use generic metric names (impressions, clicks, spend, "
@@ -70,7 +70,7 @@ HEADERS = {"X-API-Key": settings.api_key}
 TIMEOUT = httpx.Timeout(60.0, connect=15.0)
 
 VALID_PLATFORMS = [
-    "meta_ads", "meta_organic", "google_ads", "ga4",
+    "meta_ads", "meta_organic", "google_ads", "ga4", "search_console",
     "tiktok_ads", "tiktok_organic", "linkedin_ads", "linkedin_organic",
     "x_ads", "x_organic", "youtube", "google_play",
     "apple_app_store", "apple_ads", "threads", "spotify_ads",
@@ -1415,8 +1415,90 @@ async def execute_shopify_api_call(
     return await _post("/api/v1/shopify-proxy", payload)
 
 
-# ---------------------------------------------------------------------------
+# ===================================================================
+# TOOL 28 — Execute GoHighLevel (GHL) API Call
+# ===================================================================
+@mcp.tool()
+@_track_latency("execute_ghl_api_call")
+async def execute_ghl_api_call(
+    client_id: str,
+    account_id: str,
+    path: str,
+    method: str = "GET",
+    params: dict | None = None,
+    json_body: dict | None = None,
+    headers: dict | None = None,
+) -> dict:
+    """
+    Execute any GoHighLevel (LeadConnector) API endpoint dynamically.
 
+    Args:
+        client_id:  Unique ID of the client/tenant.
+        account_id: GHL Location ID.
+        path:       The API path (e.g. 'opportunities/search' or 'contacts/').
+        method:     HTTP method (GET, POST, etc.).
+        params:     (Optional) Query parameters.
+        json_body:  (Optional) JSON body for POST/PUT requests.
+        headers:    (Optional) Custom request headers.
+    """
+    payload = {
+        "client_id": client_id,
+        "account_id": account_id,
+        "path": path,
+        "method": method,
+    }
+    if params:
+        payload["params"] = params
+    if json_body:
+        payload["json_body"] = json_body
+    if headers:
+        payload["headers"] = headers
+    return await _post("/api/v1/ghl-proxy", payload)
+
+
+# ===================================================================
+# TOOL 29 — Execute Search Console API Query
+# ===================================================================
+@mcp.tool()
+@_track_latency("execute_search_console_api_call")
+async def execute_search_console_api_call(
+    account_id: str,
+    start_date: str,
+    end_date: str,
+    client_id: str = "client_1",
+    dimensions: list[str] | None = None,
+    query: str | None = None,
+    row_limit: int = 1000,
+    start_row: int = 0,
+) -> dict:
+    """
+    Execute a read-only Google Search Console Search Analytics query.
+
+    Args:
+        account_id:  Search Console property URL (e.g. 'https://www.example.com/' or 'sc-domain:example.com').
+        start_date:  Start date in YYYY-MM-DD format.
+        end_date:    End date in YYYY-MM-DD format.
+        client_id:   Client/tenant identifier (defaults to 'client_1').
+        dimensions:  Optional dimensions: ['date', 'query', 'country', 'page', 'device'].
+        query:       Optional exact Google search query filter.
+        row_limit:   Number of rows to return (1 to 25000, defaults to 1000).
+        start_row:   Pagination start row (offset, defaults to 0).
+    """
+    payload = {
+        "client_id": client_id,
+        "account_id": account_id,
+        "start_date": start_date,
+        "end_date": end_date,
+        "dimensions": dimensions or [],
+        "row_limit": row_limit,
+        "start_row": start_row,
+    }
+    if query is not None:
+        payload["query"] = query
+    return await _post("/api/v1/search-console/query", payload)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
